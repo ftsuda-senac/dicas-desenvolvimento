@@ -2,11 +2,11 @@
 
 ## Arquitetura
 * 3-tier (Domain, Services, Presentation) -> Ver DDD ou Onion Architecture
-    * [https://blog.avenuecode.com/domain-driven-design-and-onion-architecture#:~:text=Onion%20Architecture%20is%20based%20on,but%20rather%20on%20domain%20models.](https://blog.avenuecode.com/domain-driven-design-and-onion-architecture#:~:text=Onion%20Architecture%20is%20based%20on,but%20rather%20on%20domain%20models.)
-    * [https://www.infoq.com/br/articles/onion-architecture/](https://www.infoq.com/br/articles/onion-architecture/)
-    * [https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html](https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html)
+    * https://blog.avenuecode.com/domain-driven-design-and-onion-architecture#:~:text=Onion%20Architecture%20is%20based%20on,but%20rather%20on%20domain%20models.
+    * https://www.infoq.com/br/articles/onion-architecture/
+    * https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html
 * Anotações `@Component`, `@Controller`, `@Service`, `@Repository`
-    * Premissa de um `@Service` para quem desenvolve web: a funcionalidade será executada corretamente se for feita através de outra interface de operação, como por exemplo linha de comando (considerar validações, mensagens de sucesso, erros, etc)?
+    * Premissa de um `@Service` para quem desenvolve web: a funcionalidade será executada corretamente se for feita através de outra interface de operação, como por exemplo linha de comando (considerar entradas primárias tipo String, int, validações, mensagens de sucesso, erros, etc)?
 * Configurações
     * application.properties
         * Acesso a variáveis de ambiente
@@ -17,8 +17,10 @@
 * Injeção de dependências
     * Processo de component scanning
     * Criar beans programaticamente via `@Bean`
+    * Usar valores padrões nas anotações @Value (ex: `@Value("${algo-boolean:true}`)
 * Spring Boot/Spring Initialzr
     * Cuidado ao configurar Beans que sobrescrevem o comportamento padrão
+    * Dependências úteis: devtools, actuator, configuration-processor
 * EventListeners
 * SpEL
 
@@ -57,7 +59,7 @@
         * Uso do Cascade e orphanRemoval
         * IDs compostos para relacionamentos many-to-many "manuais" + campos extras na relação
         * Uso dos Listeners de eventos (ex: `@PostLoad`, `@PrePersist`, `@PostPersist`, etc)
-            * Referência: [https://www.baeldung.com/jpa-entity-lifecycle-events](https://www.baeldung.com/jpa-entity-lifecycle-events)
+            * Referência: https://www.baeldung.com/jpa-entity-lifecycle-events
         * Nomear FKs
         * Criação de índices
         * Usar mesma PK em relações do tipo one-to-one
@@ -67,8 +69,8 @@
     * Liquidbase
     * Flyway
     * Referências:
-        * [https://dzone.com/articles/flyway-vs-liquibase](https://dzone.com/articles/flyway-vs-liquibase)
-        * [https://medium.com/@ruxijitianu/database-version-control-liquibase-versus-flyway-9872d43ee5a4](https://medium.com/@ruxijitianu/database-version-control-liquibase-versus-flyway-9872d43ee5a4)
+        * https://dzone.com/articles/flyway-vs-liquibase
+        * https://medium.com/@ruxijitianu/database-version-control-liquibase-versus-flyway-9872d43ee5a4
         
 ## Security
 * Hash de senhas (ex: bcrypt)
@@ -77,7 +79,7 @@
 * JWT
 * Keycloak como servidor de autenticação/autorização https://www.keycloak.org/
 
-## "Receitas de bolo" microservices
+## "Receitas de bolo" para requisitos de alguns microservices
 * Autenticação/Autorização de acesso
     * Cadastro de novo usuário
     * Controle de tentativa máximas de erros
@@ -88,11 +90,11 @@
         * Mecanismos para gerar códigos de confirmação (TODO)
     * Auditoria
     * n-factor authentication
-        * Referência: [https://blog.nec.com.br/autenticacao-de-usuario-um-mundo-alem-de-senhas](https://blog.nec.com.br/autenticacao-de-usuario-um-mundo-alem-de-senhas)
+        * Referência: https://blog.nec.com.br/autenticacao-de-usuario-um-mundo-alem-de-senhas
 * Disparo de tarefas automatizadas com Quartz
     * Cadastrar tarefas
     * Ativar/Desativar dinamicamente
-    * Registrar resultados de execução
+    * Registrar data/horario e resultados de execução
 * Sistema de comentários
     * Apresentação dos comentários
     * Entrada de comentário
@@ -107,25 +109,25 @@
         * Filtros
             * Inclusão de Filtro
             * Remoção de Filtro
-            * Resultados facetados (Solr)
+            * Resultados facetados (refinamento dos filtros - Conceito do Solr)
         * Ordenação
-        * Paginação/Quantidade de resultados
+        * Paginação/Quantidade de resultados limitados
     * Formulários de inclusão/alteração
         * Validações de campos
-            * Client-side
-            * Server-side
+            * Client-side (usar recursos do HTML5 para validações simples)
+            * Server-side (sempre mandatório)
         * Cadastro com upload de arquivos
 * Notificações
-    * Internas (dentro do próprio sistema)
+    * Internas (dentro do próprio sistema - Webhook, Server-sent events)
     * Envio de e-mails
-    * Outros (ex: SMS)
+    * Outros (ex: SMS, WhatsApp, etc)
 
 ## Outros
 * Lombok
 * Testes unitários e integração
     * JUnit 5
-    * Cuccumber
-    * Selenium Webdriver
+    * BDD + Cuccumber
+    * Selenium Webdriver/Cypress
     * JMeter e teste de carga
 * Containers
     * Docker
@@ -135,6 +137,6 @@
 * Spring Data REST
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
-        * Arquivo properties externo (fora do diretório de deploy) X configurações BD
+        * Arquivo properties externo (fora do diretório de deploy) X configurações BD X environment variables -> Confirmar hot-reload
         * Em containers, prever uso de volumes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback)
