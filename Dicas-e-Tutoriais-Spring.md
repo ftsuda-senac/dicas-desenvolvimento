@@ -148,7 +148,7 @@ PagingAndSortingRepository <|-- JpaRepository
 
 ## Properties úteis
 
-Ver https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html#appendix.application-properties
+Ver https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html#appendix.application-properties . Se necessário, trocar "current" pela versão desejada.
 
 ```
 #========= GENERAL CONFIG ==========
@@ -162,10 +162,10 @@ spring.profiles.include=@build.profile.id@
 #========= WEB ==========
 server.port=8080
 server.context-path=/
-spring.servlet.multipart.max-file-size=5MB
-spring.servlet.multipart.max-request-size=10MB
 server.compression.enabled=true
 server.compression.min-response-size=50KB
+spring.servlet.multipart.max-file-size=5MB
+spring.servlet.multipart.max-request-size=10MB
 
 #========= DATABASE/JPA ==========
 spring.jpa.open-in-view=false
@@ -190,21 +190,25 @@ app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
 ```xml
 <!-- trecho do pom.xml com declaração do profile -->
 <profles>
-   <profile>
-      <id>dev</id>
-      <activation>
-         <activeByDefault>true</activeByDefault>
-      </activation>
-      <properties>
-				<build.profile.id>dev</build.profile.id>
-      </properties>
-      ...
+	<profile>
+		<id>dev</id>
+		<activation>
+			<activeByDefault>true</activeByDefault>
+		</activation>
+		<properties>
+			<build.profile.id>dev</build.profile.id>
+		</properties>
+	</profile>
 </profiles>
 ```
 
 ## Links úteis
 
-Versões das dependências usadas: https://docs.spring.io/spring-boot/docs/current/reference/html/dependency-versions.html#appendix.dependency-versions
+Versões das dependências usadas nos seguintes links:
+* https://docs.spring.io/spring-boot/docs/current/reference/html/dependency-versions.html#appendix.dependency-versions
+* https://github.com/spring-projects/spring-boot/blob/2.2.x/spring-boot-project/spring-boot-dependencies/pom.xml (2.2.x foi a última com Maven, depois migrou para Gradle)
+
+Se necessário, trocar "current" pela versão desejada
 
 ## "Receitas de bolo" para requisitos de alguns microservices
 * Autenticação/Autorização de acesso
