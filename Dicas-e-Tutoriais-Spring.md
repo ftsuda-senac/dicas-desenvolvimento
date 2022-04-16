@@ -16,7 +16,7 @@
 ## Core
 * Injeção de dependências
     * Processo de component scanning
-    * Criar beans programaticamente via `@Bean`
+    * Criar beans programaticamente através de classes anotadas com `@Configuration`e métodos anotados com `@Bean`
     * Usar valores padrões nas anotações `@Value`
     ```java
     @Value("${valor-booolean-properties:true}")
@@ -41,6 +41,7 @@
 * OpenAPI/Swagger2
 * Upload e mapeamento para acesso via HTTP
     * Integração com serviços externos (ex: AWS S3)
+* Utilitários 
 * HATEOAS
 
 ## Data JPA
@@ -137,13 +138,73 @@ PagingAndSortingRepository <|-- JpaRepository
     * Referências:
         * https://dzone.com/articles/flyway-vs-liquibase
         * https://medium.com/@ruxijitianu/database-version-control-liquibase-versus-flyway-9872d43ee5a4
-        
+
 ## Security
 * Hash de senhas (ex: bcrypt)
 * OpenID
 * OAuth2
 * JWT
 * Keycloak como servidor de autenticação/autorização https://www.keycloak.org/
+
+## Properties úteis
+
+Ver https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html#appendix.application-properties
+
+```
+#========= GENERAL CONFIG ==========
+debug=true
+spring.main.banner-mode=off
+
+# PEGANDO VALOR DO PROFILE CONFIGURADO NO pom.xml
+spring.profiles.active=@build.profile.id@
+spring.profiles.include=@build.profile.id@
+
+#========= WEB ==========
+server.port=8080
+server.context-path=/
+spring.servlet.multipart.max-file-size=5MB
+spring.servlet.multipart.max-request-size=10MB
+server.compression.enabled=true
+server.compression.min-response-size=50KB
+
+#========= DATABASE/JPA ==========
+spring.jpa.open-in-view=false
+spring.jpa.show-sql=true
+# Pode ser none/validate/create/create-drop/update - https://docs.jboss.org/hibernate/orm/5.2/userguide/html_single/Hibernate_User_Guide.html#configurations-hbmddl
+spring.jpa.properties.hibernate.ddl-auto=update
+
+#========== JSON ==========
+spring.jackson.serialization.INDENT_OUTPUT=true
+spring.jackson.deserialization.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT=true
+spring.jackson.deserialization.FAIL_ON_IGNORED_PROPERTIES=false
+spring.jackson.deserialization.FAIL_ON_UNKNOWN_PROPERTIES=false
+
+#========== OUTROS ==========
+# USO DE VARIÁVEIS DE AMBIENTE
+app.some-directory=${HOME}/directory
+
+# PROPRIEDADES COM FALLBACK
+app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
+```
+
+```xml
+<!-- trecho do pom.xml com declaração do profile -->
+<profles>
+   <profile>
+      <id>dev</id>
+      <activation>
+         <activeByDefault>true</activeByDefault>
+      </activation>
+      <properties>
+				<build.profile.id>dev</build.profile.id>
+      </properties>
+      ...
+</profiles>
+```
+
+## Links úteis
+
+Versões das dependências usadas: https://docs.spring.io/spring-boot/docs/current/reference/html/dependency-versions.html#appendix.dependency-versions
 
 ## "Receitas de bolo" para requisitos de alguns microservices
 * Autenticação/Autorização de acesso
@@ -157,6 +218,10 @@ PagingAndSortingRepository <|-- JpaRepository
     * Auditoria
     * n-factor authentication
         * Referência: https://blog.nec.com.br/autenticacao-de-usuario-um-mundo-alem-de-senhas
+    * Gerenciamento
+        * Ativação/Inativação de conta
+        * Permissões de acesso (Role/Authority)
+    * Notificações de eventos (criação, alteração, troca de senha, etc)
 * Disparo de tarefas automatizadas com Quartz
     * Cadastrar tarefas
     * Ativar/Desativar execução de dinamicamente
@@ -174,11 +239,11 @@ PagingAndSortingRepository <|-- JpaRepository
     * Integração com sistema de notificações
 * CRUD genérico
     * Listagem das informações
-        * Buscas textuais
+        * Buscas textuais (Solr, ElasticSearch/Opensearch, PostgreSQL full text search)
         * Filtros
             * Inclusão de Filtro
             * Remoção de Filtro
-            * Resultados facetados (refinamento dos filtros - Conceito do Solr)
+            * Resultados facetados (refinamento dos filtros - conceito do Solr)
         * Ordenação
         * Paginação/Quantidade de resultados limitados
     * Formulários de inclusão/alteração
