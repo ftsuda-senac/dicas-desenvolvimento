@@ -66,7 +66,7 @@ PagingAndSortingRepository <|-- JpaRepository
 ```
 
 * Formas de desenvolver lógica do repositório
-    * Query methods - uso convenções de nomenclatura dos métodos da interface. Dessa forma, o Spring Data irá criar automaticamente as queries de consulta ao repositório
+    * Query methods - uso de convenções de nomenclatura dos métodos da interface. Dessa forma, o Spring Data irá criar automaticamente as queries de consulta ao repositório
         * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.details
         * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#jpa.query-methods
         * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repository-query-keywords
@@ -104,7 +104,7 @@ PagingAndSortingRepository <|-- JpaRepository
         * Lembrar de usar **try-with-resources** ao usar recursos como `Connection`, `PreparedStatement` e `ResultSet`
 
 * Outras dicas e pontos de atenção
-    * Uo da configuração `open-in-view=false`
+    * Uo da configuração `open-in-view=false` (considerada má-prática, pois mantém uma conexão aberta com o banco de dados para cada acesso realizado à aplicação)
     * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakartar.persistence`/`javax.persistence`) e evitar usar anotações específicas do Hibernate.
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
         * TODO: Ver diferenças de comportamento com `javax.transaction.Transactional` do JEE
@@ -211,5 +211,5 @@ PagingAndSortingRepository <|-- JpaRepository
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
         * Arquivo properties externo (fora do diretório de deploy) X configurações BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
-        * Em containers, prever uso de volumes para manter estes arquivos
+        * Em containers, prever uso de volumes persistentes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback)
