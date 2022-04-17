@@ -6,7 +6,7 @@
     * https://www.infoq.com/br/articles/onion-architecture/
     * https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html
 * Anotações `@Component`, `@Controller`, `@Service`, `@Repository`
-    * Premissa de um `@Service` para quem desenvolve web: a funcionalidade será executada corretamente se for feita através de outra interface de operação, como por exemplo linha de comando (considerar entradas primárias tipo String, int, validações, mensagens de sucesso, erros, etc)?
+    * Premissa de um `@Service` para quem desenvolve web: a funcionalidade será executada corretamente se for feita através de outra interface de operação, como, por exemplo, linha de comando (considerar entradas primárias tipo String, int, validações, mensagens de sucesso, erros, etc)?
 * Configurações
     * application.properties
         * Acesso a variáveis de ambiente
@@ -15,7 +15,9 @@
 
 ## Core
 * Injeção de dependências
-    * Processo de component scanning
+    * Processo de component scanning - Por padrão, segue subpackages a partir do package onde a classe principal do projeto se encontra
+        * Caso haja classes fora do package principal, configurar o `scanBasePackages` em `@SpringBootApplication`
+    * Nas camadas principais (Service e Controller), sempre que possível usar a injeção através de um construtor único e/ou método `set` (caso seja opcional) ao invés de usar o `@Autowired` diretamente no atributo - Facilita a escrita de testes (unitários/integração).
     * Criar beans programaticamente através de classes anotadas com `@Configuration`e métodos anotados com `@Bean`
     * Usar valores padrões nas anotações `@Value`
     ```java
@@ -37,12 +39,13 @@
     * `@SessionScope` (cuidado ao usar em aplicações REST)
     * `@ApplicationScope`
     * https://www.baeldung.com/spring-bean-scopes
-* i18n
+* i18n para textos estáticos/validações
+    * Uso de i18n em dados gerenciados requer atenção na modelagem para suportá-lo
 * OpenAPI/Swagger2
 * Upload e mapeamento para acesso via HTTP
     * Integração com serviços externos (ex: AWS S3)
 * Utilitários
-    * Conversor de erros do JEE Validator para Spring Validator - Útil quando validação é feita no `@Service` mas precisa apresentar erros via `@Controller`
+    * Conversor de erros do Bean Validation do JEE para Spring Validator - Útil quando validação é feita no `@Service` mas precisa apresentar erros via `@Controller`
     ```java
     import java.util.Set;
     import javax.validation.ConstraintViolation;
@@ -148,6 +151,7 @@ PagingAndSortingRepository <|-- JpaRepository
         * Criação de índices.
         * Usar mesma PK em relações do tipo one-to-one
             * Sempre que possível, associações @OneToOne devem ser feitas usando o ID da entidade principal como PK da entidade secundária (usar @JoinColumn + @MapsId OU @PrimaryKeyJoinColumn).
+        * Caso seja necessário abrir uma associação many-to-many em `@OneToMany`/`@ManyToOne` para adicionar campos extras, usar o `@EmbeddedId` para evitar gerar IDs adicionais. Lembrar que a classe `@Embedded` representa o ID composto da tabela de associação e deve ser `Serializable` e implementar os métodos `hashCode()` e `equals()`.
         * Identificadores internos e externos (UUID).
     * Integração com Project Lombok
         * Evitar usar `@Data`, pois ele transforma a classe em `Serializable` e reimplementa o `equals`, podendo ocasionar incompatibilidades com o modelo de funcionamento do JPA
@@ -303,6 +307,6 @@ Se necessário, trocar "current" pela versão desejada
 * Spring Data REST
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
-        * Arquivo properties externo (fora do diretório de deploy) X configurações BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
+        * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
         * Em containers, prever uso de volumes persistentes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback)
