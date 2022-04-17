@@ -72,7 +72,7 @@ PagingAndSortingRepository <|-- JpaRepository
         * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#jpa.query-methods
         * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repository-query-keywords
     * Uso do `@Query` com JPQL OU SQL nativo (dependente do Banco de dados usado)
-        * Envolve definir um método qualquer no repositório e incluir a anotação `@Query` (importado de `org.springframework.data.jpa.repository.Query`) com a JPQL de consulta e sempre que possivel usando parametros nomeados com @Param (importado de `org.springframework.data.repository.query.Param`) ou query nativa
+        * Envolve definir um método qualquer no repositório e incluir a anotação `@Query` (importado de `org.springframework.data.jpa.repository.Query`) com a JPQL de consulta e sempre que possivel usando parametros nomeados com `@Param` (importado de `org.springframework.data.repository.query.Param`) ou query nativa
          ```java
          // JPQL
          @Query("SELECT p FROM Person p WHERE p.firstName = :nameParam")
@@ -105,17 +105,15 @@ PagingAndSortingRepository <|-- JpaRepository
         * Lembrar de usar **try-with-resources** ao usar recursos como `Connection`, `PreparedStatement` e `ResultSet`
 
 * Outras dicas e pontos de atenção
-    * Uo da configuração `open-in-view=false` (considerada má-prática, pois mantém uma conexão aberta com o banco de dados para cada acesso realizado à aplicação)
-    * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakartar.persistence`/`javax.persistence`) e evitar usar anotações específicas do Hibernate.
+    * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/`javax.persistence`) e evitar usar anotações específicas do Hibernate.
+    * Uso da configuração `spring.jpa.open-in-view=false` - considerada má-prática, pois mantém uma conexão aberta com o banco de dados para cada acesso realizado à aplicação. Alternativas indicadas abaixo
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
         * TODO: Ver diferenças de comportamento com `javax.transaction.Transactional` do JEE
             * https://www.baeldung.com/spring-vs-jta-transactional
             * https://stackoverflow.com/a/62702146
-    * Uso do Hibernate Envers para auditoria
-        * Criar schema a parte no Banco de dados
     * Mapeamento das entidades com annotations do JPA
         * Fetchs EAGER, LAZY e como configurar fetch nas consultas usando Entity Graph
-            * Atentar ao uso do "fetch EAGER" nas anotações de relacionamento (@OneToOne, @OneToMany/@ManyToOne e @ManyToMany). Se usado incorretamente, pode ocasionar problema sérios de desempenho. Sempre dar preferência ao uso do "fetch LAZY" e quando necessário fazer o fetch manualmente usando JOIN FETCH do JPQL ou usar `@EntityGraph` ou `@NamedEntityGraph`.
+            * Atentar ao uso do "fetch EAGER" nas anotações de relacionamento (`@OneToOne`, `@OneToMany`/`@ManyToOne` e `@ManyToMany`). Se usado incorretamente, pode ocasionar problema sérios de desempenho. Sempre dar preferência ao uso do "fetch LAZY" e quando necessário fazer o fetch manualmente usando JOIN FETCH do JPQL ou usar `@EntityGraph` ou `@NamedEntityGraph`.
         * Uso do Cascade e orphanRemoval
         * IDs compostos para relacionamentos many-to-many "manuais" + campos extras na relação
         * Uso dos Listeners de eventos (ex: `@PostLoad`, `@PrePersist`, `@PostPersist`, etc)
