@@ -41,7 +41,33 @@
 * OpenAPI/Swagger2
 * Upload e mapeamento para acesso via HTTP
     * Integração com serviços externos (ex: AWS S3)
-* Utilitários 
+* Utilitários
+    * Conversor de erros do JEE Validator para Spring Validator - Útil quando validação é feita no `@Service` mas precisa apresentar erros via `@Controller`
+    ```java
+    import java.util.Set;
+    import javax.validation.ConstraintViolation;
+    import javax.validation.Validation;
+    import org.springframework.validation.Errors;
+    import org.springframework.validation.beanvalidation.SpringValidatorAdapter;
+
+    // https://stackoverflow.com/a/66069937
+    public class ConstraintViolationsToErrorsConverter extends SpringValidatorAdapter {
+    
+        public ConstraintViolationsToErrorsConverter() {
+            super(Validation.buildDefaultValidatorFactory().getValidator()); // Validator is not actually used
+        }
+
+        @SuppressWarnings({"rawtypes", "unchecked"})
+        public void addConstraintViolations(Set<? super ConstraintViolation<?>> violations, Errors errors) {
+            // Using raw type since processConstraintViolations specifically expects ConstraintViolation<Object>
+            super.processConstraintViolations((Set) violations, errors);
+        }
+    }
+    ```
+    * `org.springframework.web.context.request.RequestContextHolder` [javadoc](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/web/context/request/RequestContextHolder.html)
+        * `org.springframework.web.context.request.ServletRequestAttributes` [javadoc](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/web/context/request/ServletRequestAttributes.html)
+    * `org.springframework.context.i18n.LocaleContextHolder` [javadoc](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/context/i18n/LocaleContextHolder.html)
+    * `org.springframework.security.core.context.SecurityContextHolder` [javadoc](https://docs.spring.io/spring-security/site/docs/current/api/org/springframework/security/core/context/SecurityContextHolder.html)
 * HATEOAS
 
 ## Data JPA
