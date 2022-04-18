@@ -96,7 +96,7 @@ BigDecimal soma = valor1.add(valor2); // Valor de soma deve ser 4.00
 import java.util.Date;
 import java.sql.Date;
 ```
-* Para Java 8+, evitar usar `java.util.Date` ou `java.util.Calendar` para representar datas e horários. Usar classes do pacote `java.time.*`. Por este mesmo motivo, evitar usar o `joda.time`.
+* Para Java 8+, evitar usar `java.util.Date` ou `java.util.Calendar` para representar datas e horários. Usar classes do pacote `java.time.*`. Por este mesmo motivo, evitar usar o `joda.time`. Mais detalhes em https://stackoverflow.com/a/32443004
 * Em qualquer código-fonte, evitar usar acentuação e caracteres especiais, tanto dentro do código quanto nos nomes dos arquivos/diretórios.
 * Componentizar a aplicação
     * Evitar cópia de trecho de códigos iguais entre as diferentes classes do projeto
