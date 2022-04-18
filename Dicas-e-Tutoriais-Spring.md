@@ -142,7 +142,11 @@ PagingAndSortingRepository <|-- JpaRepository
             * https://stackoverflow.com/a/62702146
     * Mapeamento das entidades com annotations do JPA
         * Fetchs EAGER, LAZY e como configurar fetch nas consultas usando Entity Graph
+            * Por padrão, são adotados as seguintes configurações:
+                * `*toOne` - EAGER
+                * `*toMany`- LAZY
             * Atentar ao uso do "fetch EAGER" nas anotações de relacionamento (`@OneToOne`, `@OneToMany`/`@ManyToOne` e `@ManyToMany`). Se usado incorretamente, pode ocasionar problema sérios de desempenho. Sempre dar preferência ao uso do "fetch LAZY" e quando necessário fazer o fetch manualmente usando JOIN FETCH do JPQL ou usar `@EntityGraph` ou `@NamedEntityGraph`.
+            * Nos relacionamentos `*toMany`, normalmente usar coleção do tipo `Set` ao invés do `List` para evitar erros to tipo `MultipleBagFetchException` - porém causa problema do produto cartesiano e precisa analisar caso a caso [ref1](https://stackoverflow.com/questions/4334970/hibernate-throws-multiplebagfetchexception-cannot-simultaneously-fetch-multipl), [ref2](https://www.baeldung.com/java-hibernate-multiplebagfetchexception) e [ref3](https://vladmihalcea.com/hibernate-multiplebagfetchexception/)
         * Uso do Cascade e orphanRemoval
         * IDs compostos para relacionamentos many-to-many "manuais" + campos extras na relação
         * Uso dos Listeners de eventos (ex: `@PostLoad`, `@PrePersist`, `@PostPersist`, etc)
