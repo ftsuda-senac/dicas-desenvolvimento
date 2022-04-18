@@ -18,7 +18,19 @@ String str = "Abc";
 "abc".equals(str); // resultado FALSE - A maiúsculo diferente de minúsculo
 "abc".equalsIgnoreCase(str); // resultado TRUE
 ```
-
+* Clareza do código - comparar exemplos abaixo
+```java
+function boolean compararInadequado(int valor1, int valor2) {
+    if (valor1 > valor2) {
+        return true;
+    } else {
+        return false;
+    }
+}
+function boolean compararAdequado(int valor1, int valor2) {
+    return (valor1 > valor2);
+}
+```
 * Não usar float ou double para representar valores com casas decimais bem definidas (ex: Preços) - Neste caso, usar `java.math.BigDecimal`
 ```java
 BigDecimal valor1 = new BigDecimal("2.50");
