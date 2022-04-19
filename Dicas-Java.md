@@ -2,10 +2,10 @@
 
 ## Links
 
-* https://docs.oracle.com/javase/tutorial/
-    * https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html (básico/inicial)
-* https://www.javatpoint.com/java-tutorial
-* https://www.tutorialspoint.com/java/index.htm
+* <a href="https://docs.oracle.com/javase/tutorial/" target="_blank" rel="nofollow noopener noreferrer">https://docs.oracle.com/javase/tutorial/</a>
+    * <a href="https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html" target="_blank" rel="nofollow noopener noreferrer">https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html</a> (básico/inicial)
+* <a href="https://www.javatpoint.com/java-tutorial" target="_blank" rel="nofollow noopener noreferrer">https://www.javatpoint.com/java-tutorial</a>
+* <a href="https://www.tutorialspoint.com/java/index.htm" target="_blank" rel="nofollow noopener noreferrer">https://www.tutorialspoint.com/java/index.htm</a>
 
 ## Convenções para escrita do código
 
@@ -111,22 +111,22 @@ import java.sql.Date;
 
 ## Maven
 
-* http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html#Built-in_Lifecycle_Bindings
-* https://medium.com/@yetanothersoftwareengineer/maven-lifecycle-phases-plugins-and-goals-25d8e33fa22
+* <a href="http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html#Built-in_Lifecycle_Bindings" target="_blank" rel="nofollow noopener noreferrer">http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html#Built-in_Lifecycle_Bindings</a>
+* <a href="https://medium.com/@yetanothersoftwareengineer/maven-lifecycle-phases-plugins-and-goals-25d8e33fa22" target="_blank" rel="nofollow noopener noreferrer">https://medium.com/@yetanothersoftwareengineer/maven-lifecycle-phases-plugins-and-goals-25d8e33fa22</a>
 
 ## Java moderno (8+)
 
 Alguns links para ver:
 
-* https://twitter.com/Abh1navv/status/1512047289388347395
+* <a href="https://twitter.com/Abh1navv/status/1512047289388347395" target="_blank" rel="nofollow noopener noreferrer">https://twitter.com/Abh1navv/status/1512047289388347395</a>
 
 
 ## Quotes
 
 > "Programs must be written for people to read, and only incidentally for machines to execute."
 > 
-> &mdash; <cite>Unknown</cite> [tweet](https://twitter.com/MakadiaHarsh/status/1512821254318870537)
+> &mdash; <cite>Unknown</cite> <a href="https://twitter.com/MakadiaHarsh/status/1512821254318870537" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
 
 > "Programming is not about typing, it's about thinking."
 > 
->  &mdash; <cite>Rich Hickey</cite> [tweet](https://twitter.com/CodeWisdom/status/1511684402039959555)
+>  &mdash; <cite>Rich Hickey</cite> <a href="https://twitter.com/CodeWisdom/status/1511684402039959555" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
