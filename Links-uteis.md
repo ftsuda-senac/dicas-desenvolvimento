@@ -22,3 +22,4 @@
 * Random user generator: https://randomuser.me/
 * Fake face API: https://hankhank10.github.io/fakeface/
 * Gerador de dados para testes (documentos): https://www.4devs.com.br/gerador_de_pessoas
+* Fotos e vídeos: https://www.pexels.com/
