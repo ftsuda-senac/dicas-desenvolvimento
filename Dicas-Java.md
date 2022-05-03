@@ -53,6 +53,9 @@
 
 ## Dicas diversas
 
+* Entender uso do bloco try-catch-finally para desenvolvimento de código defensivo
+    * try-with-resources (Java 7+)
+    * Diferenças Checked exceptions X Unchecked exceptions (RuntimeException)
 * Evitar criar classes dentro do pacote "default"
 * Ao comparar String, colocar o literal como responsável pela chamada à comparação, para evitar NullPointerException.
 * Não comparar Strings usando `==`. Em vez disso, deve-usar os métodos `equals()` ou `equalsIgnoreCase()`
@@ -120,6 +123,10 @@ Alguns links para ver:
 
 * <a href="https://twitter.com/Abh1navv/status/1512047289388347395" target="_blank" rel="nofollow noopener noreferrer">https://twitter.com/Abh1navv/status/1512047289388347395</a>
 
+## Exemplos úteis Java
+* Calcular idade Java 8+: https://gist.github.com/ftsuda-senac/14279241af919ecb847b24f5fc8352be
+* Singleton: https://gist.github.com/ftsuda-senac/e9f1e7b89dfd43d01d0df4bebc2e4072
+* Classe utilitária (métodos static): TODO
 
 ## Quotes
 
