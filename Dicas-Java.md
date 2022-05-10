@@ -117,7 +117,7 @@ import java.sql.Date;
 * <a href="http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html#Built-in_Lifecycle_Bindings" target="_blank" rel="nofollow noopener noreferrer">http://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html#Built-in_Lifecycle_Bindings</a>
 * <a href="https://medium.com/@yetanothersoftwareengineer/maven-lifecycle-phases-plugins-and-goals-25d8e33fa22" target="_blank" rel="nofollow noopener noreferrer">https://medium.com/@yetanothersoftwareengineer/maven-lifecycle-phases-plugins-and-goals-25d8e33fa22</a>
 
-Estrutura mínima de um projeto Maven (gerado a partir do comando `tree /F /A`)
+Estrutura mínima de um projeto Maven (gerado a partir do comando `tree /F /A` no PowerShell do Windows 11)
 
 ```
 projeto-maven-java
