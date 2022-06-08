@@ -4,13 +4,22 @@ TODO: Desenvolver
 
 ## Windows
 
+* Conceito de arquivos
+    * Extensões dos arquivos
 * Explorador de arquivos
 * Menu iniciar
 * Diretórios do Windows
     * Arquivos de Programas
     * Usuários
 * Acesso ao terminal (linha de comando)
+    * Listar arquivos de um diretório
+    * Navegar entre diretórios
+    * `ipconfig`
+* Configurar variáveis de ambiente
 
 ## Netbeans
 
+* Como aumentar fonte do editor de código
 * Como aumentar fonte do console
+* Acessar funcionalidades do Git
+* Identificar erros ao executar os programas
