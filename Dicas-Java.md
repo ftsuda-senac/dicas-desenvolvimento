@@ -85,7 +85,7 @@ BigDecimal valor1 = new BigDecimal("2.50");
 BigDecimal valor2 = new BigDecimal("1.50");
 BigDecimal soma = valor1.add(valor2); // Valor de soma deve ser 4.00
 ```
-* Não confundir tipos de dados primitivos com as classes Wrapper (notar que o Java converte automaticamente os valores durante o runtime - conceito do autoboxing/unboxing)
+* Não confundir tipos de dados primitivos com as classes Wrapper (notar que o Java converte automaticamente os valores durante o runtime - conceito do unboxing/autoboxing)
     * Exemplos de classes Wrapper usuais:
         * `char` -> `Character`
         * `int` -> `Integer`
@@ -147,6 +147,155 @@ Alguns links para ver:
 * Calcular idade Java 8+: https://gist.github.com/ftsuda-senac/14279241af919ecb847b24f5fc8352be
 * Singleton: https://gist.github.com/ftsuda-senac/e9f1e7b89dfd43d01d0df4bebc2e4072
 * Classe utilitária (métodos static): TODO
+
+## Alguns problemas pegos nas correções do PI1 - 2022-1
+
+Considerando somente o uso de recursos básicos da linguagem e evitando uso de componentes externos.
+
+* Estrutura de um arquivo/classe Java - O nome do arquivo (sem extensão .java) e o nome da classe devem ser **exatamente iguais** (considerando letras maiúsculas e minúsculas)
+
+    Exemplo **ERRADO**:
+    ```java
+    // Arquivo classeerradaV3.java
+    
+    public class ClasseErrada { ... } // Notar que o C e o E são maiúsculas no códgo e minúsculas no nome do arquivo e tem o "v3" no nome do arquivo
+    ```
+    
+    Exemplos corretos:
+    ```java
+    // Arquivo ClasseCorreta.java
+    
+    public class ClasseCorreta { ... }
+    
+    
+    // Arquivo ClasseCorretaV3.java
+    
+    public class ClasseCorretaV3 { ... }
+    ```
+    
+* Uso redundante do `if/else` e `switch` - Ambos tem o mesmo objetivo
+
+    Exemplo **INADEQUADO**:
+    ```java
+    Scanner entrada = new Scanner(System.in);
+    int opcao = entrada.nextInt();
+    
+    switch (opcao) {
+        case 1:
+            if (opcao == 1) { /* Faz algo */ }
+            break;
+        case 2:
+            if (opcao == 2) { /* Faz outra coisa  */ }
+            break;
+    }
+    ```
+    
+    Exemplos mais adequados:
+    ```java
+    Scanner entrada = new Scanner(System.in);
+    int opcao = entrada.nextInt();
+    
+    switch (opcao) {
+        case 1:
+            // Faz algo
+            break;
+        case 2:
+            // Faz outra coisa
+            break;
+    }
+    ```
+    
+    **OU**
+    
+    ```java
+    Scanner entrada = new Scanner(System.in);
+    int opcao = entrada.nextInt();
+    
+    if (opcao == 1) { /* Faz algo */ }
+    else if (opcao == 2) { /* Faz outra coisa */ }
+    ```
+ 
+* Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe (OBS: passa a ser má prática quando usar conceitos de orientação a objetos)
+
+   ```java
+   // Arquivo Jogo.java
+   
+   public class Jogo {
+
+       static int vidasJogador = 5;
+
+       static void batalha() {
+           vidasJogador--;
+       }
+
+       public static void main(String[] args) {
+           batalha();
+           System.out.println("Vidas: " + vidasJogador); // 4
+       }
+   }
+   ```
+* Analisar o código para identificar repetições de código e transformar (refatorar) para deixar na forma de funções.
+
+    Exemplo **INADEQUADO**
+    ```java
+    import java.util.concurrent.TimeUnit;
+    
+    public class Jogo {
+    
+        public static void main(String[] args) {
+            System.out.println("Mensagem");
+            TimeUnit.SECONDS.sleep(1);
+            
+            System.out.println("Outra mensagem");
+            TimeUnit.SECONDS.sleep(2);
+        }
+    }
+    ```
+    
+    Exemplo mais adequado
+    ```java
+    import java.util.concurrent.TimeUnit;
+    
+    public class Jogo {
+    
+        // Notar que a "complexidade" de fazer o System.out.println e esperar fica
+        // isolada dentro da função, deixando o código principal mais legível
+        static mostrarMensagemComEspera(String msg, long tempoEspera) {
+            System.out.println(msg);
+            TimeUnit.SECONDS.sleep(tempoEspera);
+        }
+    
+        public static void main(String[] args) {
+            mostrarMensagemComEspera("Mensagem", 1);
+            mostrarMensagemComEspera("Outra mensagem", 2);
+        }
+    }
+    ```
+* Evitar declarar muitas variáveis e atribuir valores para eles em uma mesma linha, pois dificulta leitura. Se possível colocar somente UMA declaração por linha
+
+    Exemplo **INADEQUADO 1**
+    ```java
+    int x, y, z, cachorro, gato, i, j, xpto = 0;
+    x = y = z = 2;
+    cachorro = gato = 20;
+    xpto = 100;
+    ```
+    
+
+    Exemplo **INADEQUADO 2**
+    ```java
+    int x = 2, y = 2, z = 2, cachorro = 20, gato = 20, i = 0, j = 0, xpto = 100;
+    ```
+    
+    Exemplo mais adequado
+    ```java
+    int x = 2;
+    int y = 2;
+    int z = 2;
+    int i, j = 0; // Se fizerem parte de um mesmo "contexto" de informação, é aceitável dessa forma.
+    int cachorro, gato = 20;
+    int xpto = 100;
+    ```
 
 ## Quotes
 
