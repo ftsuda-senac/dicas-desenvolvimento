@@ -244,10 +244,10 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     
         public static void main(String[] args) {
             System.out.println("Mensagem");
-            TimeUnit.SECONDS.sleep(1);
+            TimeUnit.SECONDS.sleep(1); // OU Thread.sleep(1000);
             
             System.out.println("Outra mensagem");
-            TimeUnit.SECONDS.sleep(2);
+            TimeUnit.SECONDS.sleep(2); // OU Thread.sleep(2000);
         }
     }
     ```
@@ -262,7 +262,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
         // isolada dentro da função, deixando o código principal mais legível
         static mostrarMensagemComEspera(String msg, long tempoEspera) {
             System.out.println(msg);
-            TimeUnit.SECONDS.sleep(tempoEspera);
+            TimeUnit.SECONDS.sleep(tempoEspera); // OU Thread.sleep(1000 * tempoEspera);
         }
     
         public static void main(String[] args) {
@@ -271,6 +271,67 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
         }
     }
     ```
+    
+    Outro exemplo **INADEQUADO**
+    ```java
+    public class Jogo {
+
+        static void mostrarStatusFulanoECachorro(int hpFulano, int hpCachorro) {
+            System.out.println("HP Fulano: " + hpFulano);
+            System.out.println("HP Cachorro: " + hpCachorro);
+        }
+        
+        static void mostrarStatusFulanoEGato(int hpFulano, int hpGato) {
+            System.out.println("HP Fulano: " + hpFulano);
+            System.out.println("HP Gato: " + hpGato);
+        }
+        
+        static void mostrarStatusCiclanoECachorro(int hpCiclano, int hpCachorro) {
+            System.out.println("HP Ciclano: " + hpCiclano);
+            System.out.println("HP Cachorro: " + hpCachorro);
+        }
+        
+        static void mostrarStatusCiclanoEGato(int hpCiclano, int hpGato) {
+            System.out.println("HP Ciclano: " + hpCiclano);
+            System.out.println("HP Gato: " + hpGato);
+        }
+
+        // Notar que as 4 funções acima fazem a mesma lógica: mostrar o HP de uma pessoa e o HP de um animal
+        // Ideal é deixar mais genérico/abstrato
+
+        public static void main(String[] args) {
+            int hpFulano, hpCiclano = 500;
+            int hpCachorro, hpGato = 100;
+            mostrarStatusFulanoECachorro(hpFulano, hpCachorro);
+            mostrarStatusFulanoEGato(hpFulano, hpGato);
+            mostrarStatusCiclanoECachorro(hpCiclano, hpCachorro);
+            mostrarStatusCiclanoEGato(hpCiclano, hpGato);
+        }
+    }
+    ```
+    
+    Exemplo mais adequado
+    ```java
+    public class Jogo {
+
+        // Notar que a função foi alterada para receber de qual pessoa e qual animal os valores de HP se referem
+        // Dessa forma, reaproveita a mesma lógica independente de "Fulano/Ciclano" ou "cachorro/gato"
+        static void mostrarStatusPessoaEAnimal(String pessoa, int hpPessoa, String animal, int hpAnimal) {
+            System.out.println("HP " + pessoa + ": " + hpPessoa);
+            System.out.println("HP " + animal + ": " + hpAnimal);
+        }
+
+        public static void main(String[] args) {
+            int hpFulano, hpCiclano = 500;
+            int hpCachorro, hpGato = 100;
+            mostrarStatusPessoaEAnimal("Fulano", hpFulano, "Cachorro", hpCachorro);
+            mostrarStatusPessoaEAnimal("Fulano", hpFulano, "Gato", hpGato);
+            mostrarStatusPessoaEAnimal("Ciclano", hpCiclano, "Cachorro",  hpCachorro);
+            mostrarStatusPessoaEAnimal("Ciclano", hpCiclano, "Gato", hpGato);
+        }
+    }
+    ```
+    
 * Evitar declarar muitas variáveis e atribuir valores para eles em uma mesma linha, pois dificulta leitura. Se possível colocar somente UMA declaração por linha
 
     Exemplo **INADEQUADO 1**
