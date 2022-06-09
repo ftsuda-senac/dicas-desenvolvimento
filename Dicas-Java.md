@@ -152,7 +152,7 @@ Alguns links para ver:
 
 Considerando somente o uso de recursos básicos da linguagem e evitando uso de componentes externos.
 
-* Estrutura de um arquivo/classe Java - O nome do arquivo (sem extensão .java) e o nome da classe devem ser **exatamente iguais** (considerando letras maiúsculas e minúsculas)
+1. Estrutura de um arquivo/classe Java - O nome do arquivo (sem extensão .java) e o nome da classe devem ser **exatamente iguais** (considerando letras maiúsculas e minúsculas)
 
     Exemplo **ERRADO**:
     ```java
@@ -173,7 +173,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     public class ClasseCorretaV3 { ... }
     ```
     
-* Uso redundante do `if/else` e `switch` - Ambos tem o mesmo objetivo
+1. Uso redundante do `if/else` e `switch` - Ambos tem o mesmo objetivo
 
     Exemplo **INADEQUADO**:
     ```java
@@ -214,8 +214,76 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     if (opcao == 1) { /* Faz algo */ }
     else if (opcao == 2) { /* Faz outra coisa */ }
     ```
- 
-* Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe (OBS: passa a ser má prática quando usar conceitos de orientação a objetos)
+1. Se o switch tiver que verificar strings que dependem de letras maiúsculas e minúsculas, fazer primeiro uma conversão para diminuir a quantidade de cases a serem tratados. É recomendável sanitizar o valor, para remover espaços em branco e acentuações também.
+
+    Exemplo **INADEQUADO**
+    ```java
+    String valor = "LuA";
+    
+    switch (valor) {
+        case "lua":
+        case "LUA":
+        case "Lua":
+        case "lUa":
+        case "luA":
+        case "LUa":
+        // case "LuA": // Notar que propositalmente a "LuA" igual ao valor acima foi comentado para não ser encontrado
+        case "lUA":
+            System.out.println("Digitou \"lua\"");
+            break;
+        default:
+            System.out.println("Valor inválido");
+    }
+    ```
+    
+    Exemplo mais adequado
+    ```java
+    String valor = "Lua";
+    valor = valor.toLowerCase(); // <-- Converte as letras para minúsculas
+    
+    switch (valor) {
+        case "lua": // Aqui sabemos que o valor vai estar com todas letras minúsculas
+            System.out.println("Digitou \"lua\"");
+            break;
+        default:
+            System.out.println("Valor inválido");
+    }
+    ```
+    
+    Exemplo com sanitização (precisa importar `java.text.Normalizer`)
+    ```java
+    import java.text.Normalizer;
+
+    public class ExemploSanitizacao {
+
+        static String sanitizarString(String original) {
+            // 1) Remove espaços em branco no começo e final da string
+            original = original.trim(); 
+
+            // 2) Converte as letras para minúsculas
+            original = original.toLowerCase(); 
+
+            // 3) Normaliza os caracteres acentuados e converte para versão sem acento
+            original = Normalizer
+                    .normalize(original, Normalizer.Form.NFD)
+                    .replaceAll("[\\p{InCombiningDiacriticalMarks}]", ""); // Ou "[^\\p{ASCII}]" 
+            return original;
+        }
+
+        public static void main(String[] args) {
+            String valor = sanitizarString("  ÁgÜã   ");
+            switch (valor) {
+                case "agua": // Aqui sabemos que o valor vai estar com todas letras minúsculas, sem espaços em branco no começo e final e sem acentos
+                    System.out.println("Digitou \"água\"");
+                    break;
+                default:
+                    System.out.println("Valor inválido");
+            }
+        }
+
+    }
+    ```
+1. Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe (OBS: passa a ser má prática quando usar conceitos de orientação a objetos)
 
    ```java
    // Arquivo Jogo.java
@@ -234,7 +302,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
        }
    }
    ```
-* Analisar o código para identificar repetições de código e transformar (refatorar) para deixar na forma de funções.
+1. Analisar o código para identificar repetições de código e transformar (refatorar) para deixar na forma de funções.
 
     Exemplo **INADEQUADO**
     ```java
@@ -332,7 +400,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     }
     ```
     
-* Evitar declarar muitas variáveis e atribuir valores para eles em uma mesma linha, pois dificulta leitura. Se possível colocar somente UMA declaração por linha
+1. Evitar declarar muitas variáveis e atribuir valores para eles em uma mesma linha, pois dificulta leitura. Se possível colocar somente UMA declaração por linha
 
     Exemplo **INADEQUADO 1**
     ```java
@@ -357,6 +425,433 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     int cachorro, gato = 20;
     int xpto = 100;
     ```
+    
+1. Uso de arrays (vetores e matrizes) para organizar as informações usadas no jogo SEM usar orientação a objetos.
+
+    <details>
+        <summary>Exemplo <strong>INADEQUADO V1</strong></summary>
+    
+    ```java
+    import java.util.Random;
+    import java.util.Scanner;
+
+    /*
+    Considerações importantes deste exemplo:
+    - Contagem dos poderes e inimigos começa em 0 para facilitar entendimento
+    - Jogador tem 4 poderes disponíveis (numerados de 0 a 3)
+    - Existem 3 inimigos, com poderes diferentes (inimigos numerados de 0 a 2, poderes de 0 a 1)
+    - O terceiro inimigo é o chefe.
+    - Todos os poderes são fixos, então as variáveis correspondentes estão declaradas como globais
+    - Cada variável representa uma combinação do jogador ou inimigo com os respectivos poderes
+     */
+    public class ExemploInicialInadequadoV1 {
+
+        static int jogadorPoder0 = 100;
+        static int jogadorPoder1 = 200;
+        static int jogadorPoder2 = 300;
+        static int jogadorPoder3 = 400;
+
+        static int inimigo0Poder0 = 20;
+        static int inimigo0Poder1 = 30;
+
+        static int inimigo1Poder0 = 30;
+        static int inimigo1Poder1 = 50;
+
+        static int chefePoder0 = 100;
+        static int chefePoder1 = 200;
+
+        public static void main(String[] args) {
+            Scanner entrada = new Scanner(System.in);
+
+            System.out.println("Escolha um poder de 0 a 3 para usar:");
+            int poderEscolhido = entrada.nextInt(); // valores de 0 a 3 são válidos
+
+            Random random = new Random();
+            int qualInimigo = random.nextInt(3); // Random pode gerar 0, 1 ou 2 (chefe);
+            int poderInimigo = random.nextInt(2); // Random pode gerar 0 ou 1.
+
+            switch (poderEscolhido) {
+                case 0:
+                    System.out.println("Você causou " + jogadorPoder0 + " de dano usando poder 0.");
+                    switch (qualInimigo) { // <-- Notar que este switch está se repetindos nos demais cases do poder do jogador - Será convertido em função (ExemploInicialInadequadoV2)
+                        case 0:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 1:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 2:
+                            if (poderInimigo == 0) {
+                                System.out.println("Chefe causou " + chefePoder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Chefe causou " + chefePoder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                    }
+                    break;
+                case 1:
+                    System.out.println("Você causou " + jogadorPoder1 + " de dano usando poder 1.");
+                    switch (qualInimigo) {
+                        case 0:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 1:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 2:
+                            if (poderInimigo == 0) {
+                                System.out.println("Chefe causou " + chefePoder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Chefe causou " + chefePoder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                    }
+                    break;
+                case 2:
+                    System.out.println("Você causou " + jogadorPoder2 + " de dano usando poder 2.");
+                    switch (qualInimigo) {
+                        case 0:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 1:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 2:
+                            if (poderInimigo == 0) {
+                                System.out.println("Chefe causou " + chefePoder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Chefe causou " + chefePoder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                    }
+                    break;
+                case 3:
+                    System.out.println("Você causou " + jogadorPoder3 + " de dano usando poder 3.");
+                    switch (qualInimigo) {
+                        case 0:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 0 causou " + inimigo0Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 1:
+                            if (poderInimigo == 0) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Inimigo 1 causou " + inimigo1Poder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                        case 2:
+                            if (poderInimigo == 0) {
+                                System.out.println("Chefe causou " + chefePoder0 + " de dano usando poder 0.");
+                            } else if (poderInimigo == 1) {
+                                System.out.println("Chefe causou " + chefePoder1 + " de dano usando poder 1.");
+                            }
+                            break;
+                    }
+                    break;
+            }
+        }
+
+    }
+    ```
+    </details>
+
+    <details>
+        <summary>Exemplo <strong>INADEQUADO V2</strong></summary>
+
+    ```java
+    import java.util.Random;
+    import java.util.Scanner;
+
+    /*
+    Conversão do switch do inimigo repetido em uma função
+    */
+    public class ExemploInicialInadequadoV2 {
+
+        static int jogadorPoder0 = 100;
+        static int jogadorPoder1 = 200;
+        static int jogadorPoder2 = 300;
+        static int jogadorPoder3 = 400;
+
+        static int inimigo0Poder0 = 20;
+        static int inimigo0Poder1 = 30;
+
+        static int inimigo1Poder0 = 40;
+        static int inimigo1Poder1 = 50;
+
+        static int chefePoder0 = 100;
+        static int chefePoder1 = 200;
+
+        static void mostrarAtaqueInimigo(int qualInimigo, int poderInimigo) {
+            switch (qualInimigo) {
+                case 0:
+                    if (poderInimigo == 0) {
+                        System.out.println("Inimigo 0 causou " + inimigo0Poder0 + " de dano usando poder 0.");
+                    } else if (poderInimigo == 1) {
+                        System.out.println("Inimigo 0 causou " + inimigo0Poder1 + " de dano usando poder 1.");
+                    }
+                    break;
+                case 1:
+                    if (poderInimigo == 0) {
+                        System.out.println("Inimigo 1 causou " + inimigo1Poder0 + " de dano usando poder 0.");
+                    } else if (poderInimigo == 1) {
+                        System.out.println("Inimigo 1 causou " + inimigo1Poder1 + " de dano usando poder 1.");
+                    }
+                    break;
+                case 2:
+                    if (poderInimigo == 0) {
+                        System.out.println("Chefe causou " + chefePoder0 + " de dano usando poder 0.");
+                    } else if (poderInimigo == 1) {
+                        System.out.println("Chefe causou " + chefePoder1 + " de dano usando poder 1.");
+                    }
+                    break;
+            }
+        }
+
+        public static void main(String[] args) {
+            Scanner entrada = new Scanner(System.in);
+
+            System.out.println("Escolha um poder de 0 a 3 para usar:");
+            int poderEscolhido = entrada.nextInt(); // valores de 0 a 3 são válidos
+
+            Random random = new Random();
+            int qualInimigo = random.nextInt(3); // Random pode gerar 0, 1 ou 2 (chefe);
+            int poderInimigo = random.nextInt(2); // Random pode gerar 0 ou 1.
+
+            switch (poderEscolhido) {
+                case 0:
+                    System.out.println("Você causou " + jogadorPoder0 + " de dano usando poder 0.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+                case 1:
+                    System.out.println("Você causou " + jogadorPoder1 + " de dano usando poder 1.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+                case 2:
+                    System.out.println("Você causou " + jogadorPoder2 + " de dano usando poder 2.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+                case 3:
+                    System.out.println("Você causou " + jogadorPoder3 + " de dano usando poder 3.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+            }
+        }
+
+    }
+    ```
+    </details>
+    
+    <details>
+        <summary>Exemplo com vetor V1</summary>
+    
+    ```java
+    import java.util.Random;
+    import java.util.Scanner;
+
+    /*
+    Aqui será feita uma alteração para agrupar os poderes de cada personagem em um vetor
+    Lembrar que nos vetores, as posições são contadas a partir do 0
+    */
+    public class ExemploVetorV1 {
+
+        static int[] jogadorPoderes = new int[]{100, 200, 300, 400};
+
+        static int[] inimigo0Poderes = new int[]{20, 30};
+
+        static int[] inimigo1Poderes = new int[]{40, 50};
+
+        static int[] chefePoderes = new int[]{100, 200};
+
+        static void mostrarAtaqueInimigo(int qualInimigo, int poderInimigo) {
+            switch (qualInimigo) {
+                case 0:
+                    if (poderInimigo == 0) {
+                        System.out.println("Inimigo 0 causou " + inimigo0Poderes[0] + " de dano usando poder 0.");
+                    } else if (poderInimigo == 1) {
+                        System.out.println("Inimigo 0 causou " + inimigo0Poderes[1] + " de dano usando poder 1.");
+                    }
+                    break;
+                case 1:
+                    if (poderInimigo == 0) {
+                        System.out.println("Inimigo 1 causou " + inimigo1Poderes[0] + " de dano usando poder 0.");
+                    } else if (poderInimigo == 1) {
+                        System.out.println("Inimigo 1 causou " + inimigo1Poderes[1] + " de dano usando poder 1.");
+                    }
+                    break;
+                case 2:
+                    if (poderInimigo == 0) {
+                        System.out.println("Chefe causou " + chefePoderes[0] + " de dano usando poder 0.");
+                    } else if (poderInimigo == 1) {
+                        System.out.println("Chefe causou " + chefePoderes[1] + " de dano usando poder 1.");
+                    }
+                    break;
+            }
+        }
+
+        public static void main(String[] args) {
+            Scanner entrada = new Scanner(System.in);
+
+            System.out.println("Escolha um poder de 0 a 3 para usar:");
+            int poderEscolhido = entrada.nextInt(); // valores de 0 a 3 são válidos
+
+            Random random = new Random();
+            int qualInimigo = random.nextInt(3); // Random pode gerar 0, 1 ou 2 (chefe);
+            int poderInimigo = random.nextInt(2); // Random pode gerar 0 ou 1.
+
+            switch (poderEscolhido) {
+                case 0:
+                    System.out.println("Você causou " + jogadorPoderes[0] + " de dano usando poder 0.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+                case 1:
+                    System.out.println("Você causou " + jogadorPoderes[1] + " de dano usando poder 1.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+                case 2:
+                    System.out.println("Você causou " + jogadorPoderes[2] + " de dano usando poder 2.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+                case 3:
+                    System.out.println("Você causou " + jogadorPoderes[3] + " de dano usando poder 3.");
+                    mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+                    break;
+            }
+        }
+
+    }
+    ```
+    </details>
+    
+    <details>
+        <summary>Exemplo com vetor V2</summary>
+    
+    ```java
+    import java.util.Random;
+    import java.util.Scanner;
+
+    /*
+    Notar que no exemplo V1, os valores de entrada e os gerados via random já correspondem aos valores das posições do vetor.
+    Assim, dá para simplificar e usar diretamente estes valores para pegar os dados do vetor (tanto para jogador quanto para inimigos).
+    */
+    public class ExemploVetorV2 {
+
+        static int[] jogadorPoderes = new int[]{100, 200, 300, 400};
+
+        static int[] inimigo0Poderes = new int[]{20, 30};
+
+        static int[] inimigo1Poderes = new int[]{40, 50};
+
+        static int[] chefePoderes = new int[]{100, 200};
+
+        static void mostrarAtaqueInimigo(int qualInimigo, int poderInimigo) {
+            switch (qualInimigo) {
+                case 0:
+                    System.out.println("Inimigo 0 causou " + inimigo0Poderes[poderInimigo] + " de dano usando poder " + poderInimigo + ".");
+                    break;
+                case 1:
+                    System.out.println("Inimigo 1 causou " + inimigo1Poderes[poderInimigo] + " de dano usando poder " + poderInimigo + ".");
+                    break;
+                case 2:
+                    System.out.println("Chefe causou " + chefePoderes[poderInimigo] + " de dano usando poder " + poderInimigo + ".");
+                    break;
+            }
+        }
+
+        public static void main(String[] args) {
+            Scanner entrada = new Scanner(System.in);
+
+            System.out.println("Escolha um poder de 0 a 3 para usar:");
+            int poderEscolhido = entrada.nextInt(); // valores de 0 a 3 são válidos
+
+            Random random = new Random();
+            int qualInimigo = random.nextInt(3); // Random pode gerar 0, 1 ou 2 (chefe);
+            int poderInimigo = random.nextInt(2); // Random pode gerar 0 ou 1.
+
+            System.out.println("Você causou " + jogadorPoderes[poderEscolhido] + " de dano usando poder " + poderEscolhido + ".");
+            mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+        }
+
+    }
+    ```
+    </details>
+    
+    <details>
+        <summary>Exemplo com matriz</summary>
+    
+    ```java
+    import java.util.Random;
+    import java.util.Scanner;
+
+    /*
+    Nesta última alteração, todas as informações dos inimigos serão mantidas em uma matriz, onde
+    a primeira posição indica qual o inimigo e a segunda o poder dele.
+    Notar que abstraimos que o chefe é o inimigo 2.
+    */
+    public class ExemploMatriz {
+
+        static int[] jogadorPoderes = new int[]{100, 200, 300, 400};
+
+        static int[][] inimigosPoderes = new int[][]{
+            {20, 30}, // inimigo0
+            {40, 50}, // inimigo1
+            {100, 200} // chefe (no caso, o chefe passa a ser o inimigo2)
+        };
+
+        static void mostrarAtaqueInimigo(int qualInimigo, int poderInimigo) {
+            switch (qualInimigo) {
+                case 2:
+                    System.out.println("Chefe causou " + inimigosPoderes[qualInimigo][poderInimigo] + " de dano usando poder " + poderInimigo + ".");
+                    break;
+                default:
+                    System.out.println("Inimigo " + qualInimigo + " causou " + inimigosPoderes[qualInimigo][poderInimigo] + " de dano usando poder " + poderInimigo + ".");
+                    break;
+            }
+        }
+
+        public static void main(String[] args) {
+            Scanner entrada = new Scanner(System.in);
+
+            System.out.println("Escolha um poder de 0 a 3 para usar:");
+            int poderEscolhido = entrada.nextInt(); // valores de 0 a 3 são válidos
+
+            Random random = new Random();
+            int qualInimigo = random.nextInt(3); // Random pode gerar 0, 1 ou 2 (chefe);
+            int poderInimigo = random.nextInt(2); // Random pode gerar 0 ou 1.
+
+            System.out.println("Você causou " + jogadorPoderes[poderEscolhido] + " de dano usando poder " + poderEscolhido + ".");
+            mostrarAtaqueInimigo(qualInimigo, poderInimigo);
+        }
+
+    }
+    ```
+    </details>
 
 ## Quotes
 
