@@ -283,7 +283,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
 
     }
     ```
-1. Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe (OBS: passa a ser má prática quando usar conceitos de orientação a objetos)
+1. Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe (OBS: passa a ser má prática quando usar conceitos de orientação a objetos). **ARENÇÃO:** Não esquecer de colocar a palavra `static` antes para que ela seja acessível tanto pela função `main` quanto por outras funções que também são `static`.
 
    ```java
    // Arquivo Jogo.java
@@ -947,7 +947,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
                     System.out.println("Você enfrentará inimigo1.");
                     break;
                 case 2:
-                    System.out.println("Você enfrentará Chefe.");
+                    System.out.println("Você enfrentará chefe.");
                     break;
             }
 
