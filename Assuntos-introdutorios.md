@@ -7,8 +7,17 @@ TODO: Desenvolver
 * Conceito de arquivos
     * Extensões dos arquivos
 * Explorador de arquivos
+    * Copiar arquivos
+    * Mover arquivos
+    * Excluir arquivos
+    * Renomear arquivos
+* Compactação de arquivos
+    * .zip
+    * .rar
+    * .7z
+    * .gz (Linux)
 * Menu iniciar
-* Diretórios do Windows
+* Diretórios de sistema do Windows
     * Arquivos de Programas
     * Usuários
 * Acesso ao terminal (linha de comando)
