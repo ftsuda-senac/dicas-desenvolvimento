@@ -4,7 +4,7 @@ TODO: Desenvolver
 
 ## Windows
 
-* Conceito de arquivos
+* Conceito de arquivos e diretórios
     * Extensões dos arquivos
 * Explorador de arquivos
     * Copiar arquivos
@@ -22,7 +22,7 @@ TODO: Desenvolver
     * Usuários
 * Acesso ao terminal (linha de comando)
     * Listar arquivos de um diretório
-    * Navegar entre diretórios
+    * Navegação entre diretórios
     * `ipconfig`
 * Configurar variáveis de ambiente
 
@@ -30,5 +30,33 @@ TODO: Desenvolver
 
 * Como aumentar fonte do editor de código
 * Como aumentar fonte do console
+* Criar projetos novos
+    * Maven
+    * Projetos "normais"
+    * Projetos GUI
+        * Swing (começa com `JFrame`)
+        * JavaFX
+    * Projetos web
+        * Servlet
+        * JSP
+    * Spring Boot
+* Abrir projetos existentes
+* Renomear arquivos
+* Formatar código-fonte
+* Arrumar imports
+* Gerar gettter/setters
+* Abrir console e identificar erros ao executar os programas
+* Debugging
 * Acessar funcionalidades do Git
-* Identificar erros ao executar os programas
+    * Clone
+    * Configurações de usuário
+    * Commit
+    * Push
+    * Fetch/Pull
+    * Merge
+    * Repository Browser
+* Aba Serviços
+    * Banco de dados
+    * Servidores
+    * Testes
+
