@@ -283,7 +283,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
 
     }
     ```
-1. Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe (OBS: passa a ser má prática quando usar conceitos de orientação a objetos). **ARENÇÃO:** Não esquecer de colocar a palavra `static` antes para que ela seja acessível tanto pela função `main` quanto por outras funções que também são `static`.
+1. Possibilidade de criação de variáveis _"globais"_ - Pode-se declarar uma variável dentro do bloco de código do `class` para que ele seja visível por todas as funções da classe **ATENÇÃO:** Não esquecer de colocar a palavra `static` antes para que ela seja acessível tanto pela função `main` quanto por outras funções que também são `static`. OBS: manipulação de variáveis do tipo `static` geralmente é uma má prática quando usado no conceito de orientação a objetos.
 
    ```java
    // Arquivo Jogo.java
@@ -399,6 +399,53 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
         }
     }
     ```
+    
+    <details>
+        <summary> Exemplo inicial Orientação a objetos <em>(FUTURO)</em></summary>
+    
+    ```java
+    // arquivo Personagem.java
+    public class Personagem {
+    
+        private String nome;
+        
+        private int hp;
+        
+        public Personagem(String nome, int hp) {
+            this.nome = nome;
+            this.hp = hp;
+        }
+        
+        // TODO: Pode precisar criar getNome()/setNome()/getHp()/setHp()
+        
+        public String obterStatus() {
+            return "HP " + nome + ": " + hp;
+        }
+    }
+    
+    // arquivo Jogo.java
+    public class Jogo {
+    
+        static void mostrarStatusPessoaEAnimal(Personagem pessoa, Personagem animal) {
+            System.out.println(pessoa.obterStatus());
+            System.out.println(animal.obterStatus());
+        }
+
+        public static void main(String[] args) {
+            Personagem fulano = new Personagem("Fulano", 500);
+            Personagem ciclano = new Personagem("Ciclano", 500);
+            Personagem cachorro = new Personsagem("Cachorro", 100);
+            Personagem gato = new Personsagem("Gato", 100);
+            
+            mostrarStatusPessoaEAnimal(fulano, cachorro);
+            mostrarStatusPessoaEAnimal(fulano, gato);
+            mostrarStatusPessoaEAnimal(ciclano, cachorro);
+            mostrarStatusPessoaEAnimal(ciclano, gato);
+        }
+
+    }
+    ```
+    </details>
     
 1. Evitar declarar muitas variáveis e atribuir valores para eles em uma mesma linha, pois dificulta leitura. Se possível colocar somente UMA declaração por linha
       
