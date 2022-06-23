@@ -95,10 +95,26 @@ BigDecimal soma = valor1.add(valor2); // Valor de soma deve ser 4.00
     * Classes Wrapper aceitam o `null` como valor
 * Regras de precedência de operadores - Ver https://docs.oracle.com/javase/tutorial/java/nutsandbolts/operators.html
 * Cuidado ao importar classes que possuem o mesmo nome, mas que vem de pacotes diferentes.
-```
+```java
 import java.util.Date;
 import java.sql.Date;
 ```
+* Exceptions (Exceções)
+
+    Mecanismo usado para permitir a criação de lógicas alternativas em caso de erros que podem ocorrer durante a execução de algum código (programação defensiva). Um exemplo clássico é a tentativa de dividir algum número por zero - causa um `ArithmeticException`.
+    * 2 tipos:
+        * Checked exceptions - precisa ser capturada explicitamente no bloco catch ou ser relançada via throws
+            * Exemplos:
+                * `IOException`
+                * `ParseException`
+                * `SQLException`
+        * Unchecked exceptions - Não precisa ser explicitamente capturada, porém pode travar aplicação quando ocorre e não é tratada
+            * Exemplos:
+                * `RuntimeException`
+                * `NullPointerException`
+                * `NumberFormatException`
+                * `ArithmeticException`
+
 * Para Java 8+, evitar usar `java.util.Date` ou `java.util.Calendar` para representar datas e horários. Usar classes do pacote `java.time.*`. Por este mesmo motivo, evitar usar o `joda.time`. Mais detalhes em https://stackoverflow.com/a/32443004
 * Em qualquer código-fonte, evitar usar acentuação e caracteres especiais, tanto dentro do código quanto nos nomes dos arquivos/diretórios.
 * Componentizar a aplicação
