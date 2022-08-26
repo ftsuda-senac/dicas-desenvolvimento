@@ -15,15 +15,15 @@
 ## Montar projeto no Spring Initializr
 
 * Usar as seguintes configurações:
-    * Project: __Maven Project__
-    * Language: __Java__
-    * Spring Boot: __2.7.3__ (ou 2.7 mais recente)
+    * Project: **Maven Project**
+    * Language: **Java**
+    * Spring Boot: **2.7.3** (ou 2.7 mais recente)
     * Project Metadata
-        * Group: __br.senac.tads.dsw__
-        * Artifact: __exemplo__
-        * Description: __Primeiro exemplo Spring Boot__
-        * Packaging: __Jar__
-        * Java: __17__ (OU A VERSÃO DO JDK INSTALADA NA MÁQUINA)
+        * Group: **br.senac.tads.dsw**
+        * Artifact: **exemplo**
+        * Description: **Primeiro exemplo Spring Boot**
+        * Packaging: **Jar**
+        * Java: **17** (OU A VERSÃO DO JDK INSTALADA NA MÁQUINA)
     * Dependencies - Adicionar as seguintes depenências clicando no botão "Add Dependencies"
         * Spring Boot Devtools
         * Lombok
@@ -102,7 +102,7 @@
 
 ### Questões
 
-1. Explique o significado de uma página estática, pensando em uma forma de alterar a data e hora SEM o uso de Javascript.
+1. Explique o significado de uma página estática, pensando em uma forma de alterar a data e hora **SEM** o uso de Javascript.
 
 ## Atividade 2 - Criar Controller + Template dinâmico
 
@@ -161,18 +161,19 @@
 
 ### Questões e testes adicionais
 
+1. Na classe `ExemploController.java`, como a anotação `@RequestMapping("/exemplo-dinamico")` afeta o funcionamento da aplicação?
+1. Na classe `ExemploController.java`, como a instrução `ModelAndView mv = new ModelAndView("index-dinamico");` afeta o funcionamento da aplicação?
+1. Qual a relação que existe entre a palavra "titulo" que aparece no Controler em `mv.addObject("titulo", "Exemplo página dinâmica - Texto criado no Controller");` e no template em `<h1 th:text="${titulo}">Exemplo página dinâmica</h1>`
 1. Abrir o arquivo `index-dinamico.html` diretamente no navegador. O que acontece?
 1. No arquivo `index-dinamico.html` criado, remover os textos das tags `<h1>` e `<span>`, para deixá-las vazias. O que acontece ao rodar o projeto e acessar pelo navegador
-1. Na classe `ExemploController.java`, como a anotação `@RequestMapping("/exemplo-dinamico")` afeta o funcionamento da aplicação?
-1. Qual a relação que existe entre a palavra "titulo" que aparece no Controler em `mv.addObject("titulo", "Exemplo página dinâmica - Texto criado no Controller");` e no template em `<h1 th:text="${titulo}">Exemplo página dinâmica</h1>`
 
 ## Problemas comuns no Netbeans
 
-Algumas mensagens apresentadas aqui podem ser verificas na aba "Output" quando a aplicação é executada
+Algumas mensagens apresentadas aqui podem ser verificadas na aba "Output" quando a aplicação é executada.
 
 1. Problema de porta 8080 sendo usada (mensagem `Web server failed to start. Port 8080 was already in use.`)
     * Verificar se a aplicação já não está rodando. Se estiver, pode parar a aplicação primeiro
-    * No arquivo `application.properties`, incluir a configuração `server.port=8084` (ou qualquer outra porta válida)
+    * Caso houver outra aplicação que está usando a porta 8080: no arquivo `application.properties`, incluir a configuração `server.port=8084` (ou qualquer outra porta válida)
     
 1. Aba "Output" não aparece ao rodar a aplicação
     * Ir no menu "Window > Output" para forçar a exibição
