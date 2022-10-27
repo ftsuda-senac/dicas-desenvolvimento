@@ -1,5 +1,8 @@
 # Links úteis
 
+## Versionamento semântico (SemVer)
+* https://semver.org/lang/pt-BR/
+
 ## Fundamentos Web
 * Developers Google: https://developers.google.com/web/fundamentals/
 * MDN: https://developer.mozilla.org/en-US/
