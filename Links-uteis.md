@@ -1,8 +1,5 @@
 # Links úteis
 
-## Versionamento semântico (SemVer)
-* https://semver.org/lang/pt-BR/
-
 ## Fundamentos Web
 * Developers Google: https://developers.google.com/web/fundamentals/
 * MDN: https://developer.mozilla.org/en-US/
@@ -38,3 +35,18 @@
     * Spring: https://github.com/ThomasVitale/awesome-spring
     * Docker: https://github.com/veggiemonk/awesome-docker#readme
     * Git: https://github.com/dictcp/awesome-git#readme
+
+## Versionamento semântico (SemVer)
+
+* https://semver.org/lang/pt-BR/
+
+## RFC-7807 - Padrão para retorno de erros
+
+* https://medium.com/tableless/padroniza%C3%A7%C3%A3o-de-respostas-de-erro-em-apis-com-problem-details-23e58edf25ab
+* https://www.baeldung.com/rest-api-error-handling-best-practices#4-standardized-response-bodies
+
+## E.164 - Padrão internacional para números de telefone
+
+* https://blog.insycle.com/phone-number-formatting-crm
+
+## ISO-8601 - Padrão internacional para data e hora
