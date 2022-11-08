@@ -17,6 +17,7 @@
 
 ## Apoio a testes
 
+* Free for dev: https://free-for.dev/
 * Lorem ipsum (textos grandes): https://pt.lipsum.com/
 * Lorem picsum (gerador de imagens): https://picsum.photos/
 * Random user generator: https://randomuser.me/
