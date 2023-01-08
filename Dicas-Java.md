@@ -2,6 +2,8 @@
 
 ## Links
 
+* <a href="https://dev.java/" target="_blank" rel="nofollow noopener noreferrer">https://dev.java/</a>
+    * <a href="https://dev.java/learn/" target="_blank" rel="nofollow noopener noreferrer">https://dev.java/learn/</a> 
 * <a href="https://docs.oracle.com/javase/tutorial/" target="_blank" rel="nofollow noopener noreferrer">https://docs.oracle.com/javase/tutorial/</a>
     * <a href="https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html" target="_blank" rel="nofollow noopener noreferrer">https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html</a> (básico/inicial)
 * <a href="https://www.javatpoint.com/java-tutorial" target="_blank" rel="nofollow noopener noreferrer">https://www.javatpoint.com/java-tutorial</a>
