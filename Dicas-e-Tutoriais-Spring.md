@@ -33,7 +33,7 @@
 
 ## MVC
 * `@Controller` e `@RestController`
-* Tratamento de erros com `@ControllerAdvice`
+* Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
 * Escopo dos beans
     * `@RequestScope`
     * `@SessionScope` (cuidado ao usar em aplicações REST)
@@ -306,9 +306,19 @@ Se necessário, trocar "current" pela versão desejada
 * Containers
     * Docker
     * Kubernetes
+* MVC assíncrono
 * Webflux
 * Websockets
+* SSE (Server Sent Events)
 * Spring Data REST
+* Cloud
+    * Configuration Server
+    * Eureka (Service discovery)
+    * Open Feign
+    * Load balancer
+    * Zuul (API Gateway)
+    * Resilience4J
+    * Zipkin (Coletor de logs E2E)
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
         * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
