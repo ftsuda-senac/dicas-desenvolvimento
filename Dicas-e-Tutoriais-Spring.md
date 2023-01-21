@@ -11,7 +11,8 @@
     * application.properties
         * Acesso a variáveis de ambiente
         * SpEL com valor padrão no arquivo de propriedades
-    * Uso de profiles
+        * Precedência das várias formas de configuração em https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.external-config
+    * Uso de profiles (ver https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.profiles)
 
 ## Core
 * Injeção de dependências
