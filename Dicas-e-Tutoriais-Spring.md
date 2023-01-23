@@ -248,6 +248,7 @@ Se necessário, trocar "current" pela versão desejada
     * Cadastro de novo usuário
     * Controle de tentativa máximas de erros de login
     * Troca de credenciais (alterar senha)
+    * "Remember me" (via sessão persistente/refresh tokens)
     * Reinicializar senha
         * Self-service
         * Via help-desk
