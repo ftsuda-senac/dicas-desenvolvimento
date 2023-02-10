@@ -25,6 +25,10 @@
 * Gerador de dados para testes (documentos): https://www.4devs.com.br/gerador_de_pessoas
 * Fotos e vídeos: https://www.pexels.com/
 
+## Docker/Docker compose
+
+* Referência atributos do arquivo docker-compose v3: https://docs.docker.com/compose/compose-file/compose-file-v3/
+
 ## Awesome-*
 
 * Listagem geral do Github: https://github.com/topics/awesome
