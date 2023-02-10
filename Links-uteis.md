@@ -35,6 +35,7 @@
     * Java: https://github.com/akullpp/awesome-java#readme
     * Spring: https://github.com/ThomasVitale/awesome-spring
     * Docker: https://github.com/veggiemonk/awesome-docker#readme
+    * Docker compose: https://github.com/docker/awesome-compose
     * Git: https://github.com/dictcp/awesome-git#readme
 
 ## Versionamento semântico (SemVer)
