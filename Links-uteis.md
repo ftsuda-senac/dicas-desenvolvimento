@@ -41,6 +41,7 @@
     * Docker: https://github.com/veggiemonk/awesome-docker#readme
     * Docker compose: https://github.com/docker/awesome-compose
     * Git: https://github.com/dictcp/awesome-git#readme
+    * Design patterns: https://github.com/DovAmir/awesome-design-patterns
 
 ## Versionamento semântico (SemVer)
 
