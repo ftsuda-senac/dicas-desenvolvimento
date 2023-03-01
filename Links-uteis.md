@@ -59,6 +59,10 @@
     * Git: https://github.com/dictcp/awesome-git#readme
     * Design patterns: https://github.com/DovAmir/awesome-design-patterns
 
+## Guia rápído de commits semànticos
+
+* https://www.tabnews.com.br/JeanJr/guia-de-bolso-para-commits-semanticos 
+
 ## Versionamento semântico (SemVer)
 
 * https://semver.org/lang/pt-BR/
