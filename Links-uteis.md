@@ -1,6 +1,12 @@
 # Links úteis
 
+## Exemplos online no codepen.io
+
+* https://codepen.io/ftsuda-senac
+* https://codepen.io/ftsuda82
+
 ## Fundamentos Web
+
 * Developers Google: https://developers.google.com/web/fundamentals/
 * MDN: https://developer.mozilla.org/en-US/
 
@@ -11,9 +17,17 @@
 * Gerador Glass CSS: https://css.glass/
 * Exemplos de Filtros CSS: https://css-tricks.com/almanac/properties/f/filter/
 * Google Fonts: https://fonts.google.com/
-* Fontawesome: https://fontawesome.com/
 * Favicon generator: https://favicon.io/favicon-generator/
 * CDN de libs CSS/JS: https://www.jsdelivr.com/
+* Guia CSS Flex: https://css-tricks.com/snippets/css/a-guide-to-flexbox/
+* Guia CSS Grid: https://css-tricks.com/snippets/css/complete-guide-grid/
+
+## Icons
+
+* Font Awesome: https://fontawesome.com/search?o=r&m=free
+* Bootstrap icons https://icons.getbootstrap.com/
+* Devicon: https://devicon.dev/
+* Phospor: https://phosphoricons.com/
 
 ## Apoio a testes
 
