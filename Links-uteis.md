@@ -28,6 +28,7 @@
 * Bootstrap icons https://icons.getbootstrap.com/
 * Devicon: https://devicon.dev/
 * Phospor: https://phosphoricons.com/
+* Heroicons: https://heroicons.com/
 
 ## Apoio a testes
 
