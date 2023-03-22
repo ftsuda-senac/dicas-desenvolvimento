@@ -452,8 +452,8 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
         public static void main(String[] args) {
             Personagem fulano = new Personagem("Fulano", 500);
             Personagem ciclano = new Personagem("Ciclano", 500);
-            Personagem cachorro = new Personsagem("Cachorro", 100);
-            Personagem gato = new Personsagem("Gato", 100);
+            Personagem cachorro = new Personagem("Cachorro", 100);
+            Personagem gato = new Personagem("Gato", 100);
             
             mostrarStatusPessoaEAnimal(fulano, cachorro);
             mostrarStatusPessoaEAnimal(fulano, gato);
