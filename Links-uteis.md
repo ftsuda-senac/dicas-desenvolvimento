@@ -9,6 +9,7 @@
 
 * Developers Google: https://developers.google.com/web/fundamentals/
 * MDN: https://developer.mozilla.org/en-US/
+* web.dev: https://web.dev/learn/
 
 ## Apoio CSS
 
