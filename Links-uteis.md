@@ -11,8 +11,15 @@
 * MDN: https://developer.mozilla.org/en-US/
 * web.dev: https://web.dev/learn/
 
+## Acessibilidade
+* WCAG https://wcag.com/
+* Guia de acessibilidade NIC.br https://www.nic.br/publicacao/guia-de-boas-praticas-para-acessibilidade-digital/
+* Outros guias: https://www.nic.br/publicacoes/indice/guias/
+
 ## Apoio CSS
 
+* Bootstrap https://getbootstrap.com/
+    * Acesso via CDN: https://www.jsdelivr.com/package/npm/bootstrap
 * Gerador de gradientes CSS: https://cssgradient.io/
 * Flat colors: https://flatuicolors.com/
 * Gerador Glass CSS: https://css.glass/
@@ -27,6 +34,7 @@
 ## Icons
 
 * Font Awesome: https://fontawesome.com/search?o=r&m=free
+    * Acesso via CDN: https://cdnjs.com/libraries/font-awesome
 * Bootstrap icons https://icons.getbootstrap.com/
 * Devicon: https://devicon.dev/
 * Phospor: https://phosphoricons.com/
