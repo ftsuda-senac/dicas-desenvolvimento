@@ -23,6 +23,7 @@
 * Gerador de gradientes CSS: https://cssgradient.io/
 * Flat colors: https://flatuicolors.com/
 * Gerador Glass CSS: https://css.glass/
+* Random CSS Pattern: https://random.css-pattern.com/  
 * Exemplos de Filtros CSS: https://css-tricks.com/almanac/properties/f/filter/
 * Google Fonts: https://fonts.google.com/
 * Favicon generator: https://favicon.io/favicon-generator/
