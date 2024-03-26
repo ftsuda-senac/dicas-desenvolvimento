@@ -46,6 +46,8 @@
 * Lorem ipsum (textos grandes): https://pt.lipsum.com/
 * Lorem picsum (gerador de imagens): https://picsum.photos/
 * Random user generator: https://randomuser.me/
+* Random person generator: https://random-person-generator.com/
+* Fake person generator: https://www.fakepersongenerator.com/
 * Fake face API: https://hankhank10.github.io/fakeface/
 * Gerador de dados para testes (documentos): https://www.4devs.com.br/gerador_de_pessoas
 * Fotos e vídeos: https://www.pexels.com/
