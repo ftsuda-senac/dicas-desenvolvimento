@@ -26,6 +26,7 @@
 * Random CSS Pattern: https://random.css-pattern.com/  
 * Exemplos de Filtros CSS: https://css-tricks.com/almanac/properties/f/filter/
 * Google Fonts: https://fonts.google.com/
+* 1001 Fonts: https://www.1001fonts.com/
 * Favicon generator: https://favicon.io/favicon-generator/
 * CDN de libs CSS/JS: https://www.jsdelivr.com/
 * Guia CSS Flex: https://css-tricks.com/snippets/css/a-guide-to-flexbox/
