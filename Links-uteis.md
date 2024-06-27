@@ -58,19 +58,25 @@
 
 * Referência atributos do arquivo docker-compose v3: https://docs.docker.com/compose/compose-file/compose-file-v3/
 
-## Awesome-*
+## Repositórios Awesome-*
 
 * Listagem geral do Github: https://github.com/topics/awesome
 * Compilado de vários Awesome-* repos para diversas tecnologias: https://github.com/sindresorhus/awesome
     * HTML: https://github.com/diegocard/awesome-html5#readme
     * CSS: https://github.com/awesome-css-group/awesome-css#readme
     * Javascript: https://github.com/sorrycc/awesome-javascript#readme
+    * Typescript: https://github.com/dzharii/awesome-typescript#readme
+    * Angular: https://github.com/PatrickJS/awesome-angular#readme
+    * React: https://github.com/enaqx/awesome-react#readme
+    * Vue: https://github.com/vuejs/awesome-vue#readme
     * Java: https://github.com/akullpp/awesome-java#readme
-    * Spring: https://github.com/ThomasVitale/awesome-spring
-    * Docker: https://github.com/veggiemonk/awesome-docker#readme
-    * Docker compose: https://github.com/docker/awesome-compose
-    * Git: https://github.com/dictcp/awesome-git#readme
-    * Design patterns: https://github.com/DovAmir/awesome-design-patterns
+    * Kotlin: https://github.com/KotlinBy/awesome-kotlin#readme
+    * Spring: https://github.com/ThomasVitale/awesome-spring#readme
+    * Flutter: https://github.com/Solido/awesome-flutter#readme
+    * Docker: https://github.com/veggiemonk/awesome-docker#readme#readme
+    * Docker compose: https://github.com/docker/awesome-compose#readme
+    * Git: https://github.com/dictcp/awesome-git#readme#readme
+    * Design patterns: https://github.com/DovAmir/awesome-design-patterns#readme
 
 ## Guia rápído de commits semànticos
 
