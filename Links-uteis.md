@@ -20,6 +20,7 @@
 
 * Bootstrap https://getbootstrap.com/
     * Acesso via CDN: https://www.jsdelivr.com/package/npm/bootstrap
+* Ferramenstas CSS: https://www.cssportal.com/
 * Gerador de gradientes CSS: https://cssgradient.io/
 * Flat colors: https://flatuicolors.com/
 * Gerador Glass CSS: https://css.glass/
@@ -86,7 +87,7 @@
 
 * https://semver.org/lang/pt-BR/
 
-## RFC-7807 - Padrão para retorno de erros
+## RFC-7807 - Padrão para retorno de erros (Problem Details)
 
 * https://medium.com/tableless/padroniza%C3%A7%C3%A3o-de-respostas-de-erro-em-apis-com-problem-details-23e58edf25ab
 * https://www.baeldung.com/rest-api-error-handling-best-practices#4-standardized-response-bodies
