@@ -9,6 +9,7 @@
 
 * Developers Google: https://developers.google.com/web/fundamentals/
 * MDN: https://developer.mozilla.org/en-US/
+* Github Exemplos MDN: https://github.com/mdn/dom-examples
 * web.dev: https://web.dev/learn/
 
 ## Acessibilidade
