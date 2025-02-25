@@ -34,6 +34,8 @@
 
 ## MVC
 * `@Controller` e `@RestController`
+* Informações do Spring MVC Auto-configuration - https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.auto-configuration
+    * **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que impleementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
 * Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
 * Escopo dos beans
     * `@RequestScope`
@@ -132,7 +134,10 @@ PagingAndSortingRepository <|-- JpaRepository
             * Tutorial de Criteria/JPQL: https://www.objectdb.com/java/jpa/query/jpql/structure
     * Uso do JPA "puro"
     * Uso do JDBC
-        * Lembrar de usar **try-with-resources** ao usar recursos como `Connection`, `PreparedStatement` e `ResultSet`
+        * Lembrar de usar **try-with-resources** ao usar recursos como `Connection`, `Statement`/`PreparedStatement` e `ResultSet`
+    * Uso do H2 console + Security
+        * Desabilitar CSRF e X-Frame-Options no SecurityFilterChain
+        * Exemplo de configuração em https://docs.spring.io/spring-boot/reference/data/sql.html#data.sql.h2-web-console.spring-security
 
 * Outras dicas e pontos de atenção
     * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/`javax.persistence`) e evitar usar anotações específicas do Hibernate.
