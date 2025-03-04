@@ -67,8 +67,8 @@
     * Conversor de erros do Bean Validation do JEE para Spring Validator - Útil quando validação é feita no `@Service` mas precisa apresentar erros via `@Controller`
     ```java
     import java.util.Set;
-    import javax.validation.ConstraintViolation;
-    import javax.validation.Validation;
+    import jakarta.validation.ConstraintViolation;
+    import jakarta.validation.Validation;
     import org.springframework.validation.Errors;
     import org.springframework.validation.beanvalidation.SpringValidatorAdapter;
 
@@ -93,7 +93,7 @@
 * HATEOAS
 
 ## Data JPA
-* Entender a hierarquia das interfaces `Repository` <- `CrudRepository` <- `PagingAndSortingRepository` <- `JpaRepository` e verificar as funcionalidades já fornecidas por padrão https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.core-concepts
+* Entender a hierarquia das interfaces `Repository` <- `CrudRepository` <- `PagingAndSortingRepository` <- `JpaRepository` e verificar as funcionalidades já fornecidas por padrão https://docs.spring.io/spring-data/jpa/reference/repositories/core-concepts.html
 
 ```mermaid
 ---
@@ -174,7 +174,7 @@ JpaRepository <|-- MeuRepository
     * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/ antigo `javax.persistence`) e evitar usar anotações específicas do Hibernate.
     * Uso da configuração `spring.jpa.open-in-view=false` - considerada má-prática, pois mantém uma conexão aberta com o banco de dados para cada acesso realizado à aplicação. Alternativas indicadas abaixo
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
-        * TODO: Ver diferenças de comportamento com `javax.transaction.Transactional` do JEE
+        * TODO: Ver diferenças de comportamento com `jakarta.transaction.Transactional` do JEE
             * https://www.baeldung.com/spring-vs-jta-transactional
             * https://stackoverflow.com/a/62702146
     * Mapeamento das entidades com annotations do JPA
