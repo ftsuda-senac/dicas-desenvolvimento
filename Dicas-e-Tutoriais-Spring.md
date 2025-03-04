@@ -7,6 +7,11 @@
     * https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html
 * Anotações `@Component`, `@Controller`, `@Service`, `@Repository`
     * ```mermaid
+      ---
+      config:
+        class:
+          hideEmptyMembersBox: true
+      ---
       classDiagram
       class Component["@Component"]
       class Controller["@Controller"]
@@ -46,7 +51,7 @@
 ## MVC
 * `@Controller` e `@RestController`
 * Informações do Spring MVC Auto-configuration - https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.auto-configuration
-    * **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que impleementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
+    * **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que implementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
 * Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
 * Escopo dos beans
     * `@RequestScope`
@@ -91,6 +96,11 @@
 * Entender a hierarquia das interfaces `Repository` <- `CrudRepository` <- `PagingAndSortingRepository` <- `JpaRepository` e verificar as funcionalidades já fornecidas por padrão https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.core-concepts
 
 ```mermaid
+---
+config:
+  class:
+    hideEmptyMembersBox: true
+---
 classDiagram
 class Repository {
     <<interface>>
@@ -104,9 +114,16 @@ class PagingAndSortingRepository {
 class JpaRepository {
     <<interface>>
 }
+style JpaRepository fill:#bbf
+class MeuRepository {
+    <<interface>>
+}
+style MeuRepository fill:#f9f
+note for MeuRepository "Criar esta interface em seu projeto"
 Repository <|-- CrudRepository
 CrudRepository <|-- PagingAndSortingRepository
 PagingAndSortingRepository <|-- JpaRepository
+JpaRepository <|-- MeuRepository
 ```
 
 * Formas de desenvolver lógica do repositório
