@@ -6,7 +6,18 @@
     * https://www.infoq.com/br/articles/onion-architecture/
     * https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html
 * Anotações `@Component`, `@Controller`, `@Service`, `@Repository`
+    * ```mermaid
+      classDiagram
+      class Component["@Component"]
+      class Controller["@Controller"]
+      class Service["@Service"]
+      class Repository["@Repository"]
+      Component <|-- Controller
+      Component <|-- Service
+      Component <|-- Repository
+      ```
     * Premissa de um `@Service` para quem desenvolve web: a funcionalidade será executada corretamente se for feita através de outra interface de operação, como, por exemplo, linha de comando (considerar entradas primárias tipo String, int, validações, mensagens de sucesso, erros, etc)?
+
 * Configurações
     * application.properties
         * Acesso a variáveis de ambiente
@@ -100,19 +111,21 @@ PagingAndSortingRepository <|-- JpaRepository
 
 * Formas de desenvolver lógica do repositório
     * Query methods - uso de convenções de nomenclatura dos métodos da interface. Dessa forma, o Spring Data irá criar automaticamente as queries de consulta ao repositório
-        * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repositories.query-methods.details
-        * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#jpa.query-methods
-        * https://docs.spring.io/spring-data/jpa/docs/current/reference/html/#repository-query-keywords
+        * https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html#jpa.query-methods.query-creation
+        * https://docs.spring.io/spring-data/jpa/reference/repositories/query-methods-details.html#repositories.query-methods.query-property-expressions
+        * https://docs.spring.io/spring-data/jpa/reference/repositories/query-keywords-reference.html#appendix.query.method.subject
     * Uso do `@Query` com JPQL OU SQL nativo (dependente do Banco de dados usado)
         * Envolve definir um método qualquer no repositório e incluir a anotação `@Query` (importado de `org.springframework.data.jpa.repository.Query`) com a JPQL de consulta e sempre que possivel usando parametros nomeados com `@Param` (importado de `org.springframework.data.repository.query.Param`) ou query nativa
          ```java
          // JPQL
-         @Query("SELECT p FROM Person p WHERE p.firstName = :nameParam")
+         @Query("SELECT p FROM Person p WHERE p.firstName = :nameParam") // Person é o nome do entity
          Optional<Person> findSomethingJpql(@Param("nameParam") String nameParam);
 
          // SQL nativo - sintaxe pode variar dependendo do banco de dados e comandos usados
-         // Lembrar de usar nomes de tabelas e colunas de acordo com o banco de dados e não à classe
+         // Lembrar de usar nomes de tabelas e colunas de acordo com o banco de dados e não à classe de Entidade
          @Query(nativeQuery = true, value = "SELECT * FROM person WHERE first_name = :nameParam")
+         // Ou @NativeQuery("SELECT * FROM person WHERE first_name = :nameParam")
+         // ver https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html#jpa.query-methods.at-query.native
          Optional<Person> findSomethingNative(@Param("nameParam") String nameParam);
          ```
         
@@ -124,11 +137,12 @@ PagingAndSortingRepository <|-- JpaRepository
         
         // SQL nativo
         @Query(nativeQuery = true, value = "SELECT * FROM person WHERE upper(full_name) LIKE upper('%'||:searchTerm||'%')")
+        // OU @NativeQuery("SELECT * FROM person WHERE upper(full_name) LIKE upper('%'||:searchTerm||'%')")
         List<Person> searchByNameNative(@Param("searchTerm") String searchTerm);
         ```
 
     * Specification ​+ Criteria API
-        * Geração dos metamodels usando Hibernate JPA Modelgen
+        * Geração dos metamodels usando Hibernate JPA Modelgen configurado no pom.xml
             * Fazer via console usando `mvn clean generate-sources`, senão ao abrir projeto no Eclipse gera erros
             * Não salvar arquivos gerados no repositório de código-fonte.
             * Tutorial de Criteria/JPQL: https://www.objectdb.com/java/jpa/query/jpql/structure
@@ -140,7 +154,7 @@ PagingAndSortingRepository <|-- JpaRepository
         * Exemplo de configuração em https://docs.spring.io/spring-boot/reference/data/sql.html#data.sql.h2-web-console.spring-security
 
 * Outras dicas e pontos de atenção
-    * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/`javax.persistence`) e evitar usar anotações específicas do Hibernate.
+    * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/ antigo `javax.persistence`) e evitar usar anotações específicas do Hibernate.
     * Uso da configuração `spring.jpa.open-in-view=false` - considerada má-prática, pois mantém uma conexão aberta com o banco de dados para cada acesso realizado à aplicação. Alternativas indicadas abaixo
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
         * TODO: Ver diferenças de comportamento com `javax.transaction.Transactional` do JEE
@@ -309,7 +323,7 @@ Se necessário, trocar "current" pela versão desejada
     * JUnit 5
     * BDD + Cuccumber
     * Selenium Webdriver/Cypress
-    * JMeter e teste de carga
+    * JMeter/Gatling e teste de carga
 * Containers
     * Docker
     * Kubernetes
