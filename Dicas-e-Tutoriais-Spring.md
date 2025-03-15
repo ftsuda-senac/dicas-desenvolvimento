@@ -55,6 +55,13 @@
 * `@Controller` e `@RestController`
 * Informações do Spring MVC Auto-configuration - https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.auto-configuration
     * **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que implementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
+        ```java
+        @Configuration
+        // @WebMvcConfig /* NÃO INCLUIR ESSA ANOTAÇÃO */
+        public class CustomWebMvcConfig implements WebMvcConfigurer {
+
+        }
+        ```
 * Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
 * Escopo dos beans
     * `@RequestScope`
