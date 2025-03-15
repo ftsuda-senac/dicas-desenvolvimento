@@ -354,8 +354,11 @@ Se necessário, trocar "current" pela versão desejada
     * BDD + Cuccumber
     * Selenium Webdriver/Cypress
     * JMeter/Gatling e teste de carga
+* Ferramentas de apoio a testes
+    * LocalStack - https://www.localstack.cloud/
+    * Testcontainers - https://testcontainers.com/
 * Containers
-    * Docker
+    * Docker / Docker compose
     * Kubernetes
 * MVC assíncrono
 * Webflux
@@ -384,4 +387,4 @@ Se necessário, trocar "current" pela versão desejada
     * Configurações estáticas X configurações dinâmicas
         * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
         * Em containers, prever uso de volumes persistentes para manter estes arquivos
-    * Configuração externa de logs (SLF4J, logback)
+    * Configuração externa de logs (SLF4J, logback, Log4J2)
