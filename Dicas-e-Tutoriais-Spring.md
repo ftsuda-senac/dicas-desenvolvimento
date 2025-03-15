@@ -1,6 +1,7 @@
 # Spring
 
 ## Arquitetura
+
 * 3-tier (Domain, Services, Presentation) -> Ver DDD ou Onion Architecture
     * https://blog.avenuecode.com/domain-driven-design-and-onion-architecture#:~:text=Onion%20Architecture%20is%20based%20on,but%20rather%20on%20domain%20models.
     * https://www.infoq.com/br/articles/onion-architecture/
@@ -31,6 +32,7 @@
     * Uso de profiles (ver https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.profiles)
 
 ## Core
+
 * Injeção de dependências
     * Processo de component scanning - Por padrão, segue subpackages a partir do package onde a classe principal do projeto se encontra
         * Caso haja classes fora do package principal, configurar o `scanBasePackages` em `@SpringBootApplication`
@@ -41,7 +43,7 @@
     @Value("${valor-booolean-properties:true}")
     boolean valorBooleanoInjetado;
     ```
-    
+
 * Spring Boot/Spring Initialzr
     * Cuidado ao configurar Beans que sobrescrevem o comportamento padrão
     * Dependências úteis: devtools, actuator, configuration-processor
@@ -49,6 +51,7 @@
 * SpEL
 
 ## MVC
+
 * `@Controller` e `@RestController`
 * Informações do Spring MVC Auto-configuration - https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.auto-configuration
     * **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que implementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
@@ -93,6 +96,7 @@
 * HATEOAS
 
 ## Data JPA
+
 * Entender a hierarquia das interfaces `Repository` <- `CrudRepository` <- `PagingAndSortingRepository` <- `JpaRepository` e verificar as funcionalidades já fornecidas por padrão https://docs.spring.io/spring-data/jpa/reference/repositories/core-concepts.html
 
 ```mermaid
@@ -209,11 +213,16 @@ JpaRepository <|-- MeuRepository
         * https://medium.com/@ruxijitianu/database-version-control-liquibase-versus-flyway-9872d43ee5a4
 
 ## Security
-* Hash de senhas (ex: bcrypt)
-* OpenID
-* OAuth2
-* JWT
-* Keycloak como servidor de autenticação/autorização https://www.keycloak.org/
+
+* Arquitetura: Ver https://docs.spring.io/spring-security/reference/servlet/architecture.html
+* Assuntos importantes:
+    * Gerenciamento de sessão [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html)
+    * Hash de senhas (ex: bcrypt)
+    * JWT -> Usar módulo JOSE (mesmo usado pelo módulo resource-server)
+    * Spring Authorization Server (https://docs.spring.io/spring-authorization-server/reference/index.html)
+        * OpenID
+        * OAuth2
+* Alternativa para autenticação/autorização: Keycloak https://www.keycloak.org/
 
 ## Properties úteis
 
@@ -239,7 +248,7 @@ spring.servlet.multipart.max-request-size=10MB
 #========= DATABASE/JPA ==========
 spring.jpa.open-in-view=false
 spring.jpa.show-sql=true
-# Pode ser none/validate/create/create-drop/update - https://docs.jboss.org/hibernate/orm/5.2/userguide/html_single/Hibernate_User_Guide.html#configurations-hbmddl
+# Pode ser none/validate/create/create-drop/update https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html#settings-hibernate.hbm2ddl.auto
 spring.jpa.properties.hibernate.ddl-auto=update
 
 #========== JSON ==========
@@ -259,15 +268,15 @@ app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
 ```xml
 <!-- trecho do pom.xml com declaração do profile -->
 <profles>
-	<profile>
-		<id>dev</id>
-		<activation>
-			<activeByDefault>true</activeByDefault>
-		</activation>
-		<properties>
-			<build.profile.id>dev</build.profile.id>
-		</properties>
-	</profile>
+    <profile>
+        <id>dev</id>
+        <activation>
+            <activeByDefault>true</activeByDefault>
+        </activation>
+        <properties>
+            <build.profile.id>dev</build.profile.id>
+        </properties>
+    </profile>
 </profiles>
 ```
 
@@ -280,6 +289,7 @@ Versões das dependências usadas nos seguintes links:
 Se necessário, trocar "current" pela versão desejada
 
 ## "Receitas de bolo" para requisitos de alguns microservices
+
 * Autenticação/Autorização de acesso
     * Cadastro de novo usuário
     * Controle de tentativa máximas de erros de login
@@ -292,9 +302,11 @@ Se necessário, trocar "current" pela versão desejada
     * Auditoria
     * n-factor authentication
         * Referência: https://blog.nec.com.br/autenticacao-de-usuario-um-mundo-alem-de-senhas
+    * Passkeys [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html)
+    * One-time token [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/onetimetoken.html)
     * Gerenciamento
-        * Ativação/Inativação de conta
-        * Permissões de acesso (Role/Authority)
+        * Ativação/Desativação de conta
+        * Permissões de acesso - RBAC - Role Based Access Control (Role/Authority)
     * Notificações de eventos (criação, alteração, troca de senha, etc)
 * Disparo de tarefas automatizadas com Quartz
     * Cadastrar tarefas
@@ -335,6 +347,7 @@ Se necessário, trocar "current" pela versão desejada
     * Aceite dos termos pelo usuário
 
 ## Outros
+
 * Project Lombok
 * Testes unitários e integração
     * JUnit 5
@@ -349,6 +362,16 @@ Se necessário, trocar "current" pela versão desejada
 * Websockets
 * SSE (Server Sent Events)
 * Spring Data REST
+* Filas / Message Brokers
+    * Kafka
+    * Pub/Sub com RabbitMQ
+    * ActiveMQ (classic / Artemis) - Jakarta Messaging (antigo JMS)
+* Observabilidade
+    * Spring Boot Actuator + Micrometer
+    * Prometheus TSDB / InfluxDB
+    * Open Telemetry (OTEL)
+    * Grafana -> Visualização dos dados coletados
+    * Loki -> Observabilidade de logs estruturados
 * Cloud
     * Configuration Server
     * Eureka (Service discovery)
