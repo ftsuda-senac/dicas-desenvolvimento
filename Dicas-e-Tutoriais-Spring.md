@@ -62,6 +62,13 @@
 
         }
         ```
+        ```java
+        @Configuration
+        // Ver https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-config/advanced-java.html
+        public class CustomWebMvcConfig extends DelegatingWebMvcConfiguration {
+
+        }
+        ```
 * Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
 * Escopo dos beans
     * `@RequestScope`
