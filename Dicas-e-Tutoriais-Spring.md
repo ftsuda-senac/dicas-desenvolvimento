@@ -81,6 +81,7 @@
 * Upload e mapeamento para acesso via HTTP
     * Integração com serviços externos (ex: AWS S3)
 * Utilitários
+    * Dicas Bean Validation do JEE - https://reflectoring.io/bean-validation-with-spring-boot/
     * Conversor de erros do Bean Validation do JEE para Spring Validator - Útil quando validação é feita no `@Service` mas precisa apresentar erros via `@Controller`
     ```java
     import java.util.Set;
@@ -181,6 +182,7 @@ JpaRepository <|-- MeuRepository
             * Fazer via console usando `mvn clean generate-sources`, senão ao abrir projeto no Eclipse gera erros
             * Não salvar arquivos gerados no repositório de código-fonte.
             * Tutorial de Criteria/JPQL: https://www.objectdb.com/java/jpa/query/jpql/structure
+    * Query by Example (https://www.baeldung.com/spring-data-query-by-example)
     * Uso do JPA "puro"
     * Uso do JDBC
         * Lembrar de usar **try-with-resources** ao usar recursos como `Connection`, `Statement`/`PreparedStatement` e `ResultSet`
@@ -218,6 +220,16 @@ JpaRepository <|-- MeuRepository
     * Records (Java 14+)
         * Records **NÃO** podem ser usados para representar uma Entidade JPA, pois são imutáveis.
         * https://thorben-janssen.com/java-records-hibernate-jpa/
+    * Uso de DTOs (Data Transfer Objects)
+        * Representar os dados para aplicações externas através de DTOs
+        * Pode-se usar Records para esse tipo de classe
+            * Aproveitar o recurso de Projection do Spring Data para criar DTOs diretamente no Repository (https://docs.spring.io/spring-data/jpa/reference/repositories/projections.html e https://www.baeldung.com/spring-data-jpa-projections)
+        * Facilita a inclusão de anotações do Jackson2 para serialização/desserialização (https://www.baeldung.com/jackson-annotations)
+        * Ferramentas para mapeamento automático
+            * ModelMapper (http://modelmapper.org/)
+            * Mapstruct (https://mapstruct.org/)
+            * Apache Commons BeanUtils (https://commons.apache.org/proper/commons-beanutils/)
+            * OBS: Dependendo da complexidade das Entities e DTOs, uso das ferramentas pode dificultar processo de debug
 
 * Controle de versões do banco de dados
     * Liquidbase
@@ -363,18 +375,24 @@ Se necessário, trocar "current" pela versão desejada
 ## Outros
 
 * Project Lombok
+* Feature flags
+    * https://reflectoring.io/spring-boot-feature-flags/ e https://www.baeldung.com/spring-feature-flags
 * Testes unitários e integração
     * JUnit 5
-    * BDD + Cuccumber
+    * BDD + Cucumber
     * Selenium Webdriver/Cypress
     * JMeter/Gatling e teste de carga
 * Ferramentas de apoio a testes
     * LocalStack - https://www.localstack.cloud/
     * Testcontainers - https://testcontainers.com/
+    * Wiremock - https://wiremock.org/
 * Containers
     * Docker / Docker compose
-    * Kubernetes
+    * Podman
+    * Kubernetes (k8s)
 * MVC assíncrono
+    * `@Async`
+    * CompletableFuture
 * Webflux
 * Websockets
 * SSE (Server Sent Events)
