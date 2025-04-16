@@ -465,3 +465,7 @@ Se necessário, trocar "current" pela versão desejada
         * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
         * Em containers, prever uso de volumes persistentes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback, Log4J2)
+
+## Troubleshooting
+
+* Problema ao estender a classe ResponseEntityExceptionHandler (+ @RestControllerAdvice) - [ref](https://stackoverflow.com/questions/51991992/getting-ambiguous-exceptionhandler-method-mapped-for-methodargumentnotvalidexce)
