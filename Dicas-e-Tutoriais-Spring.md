@@ -241,6 +241,51 @@ JpaRepository <|-- MeuRepository
 ## Security
 
 * Arquitetura: Ver https://docs.spring.io/spring-security/reference/servlet/architecture.html
+* Modelo genérico de Usuários X Permissões (Roles)
+    ```mermaid
+    classDiagram
+    direction LR
+    class UsuarioSistema
+    UsuarioSistema : +String username
+    UsuarioSistema : +String password
+
+    class Permissao
+    Permissao : +String nome
+
+    UsuarioSistema  "0..*" o-- "0..*" Permissao
+    ```
+* Integração com Interfaces Spring Security
+    ```mermaid
+   ---
+     config:
+       class:
+         hideEmptyMembersBox: true
+   ---
+   classDiagram
+       namespace spring.security {
+           class UserDetails {
+               <<interface>>
+               +String getUsername()*
+               +String getPassword()*
+           }
+   
+           class GrantedAuthority {
+               <<interface>>
+               +String getAuthority()*
+           }
+       }
+       
+       class UsuarioSistema {
+           -String username
+           -String password
+       }
+       class Permissao {
+           -String nome
+       }
+       UserDetails <|-- UsuarioSistema
+       GrantedAuthority <|-- Permissao
+       UsuarioSistema  "0..*" o-- "0..*" Permissao
+    ```
 * Assuntos importantes:
     * Gerenciamento de sessão [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html)
     * Hash de senhas (ex: bcrypt)
