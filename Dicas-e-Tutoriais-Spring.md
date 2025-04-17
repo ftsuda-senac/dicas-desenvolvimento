@@ -348,6 +348,7 @@ app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
             <build.profile.id>dev</build.profile.id>
         </properties>
     </profile>
+    <!-- DECLARAR OUTROS PROFILES SEGUINDO MODELO ACIMA -->
 </profiles>
 ```
 
@@ -422,11 +423,23 @@ Se necessário, trocar "current" pela versão desejada
 * Project Lombok
 * Feature flags
     * https://reflectoring.io/spring-boot-feature-flags/ e https://www.baeldung.com/spring-feature-flags
-* Testes unitários e integração
+* Testes
     * JUnit 5
     * BDD + Cucumber
-    * Selenium Webdriver/Cypress
-    * JMeter/Gatling e teste de carga
+    * Unitários
+        * Mockito
+    * Integração
+    * End-to-end (E2E)
+        * Selenium Webdriver
+        * Cypress
+    * Carga
+        * JMeter
+        * Gatling
+    * Cobertura
+        * JaCoCo
+    * Asserções de resultados
+        * AssertJ
+        * Hamcrest
 * Ferramentas de apoio a testes
     * LocalStack - https://www.localstack.cloud/
     * Testcontainers - https://testcontainers.com/
@@ -459,6 +472,9 @@ Se necessário, trocar "current" pela versão desejada
     * Load balancer
     * Zuul (API Gateway)
     * Resilience4J
+        * Circuit breaker
+        * Rate limiter
+        * Retry
     * Zipkin (Coletor de logs E2E)
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
