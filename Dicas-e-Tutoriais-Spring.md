@@ -271,7 +271,7 @@ JpaRepository <|-- MeuRepository
                <<interface>>
                +String getUsername()*
                +String getPassword()*
-               +Collection<? extends GrantedAuthority> getAuthorities()*
+               +Collection~? extends GrantedAuthority~ getAuthorities()*
            }
            class GrantedAuthority {
                <<interface>>
