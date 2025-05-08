@@ -271,8 +271,8 @@ JpaRepository <|-- MeuRepository
                <<interface>>
                +String getUsername()*
                +String getPassword()*
+               +Collection<? extends GrantedAuthority> getAuthorities()*
            }
-   
            class GrantedAuthority {
                <<interface>>
                +String getAuthority()*
@@ -287,6 +287,7 @@ JpaRepository <|-- MeuRepository
            -String nome
        }
        UserDetailsService --> UserDetails
+       UserDetails --> GrantedAuthority
        UserDetails <|-- UsuarioSistema
        GrantedAuthority <|-- Permissao
        UsuarioSistema  "0..*" o-- "0..*" Permissao
