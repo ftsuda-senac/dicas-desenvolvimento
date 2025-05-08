@@ -263,6 +263,10 @@ JpaRepository <|-- MeuRepository
    ---
    classDiagram
        namespace spring.security {
+           class UserDetailsService {
+               <<interface>>
+               + UserDetails loadUserByUsername(String username)*
+           }
            class UserDetails {
                <<interface>>
                +String getUsername()*
@@ -282,6 +286,7 @@ JpaRepository <|-- MeuRepository
        class Permissao {
            -String nome
        }
+       UserDetailsService --> UserDetails
        UserDetails <|-- UsuarioSistema
        GrantedAuthority <|-- Permissao
        UsuarioSistema  "0..*" o-- "0..*" Permissao
