@@ -63,6 +63,10 @@
 
 * Referência atributos do arquivo docker-compose v3: https://docs.docker.com/compose/compose-file/compose-file-v3/
 
+## Dicas Git/Github
+
+* Conventional Commits: https://www.conventionalcommits.org/en/v1.0.0/
+
 ## Repositórios Awesome-*
 
 * Listagem geral do Github: https://github.com/topics/awesome
