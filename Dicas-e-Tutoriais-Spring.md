@@ -500,9 +500,11 @@ Se necessário, trocar "current" pela versão desejada
         * Em containers, prever uso de volumes persistentes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback, Log4J2)
 
-## OAuth2
+## OAuth2 e JWT
 
-* Scopes padrões: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
+* Claim "scope" separara com espaços: https://stackoverflow.com/a/62477585
+* Claims comuns: https://www.iana.org/assignments/jwt/jwt.xhtml e https://datatracker.ietf.org/doc/id/draft-jones-json-web-token-01.html
+* Scopes de requisição padrões: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
 * https://auth0.com/docs/get-started/authentication-and-authorization-flow/which-oauth-2-0-flow-should-i-use
 * https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
 * https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
