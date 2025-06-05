@@ -292,6 +292,7 @@ JpaRepository <|-- MeuRepository
        GrantedAuthority <|-- Permissao
        UsuarioSistema  "0..*" o-- "0..*" Permissao
     ```
+
 * Assuntos importantes:
     * Gerenciamento de sessão [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html)
     * Hash de senhas (ex: bcrypt)
@@ -299,6 +300,16 @@ JpaRepository <|-- MeuRepository
     * Spring Authorization Server (https://docs.spring.io/spring-authorization-server/reference/index.html)
         * OpenID
         * OAuth2
+    * Filtros e ordem dos filtros:
+        * https://docs.spring.io/spring-security/reference/servlet/architecture.html
+        * https://stackoverflow.com/questions/76692686/inquire-spring-security-filter-chain-order
+    * Multiplas configurações de SecurityFilterChain: https://www.danvega.dev/blog/multiple-spring-security-configs
+    * Implementar remember-me
+        * https://docs.spring.io/spring-security/reference/servlet/authentication/rememberme.html
+    * Converter JWT no OAuth2 Resource Server
+        * https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html
+        * https://stackoverflow.com/a/73489680
+        * https://stackoverflow.com/a/69290726
 * Alternativa para autenticação/autorização: Keycloak https://www.keycloak.org/
 
 ## Properties úteis
@@ -357,6 +368,7 @@ app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
     <!-- DECLARAR OUTROS PROFILES SEGUINDO MODELO ACIMA -->
 </profiles>
 ```
+Conversão de valores (duration, period, sizes): https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.typesafe-configuration-properties.conversion
 
 ## Links úteis
 
@@ -487,6 +499,17 @@ Se necessário, trocar "current" pela versão desejada
         * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
         * Em containers, prever uso de volumes persistentes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback, Log4J2)
+
+## OAuth2
+
+* Scopes padrões: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
+* https://auth0.com/docs/get-started/authentication-and-authorization-flow/which-oauth-2-0-flow-should-i-use
+* https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
+* https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
+* https://medium.com/juliusbaerengineering/implementing-oauth2-oidc-and-its-agents-with-spring-15bfb1d46c76
+* https://betterprogramming.pub/building-secure-login-flow-with-oauth-2-openid-in-react-apps-ce6e8e29630a
+* https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html
+* https://www.oauth.com/oauth2-servers/server-side-apps/possible-errors/
 
 ## Troubleshooting
 
