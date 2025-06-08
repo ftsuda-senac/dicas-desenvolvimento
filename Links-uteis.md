@@ -14,6 +14,10 @@
 * Github Exemplos PWA: https://github.com/mdn/pwa-examples
 * web.dev: https://web.dev/learn/
 
+## Programação geral
+
+* Patterns.dev https://www.patterns.dev/
+
 ## Acessibilidade
 * WCAG https://wcag.com/
 * Guia de acessibilidade NIC.br https://www.nic.br/publicacao/guia-de-boas-praticas-para-acessibilidade-digital/
