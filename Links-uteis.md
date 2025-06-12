@@ -91,6 +91,7 @@
     * Docker compose: https://github.com/docker/awesome-compose#readme
     * Git: https://github.com/dictcp/awesome-git#readme#readme
     * Design patterns: https://github.com/DovAmir/awesome-design-patterns#readme
+    * MCP: https://github.com/punkpeye/awesome-mcp-servers
 
 ## Guia rápído de commits semànticos
 
@@ -100,8 +101,9 @@
 
 * https://semver.org/lang/pt-BR/
 
-## RFC-7807 - Padrão para retorno de erros (Problem Details)
+## RFC-9457 (antigo 7807) - Padrão para retorno de erros (Problem Details)
 
+* https://www.rfc-editor.org/rfc/rfc9457
 * https://medium.com/tableless/padroniza%C3%A7%C3%A3o-de-respostas-de-erro-em-apis-com-problem-details-23e58edf25ab
 * https://www.baeldung.com/rest-api-error-handling-best-practices#4-standardized-response-bodies
 
