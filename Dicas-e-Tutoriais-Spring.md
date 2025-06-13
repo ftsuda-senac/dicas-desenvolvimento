@@ -230,6 +230,7 @@ JpaRepository <|-- MeuRepository
             * Mapstruct (https://mapstruct.org/)
             * Apache Commons BeanUtils (https://commons.apache.org/proper/commons-beanutils/)
             * OBS: Dependendo da complexidade das Entities e DTOs, uso das ferramentas pode dificultar processo de debug
+    * Uso de @QueryHint para melhorar desempenhos das queries JPA - https://medium.com/javaguides/boost-performance-in-spring-data-jpa-with-query-hints-7628b37be857
 
 * Controle de versões do banco de dados
     * Liquidbase
@@ -394,13 +395,15 @@ Se necessário, trocar "current" pela versão desejada
         * Referência: https://blog.nec.com.br/autenticacao-de-usuario-um-mundo-alem-de-senhas
     * Passkeys [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/passkeys.html)
     * One-time token [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/onetimetoken.html)
+    * Revogação de tokens/sessões
     * Gerenciamento
         * Ativação/Desativação de conta
         * Permissões de acesso - RBAC - Role Based Access Control (Role/Authority)
     * Notificações de eventos (criação, alteração, troca de senha, etc)
+    * Uso de cookies secure + http only
 * Disparo de tarefas automatizadas com Quartz
     * Cadastrar tarefas
-    * Ativar/Desativar execução de dinamicamente
+    * Ativar/Desativar execução dinamicamente
     * Registrar data/horario e resultados de execução
     * cron expressions
 * Sistema de comentários
@@ -512,6 +515,10 @@ Se necessário, trocar "current" pela versão desejada
 * https://betterprogramming.pub/building-secure-login-flow-with-oauth-2-openid-in-react-apps-ce6e8e29630a
 * https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html
 * https://www.oauth.com/oauth2-servers/server-side-apps/possible-errors/
+
+## Outros
+
+* Consumer/Supplier/Predicate/Function: https://medium.com/swlh/understanding-java-8s-consumer-supplier-predicate-and-function-c1889b9423d
 
 ## Troubleshooting
 
