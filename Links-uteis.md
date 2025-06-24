@@ -1,6 +1,6 @@
 # Links úteis
 
-## Exemplos online no codepen.io
+## Exemplos web online no codepen.io
 
 * https://codepen.io/ftsuda-senac
 * https://codepen.io/ftsuda82
@@ -60,7 +60,7 @@
 * Random user generator: https://randomuser.me/
 * Random person generator: https://random-person-generator.com/
 * Fake person generator: https://www.fakepersongenerator.com/
-* Fake face API: https://hankhank10.github.io/fakeface/
+* Fake face API: https://hankhank10.github.io/fakeface/ (OFFLINE)
 * Gerador de dados para testes (documentos): https://www.4devs.com.br/gerador_de_pessoas
 * Fotos e vídeos: https://www.pexels.com/
 
@@ -92,6 +92,10 @@
     * Git: https://github.com/dictcp/awesome-git#readme#readme
     * Design patterns: https://github.com/DovAmir/awesome-design-patterns#readme
     * MCP: https://github.com/punkpeye/awesome-mcp-servers
+    * API Web: https://github.com/TonnyL/Awesome_APIs e https://github.com/n0shake/Public-APIs
+    * REST: https://github.com/Kikobeats/awesome-api
+    * Cheatsheets: https://github.com/detailyang/awesome-cheatsheet e https://lecoupa.github.io/awesome-cheatsheets/
+    * Segurança/Hacking: https://github.com/sbilly/awesome-security e https://github.com/Hack-with-Github/Awesome-Hacking
 
 ## Guia rápído de commits semànticos
 
