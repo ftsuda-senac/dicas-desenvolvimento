@@ -8,6 +8,7 @@
     * <a href="https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html" target="_blank" rel="nofollow noopener noreferrer">https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html</a> (básico/inicial)
 * <a href="https://www.javatpoint.com/java-tutorial" target="_blank" rel="nofollow noopener noreferrer">https://www.javatpoint.com/java-tutorial</a>
 * <a href="https://www.tutorialspoint.com/java/index.htm" target="_blank" rel="nofollow noopener noreferrer">https://www.tutorialspoint.com/java/index.htm</a>
+* <a href="https://javaalmanac.io/" target="_blank" rel="nofollow noopener noreferrer">https://javaalmanac.io/</a>
 
 ## Convenções para escrita do código
 
