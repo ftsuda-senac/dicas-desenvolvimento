@@ -9,6 +9,7 @@
 * <a href="https://www.javatpoint.com/java-tutorial" target="_blank" rel="nofollow noopener noreferrer">https://www.javatpoint.com/java-tutorial</a>
 * <a href="https://www.tutorialspoint.com/java/index.htm" target="_blank" rel="nofollow noopener noreferrer">https://www.tutorialspoint.com/java/index.htm</a>
 * <a href="https://javaalmanac.io/" target="_blank" rel="nofollow noopener noreferrer">https://javaalmanac.io/</a>
+* <a href="https://javaevolved.github.io/" target="_blank" rel="nofollow noopener noreferrer">https://javaevolved.github.io/ (Dicas Java Moderno)/</a>
 
 ## Convenções para escrita do código
 
