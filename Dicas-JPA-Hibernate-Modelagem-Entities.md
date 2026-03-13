@@ -39,6 +39,8 @@
 31. [Nomeação de Foreign Keys com @ForeignKey](#31-nomeação-de-foreign-keys-com-foreignkey)
 32. [Functions, Stored Procedures, Views e Materialized Views](#32-functions-stored-procedures-views-e-materialized-views)
 33. [Coleções com Map vs Set em Relacionamentos JPA](#33-coleções-com-map-vs-set-em-relacionamentos-jpa)
+34. [OffsetDateTime vs ZonedDateTime na Modelagem de Entidades](#34-offsetdatetime-vs-zoneddatetime-na-modelagem-de-entidades)
+35. [Migração de java.util.Date para java.time em Entidades JPA](#35-migração-de-javautildate-para-javatime-em-entidades-jpa)
 
 ---
 
@@ -3308,6 +3310,636 @@ Por isso, chaves de `Map` devem ser **imutáveis** (`@NaturalId`, enums, ou camp
 ### Recomendação prática
 
 Use `Set` como padrão para `@OneToMany` e `@ManyToMany`. Reserve `Map` para cenários onde a semântica chave-valor é natural no domínio: configurações (`Map<String, String>`), contatos por tipo (`Map<TipoContato, String>`), avaliações por curso (`Map<Curso, Avaliacao>`), ou quando o acesso indexado por chave imutável é recorrente no código.
+
+---
+
+## 34. OffsetDateTime vs ZonedDateTime na Modelagem de Entidades
+
+Ambos representam um instante no tempo com informação de fuso, mas com granularidades diferentes. A escolha impacta o mapeamento JPA e a portabilidade dos dados.
+
+### A diferença fundamental
+
+`OffsetDateTime` carrega um **deslocamento fixo** em relação ao UTC. `ZonedDateTime` carrega uma **região/timezone** que inclui regras de horário de verão.
+
+```java
+// OffsetDateTime — offset fixo, sem regras de DST
+OffsetDateTime odt = OffsetDateTime.of(2025, 1, 15, 14, 30, 0, 0, ZoneOffset.ofHours(-3));
+// 2025-01-15T14:30:00-03:00
+
+// ZonedDateTime — timezone com regras de DST
+ZonedDateTime zdt = ZonedDateTime.of(2025, 1, 15, 14, 30, 0, 0, ZoneId.of("America/Sao_Paulo"));
+// 2025-01-15T14:30:00-03:00[America/Sao_Paulo]
+```
+
+No exemplo acima, ambos resolvem para o mesmo instante. A diferença aparece quando o horário de verão entra em jogo — o `ZonedDateTime` ajusta automaticamente, o `OffsetDateTime` não sabe que existe DST.
+
+```mermaid
+classDiagram
+    class OffsetDateTime {
+        -LocalDateTime dateTime
+        -ZoneOffset offset
+        +toInstant() Instant
+        +atZoneSameInstant(ZoneId) ZonedDateTime
+    }
+    class ZonedDateTime {
+        -LocalDateTime dateTime
+        -ZoneOffset offset
+        -ZoneId zone
+        +toInstant() Instant
+        +toOffsetDateTime() OffsetDateTime
+    }
+    class ZoneOffset {
+        -int totalSeconds
+        +ofHours(int) ZoneOffset
+        +UTC ZoneOffset
+    }
+    class ZoneId {
+        -String id
+        +of(String) ZoneId
+        +getRules() ZoneRules
+    }
+    class ZoneRules {
+        +isDaylightSavings(Instant) boolean
+        +getOffset(Instant) ZoneOffset
+    }
+
+    OffsetDateTime *-- ZoneOffset : "offset fixo"
+    ZonedDateTime *-- ZoneOffset : "offset atual"
+    ZonedDateTime *-- ZoneId : "regras de timezone"
+    ZoneId --> ZoneRules : "consulta regras DST"
+
+    note for OffsetDateTime "Sabe o deslocamento\nNÃO sabe regras de DST"
+    note for ZonedDateTime "Sabe o timezone completo\nAjusta DST automaticamente"
+```
+
+### O que o PostgreSQL armazena
+
+O `TIMESTAMPTZ` armazena **apenas o instante UTC**. Não guarda nem o offset nem o timezone:
+
+```sql
+-- Ambos resultam no mesmo valor armazenado
+INSERT INTO evento (criado_em) VALUES ('2025-01-15T14:30:00-03:00');
+INSERT INTO evento (criado_em) VALUES ('2025-01-15T17:30:00+00:00');
+
+-- PostgreSQL armazena internamente: 2025-01-15 17:30:00 UTC (nos dois casos)
+```
+
+### O problema do ZonedDateTime com JPA
+
+O Hibernate mapeia `ZonedDateTime` para `TIMESTAMPTZ`, mas a informação do timezone é **perdida** no roundtrip:
+
+```mermaid
+sequenceDiagram
+    participant Java as Java (ZonedDateTime)
+    participant Hib as Hibernate
+    participant PG as PostgreSQL
+
+    Note over Java: 14:30:00-03:00<br/>[America/Sao_Paulo]
+
+    Java->>Hib: persist(evento)
+    Hib->>PG: INSERT 17:30:00 UTC
+    Note over PG: Armazena instante UTC<br/>timezone DESCARTADO
+
+    Java->>Hib: find(id)
+    PG->>Hib: 17:30:00+00
+    Hib->>Java: ZonedDateTime
+    Note over Java: 17:30:00Z[UTC]<br/>⚠️ NÃO é mais<br/>America/Sao_Paulo!
+```
+
+```java
+// Gravação
+ZonedDateTime original = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo"));
+// 2025-01-15T14:30:00-03:00[America/Sao_Paulo]
+evento.setCriadoEm(original);
+repository.save(evento);
+
+// Leitura
+Evento lido = repository.findById(id).orElseThrow();
+lido.getCriadoEm();
+// 2025-01-15T17:30:00Z[UTC]  ← timezone original PERDIDO!
+```
+
+O instante é o mesmo, mas `getCriadoEm().getZone()` retorna `UTC`, não `America/Sao_Paulo`. Qualquer lógica que dependa do timezone original vai quebrar.
+
+### OffsetDateTime — roundtrip previsível
+
+```mermaid
+sequenceDiagram
+    participant Java as Java (OffsetDateTime)
+    participant Hib as Hibernate
+    participant PG as PostgreSQL
+
+    Note over Java: 14:30:00-03:00
+
+    Java->>Hib: persist(evento)
+    Hib->>PG: INSERT 17:30:00 UTC
+    Note over PG: Armazena instante UTC
+
+    Java->>Hib: find(id)
+    PG->>Hib: 17:30:00+00
+    Hib->>Java: OffsetDateTime
+    Note over Java: 17:30:00+00:00<br/>✅ Comportamento esperado<br/>Converte para local na apresentação
+```
+
+### Quando a diferença importa: agendamentos futuros
+
+```java
+// Agendar reunião para "15h horário de São Paulo" em outubro
+// Se o Brasil reintroduzir horário de verão:
+
+// OffsetDateTime: 15:00-03:00 → sempre 15:00-03:00 (offset fixo)
+// Se DST mudar o fuso para -02:00, o horário LOCAL será 16:00
+// O instante no tempo não muda, mas o relógio local muda.
+
+// ZonedDateTime: 15:00 America/Sao_Paulo → ajusta com DST
+// Sempre 15:00 no relógio de São Paulo, independente de DST
+// O instante UTC muda conforme as regras do timezone.
+```
+
+### Mapeamento recomendado: OffsetDateTime para persistência
+
+```java
+@MappedSuperclass
+public abstract class BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime criadoEm;
+
+    @UpdateTimestamp
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime atualizadoEm;
+}
+```
+
+### Quando precisa do timezone: persista separadamente
+
+Para agendamentos futuros que devem respeitar DST, persista o instante e o timezone como duas colunas:
+
+```java
+@Entity
+public class Agendamento extends BaseEntity {
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime dataHoraUtc;
+
+    @Column(nullable = false, length = 50)
+    private String timezone; // "America/Sao_Paulo"
+
+    private String descricao;
+
+    // Reconstrói ZonedDateTime quando necessário (em memória)
+    public ZonedDateTime getDataHoraLocal() {
+        return dataHoraUtc.atZoneSameInstant(ZoneId.of(timezone));
+    }
+
+    // Factory method a partir de ZonedDateTime
+    public static Agendamento of(ZonedDateTime dataHoraLocal, String descricao) {
+        var agendamento = new Agendamento();
+        agendamento.dataHoraUtc = dataHoraLocal.toOffsetDateTime();
+        agendamento.timezone = dataHoraLocal.getZone().getId();
+        agendamento.descricao = descricao;
+        return agendamento;
+    }
+}
+```
+
+```mermaid
+erDiagram
+    agendamento {
+        bigint id PK
+        timestamptz data_hora_utc "instante em UTC"
+        varchar timezone "America/Sao_Paulo"
+        varchar descricao
+        timestamptz criado_em
+        timestamptz atualizado_em
+    }
+```
+
+Uso:
+
+```java
+// Criar agendamento para 15h em São Paulo
+ZonedDateTime reuniao = ZonedDateTime.of(
+    2025, 10, 20, 15, 0, 0, 0,
+    ZoneId.of("America/Sao_Paulo")
+);
+Agendamento ag = Agendamento.of(reuniao, "Review Sprint 42");
+repository.save(ag);
+
+// Leitura — reconstrói o ZonedDateTime
+Agendamento lido = repository.findById(id).orElseThrow();
+ZonedDateTime local = lido.getDataHoraLocal();
+// 2025-10-20T15:00:00-03:00[America/Sao_Paulo]  ✅ timezone preservado
+```
+
+O instante fica no `TIMESTAMPTZ` (otimizado para comparações, índices e ordenação) e o timezone como `VARCHAR` é preservado integralmente.
+
+### Conversão na apresentação (API REST)
+
+Para endpoints que retornam datas no timezone do usuário:
+
+```java
+public record AgendamentoResponse(
+    Long id,
+    String descricao,
+    OffsetDateTime dataHoraUtc,
+    String timezone,
+    String dataHoraLocal // formatado no fuso do agendamento
+) {
+
+    public static AgendamentoResponse of(Agendamento ag) {
+        ZonedDateTime local = ag.getDataHoraLocal();
+        return new AgendamentoResponse(
+            ag.getId(),
+            ag.getDescricao(),
+            ag.getDataHoraUtc(),
+            ag.getTimezone(),
+            local.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm (z)"))
+        );
+    }
+}
+```
+
+JSON resultante:
+
+```json
+{
+    "id": 1,
+    "descricao": "Review Sprint 42",
+    "dataHoraUtc": "2025-10-20T18:00:00Z",
+    "timezone": "America/Sao_Paulo",
+    "dataHoraLocal": "20/10/2025 15:00 (BRT)"
+}
+```
+
+### Comparação direta
+
+| Aspecto | `OffsetDateTime` | `ZonedDateTime` |
+|---|---|---|
+| Informação | Offset fixo (`-03:00`) | Timezone + regras DST |
+| Mapeamento JDBC/Hibernate | Direto para `TIMESTAMPTZ` | Direto para `TIMESTAMPTZ` |
+| Roundtrip banco → Java | Offset preservado (da sessão) | **Timezone perdido** |
+| ISO 8601 / APIs REST | Formato nativo | Precisa converter |
+| Regras de DST | Não conhece | Ajusta automaticamente |
+| Uso em JPA | Recomendado | Evitar como campo persistido |
+| Comparação/ordenação | Direto no SQL | Direto no SQL (mesmo instante) |
+
+### Resumo de decisão
+
+```mermaid
+flowchart TD
+    A[Preciso persistir data/hora] --> B{Qual o caso de uso?}
+
+    B -->|"Auditoria / transações\n(quando aconteceu)"| C[OffsetDateTime]
+    B -->|"Agendamento futuro\n(respeitar DST)"| D["OffsetDateTime\n+ String timezone\n(duas colunas)"]
+    B -->|"Timezone do usuário\nna apresentação"| E["OffsetDateTime no banco\nConverte no DTO/Response"]
+
+    C --> F["@Column TIMESTAMPTZ\n+ hibernate.jdbc.time_zone=UTC"]
+    D --> G["TIMESTAMPTZ + VARCHAR(50)\nReconstrói ZonedDateTime em memória"]
+    E --> H["getDataHoraUtc()\n.atZoneSameInstant(fusoUsuario)"]
+
+    style C fill:#9f9,stroke:#333
+    style D fill:#9f9,stroke:#333
+    style E fill:#9f9,stroke:#333
+```
+
+A regra é: `OffsetDateTime` para persistência, `ZonedDateTime` para lógica de apresentação e agendamento em memória. O banco de dados não é o lugar para guardar regras de timezone — essas regras mudam com legislação e o banco não as acompanha.
+
+---
+
+## 35. Migração de java.util.Date para java.time em Entidades JPA
+
+A migração é direta porque o PostgreSQL já armazena os dados no formato correto — a mudança é apenas no tipo Java, sem alterar colunas no banco na maioria dos casos.
+
+### Entidade legada com java.util.Date
+
+```java
+@Entity
+public class Pedido {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private BigDecimal total;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "criado_em")
+    private Date criadoEm;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "atualizado_em")
+    private Date atualizadoEm;
+
+    @Temporal(TemporalType.DATE)
+    @Column(name = "data_entrega")
+    private Date dataEntrega;
+
+    @Temporal(TemporalType.TIME)
+    @Column(name = "hora_limite")
+    private Date horaLimite;
+}
+```
+
+### Mapeamento direto: @Temporal → java.time
+
+```mermaid
+flowchart LR
+    subgraph "java.util (legado)"
+        D1["@Temporal(TIMESTAMP)\nDate"]
+        D2["@Temporal(DATE)\nDate"]
+        D3["@Temporal(TIME)\nDate"]
+    end
+
+    subgraph "Coluna PostgreSQL"
+        C1["TIMESTAMPTZ"]
+        C2["TIMESTAMP"]
+        C3["DATE"]
+        C4["TIME"]
+    end
+
+    subgraph "java.time (moderno)"
+        T1["OffsetDateTime"]
+        T2["LocalDateTime"]
+        T3["LocalDate"]
+        T4["LocalTime"]
+    end
+
+    D1 --> C1
+    D1 --> C2
+    D2 --> C3
+    D3 --> C4
+
+    C1 --> T1
+    C2 --> T2
+    C3 --> T3
+    C4 --> T4
+
+    style D1 fill:#f99,stroke:#333
+    style D2 fill:#f99,stroke:#333
+    style D3 fill:#f99,stroke:#333
+    style T1 fill:#9f9,stroke:#333
+    style T2 fill:#9f9,stroke:#333
+    style T3 fill:#9f9,stroke:#333
+    style T4 fill:#9f9,stroke:#333
+```
+
+| `@Temporal` | Tipo no banco | Substituto `java.time` |
+|---|---|---|
+| `TemporalType.TIMESTAMP` | `TIMESTAMPTZ` | `OffsetDateTime` |
+| `TemporalType.TIMESTAMP` | `TIMESTAMP` | `LocalDateTime` |
+| `TemporalType.DATE` | `DATE` | `LocalDate` |
+| `TemporalType.TIME` | `TIME` | `LocalTime` |
+
+### Passo 1: Identificar o tipo real da coluna
+
+```sql
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'pedido'
+  AND column_name IN ('criado_em', 'atualizado_em', 'data_entrega', 'hora_limite');
+```
+
+```
+| column_name   | data_type                  | Tipo java.time     |
+|---------------|----------------------------|--------------------|
+| criado_em     | timestamp with time zone   | OffsetDateTime     |
+| atualizado_em | timestamp with time zone   | OffsetDateTime     |
+| data_entrega  | date                       | LocalDate          |
+| hora_limite   | time without time zone     | LocalTime          |
+```
+
+### Passo 2: Substituir os tipos (zero impacto no DDL)
+
+```java
+@Entity
+public class Pedido {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private BigDecimal total;
+
+    // ANTES: @Temporal(TemporalType.TIMESTAMP) Date criadoEm
+    @Column(name = "criado_em", nullable = false, updatable = false)
+    @CreationTimestamp
+    private OffsetDateTime criadoEm;
+
+    // ANTES: @Temporal(TemporalType.TIMESTAMP) Date atualizadoEm
+    @Column(name = "atualizado_em", nullable = false)
+    @UpdateTimestamp
+    private OffsetDateTime atualizadoEm;
+
+    // ANTES: @Temporal(TemporalType.DATE) Date dataEntrega
+    @Column(name = "data_entrega")
+    private LocalDate dataEntrega;
+
+    // ANTES: @Temporal(TemporalType.TIME) Date horaLimite
+    @Column(name = "hora_limite")
+    private LocalTime horaLimite;
+}
+```
+
+O `@Temporal` é **removido** — o Hibernate 6 infere o tipo SQL a partir do tipo Java. Nenhuma migration Flyway necessária se o tipo da coluna no banco já corresponde.
+
+### Passo 3: Atualizar o código que consome a entidade
+
+#### Comparações
+
+```java
+// ANTES (java.util.Date)
+if (pedido.getCriadoEm().before(new Date())) { }
+if (pedido.getCriadoEm().after(limiteDate)) { }
+
+// DEPOIS (java.time)
+if (pedido.getCriadoEm().isBefore(OffsetDateTime.now())) { }
+if (pedido.getCriadoEm().isAfter(limite)) { }
+```
+
+#### Formatação
+
+```java
+// ANTES — não thread-safe!
+SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+String formatted = sdf.format(pedido.getCriadoEm());
+
+// DEPOIS — imutável, thread-safe
+DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+String formatted = pedido.getCriadoEm().format(fmt);
+```
+
+#### Manipulação
+
+```java
+// ANTES
+Calendar cal = Calendar.getInstance();
+cal.setTime(pedido.getDataEntrega());
+cal.add(Calendar.DAY_OF_MONTH, 30);
+Date novaData = cal.getTime();
+
+// DEPOIS
+LocalDate novaData = pedido.getDataEntrega().plusDays(30);
+```
+
+#### Criação de instâncias
+
+```java
+// ANTES
+Date agora = new Date();
+Date dataEspecifica = new SimpleDateFormat("yyyy-MM-dd").parse("2025-06-15");
+
+// DEPOIS
+OffsetDateTime agora = OffsetDateTime.now();
+LocalDate dataEspecifica = LocalDate.of(2025, 6, 15);
+```
+
+### Caso especial: TIMESTAMP (sem tz) → OffsetDateTime
+
+Se a coluna é `timestamp without time zone` mas você quer migrar para `OffsetDateTime`, precisa de migration:
+
+```sql
+-- V10__migrate_timestamp_to_timestamptz.sql
+ALTER TABLE pedido
+    ALTER COLUMN criado_em TYPE TIMESTAMPTZ
+    USING criado_em AT TIME ZONE 'America/Sao_Paulo';
+
+ALTER TABLE pedido
+    ALTER COLUMN atualizado_em TYPE TIMESTAMPTZ
+    USING atualizado_em AT TIME ZONE 'America/Sao_Paulo';
+```
+
+O `AT TIME ZONE 'America/Sao_Paulo'` diz ao PostgreSQL que os valores existentes estavam nesse fuso, e ele converte para UTC internamente. Sem o `USING`, o PostgreSQL assume UTC — o que pode estar errado se a aplicação gravava no horário local.
+
+```mermaid
+sequenceDiagram
+    participant App as Aplicação
+    participant FW as Flyway
+    participant PG as PostgreSQL
+
+    Note over App: Entidade ainda com Date
+
+    FW->>PG: ALTER COLUMN criado_em TYPE TIMESTAMPTZ<br/>USING criado_em AT TIME ZONE 'America/Sao_Paulo'
+    Note over PG: Converte valores existentes<br/>2025-01-15 14:30:00<br/>→ 2025-01-15 17:30:00 UTC
+
+    Note over App: Deploy com OffsetDateTime
+    App->>PG: SELECT criado_em FROM pedido
+    PG->>App: 2025-01-15 17:30:00+00
+    Note over App: OffsetDateTime.parse(...)
+```
+
+### Caso especial: java.sql.Date e java.sql.Timestamp
+
+```java
+// ANTES (java.sql)
+private java.sql.Date dataEntrega;
+private java.sql.Timestamp criadoEm;
+
+// DEPOIS (java.time) — mesma substituição
+private LocalDate dataEntrega;
+private OffsetDateTime criadoEm;
+```
+
+### Convivência temporária: getter legado @Deprecated
+
+Se a migração precisa ser gradual (entidade consumida por muitos services):
+
+```java
+@Entity
+public class Pedido {
+
+    @Column(name = "criado_em")
+    private OffsetDateTime criadoEm;
+
+    // Getter principal — código novo usa este
+    public OffsetDateTime getCriadoEm() {
+        return criadoEm;
+    }
+
+    // Getter para código legado que ainda espera Date
+    @Deprecated(forRemoval = true)
+    public Date getCriadoEmAsDate() {
+        return criadoEm == null ? null : Date.from(criadoEm.toInstant());
+    }
+}
+```
+
+O `@Deprecated(forRemoval = true)` sinaliza para a equipe que o getter legado será removido, e a IDE marca como strikethrough.
+
+### Tabela de conversão entre tipos (referência rápida)
+
+```java
+// ── Date → java.time ──────────────────────────────────────
+
+// Date → OffsetDateTime
+OffsetDateTime odt = date.toInstant().atOffset(ZoneOffset.UTC);
+
+// Date → LocalDateTime (assume fuso da JVM — cuidado!)
+LocalDateTime ldt = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+
+// Date → LocalDate
+LocalDate ld = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+
+// ── java.time → Date ──────────────────────────────────────
+
+// OffsetDateTime → Date
+Date date = Date.from(odt.toInstant());
+
+// LocalDateTime → Date (assume fuso da JVM)
+Date date = Date.from(ldt.atZone(ZoneId.systemDefault()).toInstant());
+
+// LocalDate → Date (meia-noite no fuso da JVM)
+Date date = Date.from(ld.atStartOfDay(ZoneId.systemDefault()).toInstant());
+```
+
+### Checklist de migração
+
+```mermaid
+flowchart TD
+    A["1. Verificar tipo real das colunas\n(information_schema)"] --> B{Tipo da coluna?}
+
+    B -->|TIMESTAMPTZ| C["Trocar para OffsetDateTime\n✅ zero impacto no banco"]
+    B -->|TIMESTAMP| D{Quer timezone?}
+    B -->|DATE| E["Trocar para LocalDate\n✅ zero impacto no banco"]
+    B -->|TIME| F["Trocar para LocalTime\n✅ zero impacto no banco"]
+
+    D -->|Sim| G["Migration Flyway:\nALTER TYPE TIMESTAMPTZ\nUSING AT TIME ZONE 'fuso'\nDepois: OffsetDateTime"]
+    D -->|Não| H["Trocar para LocalDateTime\n✅ zero impacto no banco"]
+
+    C --> I["Remover @Temporal"]
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+
+    I --> J["Atualizar comparações,\nformatações e DTOs"]
+    J --> K["Deprecar getters legados\ncom @Deprecated forRemoval"]
+
+    style C fill:#9f9,stroke:#333
+    style E fill:#9f9,stroke:#333
+    style F fill:#9f9,stroke:#333
+    style H fill:#9f9,stroke:#333
+    style G fill:#fc9,stroke:#333
+```
+
+| Etapa | Ação | Impacto no banco |
+|---|---|---|
+| 1 | Verificar tipo real das colunas (`information_schema`) | Nenhum |
+| 2 | `TIMESTAMPTZ` → `OffsetDateTime` | Nenhum |
+| 3 | `TIMESTAMP` → `LocalDateTime` | Nenhum |
+| 4 | `DATE` → `LocalDate` | Nenhum |
+| 5 | `TIME` → `LocalTime` | Nenhum |
+| 6 | `TIMESTAMP` → `OffsetDateTime` (upgrade de coluna) | Migration: `ALTER TYPE TIMESTAMPTZ` |
+| 7 | Remover `@Temporal` | Nenhum |
+| 8 | Atualizar comparações, formatações, DTOs | Nenhum |
+| 9 | Deprecar getters legados com `Date` | Nenhum |
+
+Na grande maioria dos casos (etapas 1–5 e 7–9), a migração é puramente Java — nenhuma alteração no banco. A única situação que exige Flyway migration é quando se quer **promover** uma coluna `TIMESTAMP` para `TIMESTAMPTZ`.
 
 ---
 
