@@ -26,6 +26,10 @@
 16. [Validação e Segurança de Queries](#16-validação-e-segurança-de-queries)
 17. [Performance — Dicas Práticas](#17-performance--dicas-práticas)
 18. [Query Hints — Controle Fino de Comportamento](#18-query-hints--controle-fino-de-comportamento)
+19. [Persistência — Boas Práticas de INSERT](#19-persistência--boas-práticas-de-insert)
+20. [Atualização — Boas Práticas de UPDATE](#20-atualização--boas-práticas-de-update)
+21. [Exclusão — Boas Práticas de DELETE](#21-exclusão--boas-práticas-de-delete)
+22. [Entity Listeners — Callbacks de Ciclo de Vida](#22-entity-listeners--callbacks-de-ciclo-de-vida)
 
 ---
 
@@ -2706,10 +2710,1341 @@ flowchart TD
 
 ---
 
+## 19. Persistência — Boas Práticas de INSERT
+
+### Ciclo de vida: transient → managed
+
+```mermaid
+stateDiagram-v2
+    [*] --> Transient : new Entity()
+    Transient --> Managed : persist() / save()
+    note right of Managed : id gerado\nHibernate rastreia mudanças\nINSERT executado no flush
+    Managed --> [*] : flush / commit → INSERT no banco
+```
+
+### Spring Data — `save()` para entidades novas
+
+```java
+@Service
+public class AlunoService {
+
+    private final AlunoRepository repository;
+
+    @Transactional
+    public Aluno criar(CriarAlunoRequest request) {
+        var aluno = new Aluno();
+        aluno.setNome(request.nome());
+        aluno.setRa(request.ra());
+        aluno.setEmail(request.email());
+
+        return repository.save(aluno);
+        // Hibernate detecta id = null → executa INSERT
+    }
+}
+```
+
+O `save()` do Spring Data chama `entityManager.persist()` quando a entidade é nova (id = null) e `entityManager.merge()` quando já tem id. Para entidades com `@GeneratedValue`, o id nulo é o indicador de novidade.
+
+### JPA puro — `persist()`
+
+```java
+@Transactional
+public Aluno criar(CriarAlunoRequest request) {
+    var aluno = new Aluno();
+    aluno.setNome(request.nome());
+    aluno.setRa(request.ra());
+    aluno.setEmail(request.email());
+
+    entityManager.persist(aluno);
+    // aluno.getId() já tem valor após persist() com IDENTITY
+    return aluno;
+}
+```
+
+`persist()` torna a entidade managed. Com `GenerationType.IDENTITY`, o INSERT é executado imediatamente para obter o id. Com `SEQUENCE`, o Hibernate busca o próximo valor da sequence mas pode postergar o INSERT até o flush.
+
+### Persistência com relacionamentos — cascade
+
+```java
+@Transactional
+public Curso criarCursoComMatriculas(CriarCursoRequest request) {
+    var curso = new Curso();
+    curso.setNome(request.nome());
+    curso.setCargaHoraria(request.cargaHoraria());
+
+    // Professor já existente — usa getReferenceById (0 SELECTs)
+    curso.setProfessor(professorRepository.getReferenceById(request.professorId()));
+
+    // Matrículas são criadas junto via cascade
+    for (Long alunoId : request.alunoIds()) {
+        var matricula = new Matricula();
+        matricula.setCurso(curso);
+        matricula.setAluno(alunoRepository.getReferenceById(alunoId));
+        matricula.setStatus(StatusMatricula.ATIVA);
+        curso.getMatriculas().add(matricula);
+    }
+
+    return cursoRepository.save(curso);
+    // 1 INSERT curso + N INSERTs matricula (via cascade)
+}
+```
+
+### getReferenceById para FKs — evitar SELECTs desnecessários
+
+```java
+// RUIM — 2 SELECTs para obter entidades que só servem como FK
+Curso curso = cursoRepository.findById(request.cursoId()).orElseThrow();
+Aluno aluno = alunoRepository.findById(request.alunoId()).orElseThrow();
+
+// BOM — 0 SELECTs, proxy contém apenas o id (suficiente para o INSERT)
+Curso curso = cursoRepository.getReferenceById(request.cursoId());
+Aluno aluno = alunoRepository.getReferenceById(request.alunoId());
+```
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant R as Repository
+    participant DB as Banco
+
+    rect rgb(240, 210, 200)
+        Note over S,DB: findById — 2 SELECTs desnecessários
+        S->>R: findById(cursoId)
+        R->>DB: SELECT * FROM curso WHERE id = ?
+        S->>R: findById(alunoId)
+        R->>DB: SELECT * FROM aluno WHERE id = ?
+        S->>R: save(matricula)
+        R->>DB: INSERT INTO matricula (curso_id, aluno_id, ...)
+        Note over S,DB: Total: 2 SELECTs + 1 INSERT
+    end
+
+    rect rgb(200, 230, 200)
+        Note over S,DB: getReferenceById — 0 SELECTs
+        S->>R: getReferenceById(cursoId)
+        Note over R: Cria proxy {id only}
+        S->>R: getReferenceById(alunoId)
+        Note over R: Cria proxy {id only}
+        S->>R: save(matricula)
+        R->>DB: INSERT INTO matricula (curso_id, aluno_id, ...)
+        Note over S,DB: Total: 0 SELECTs + 1 INSERT
+    end
+```
+
+### Persistência em batch — `saveAll()` com tuning
+
+```java
+@Transactional
+public List<Aluno> criarEmLote(List<CriarAlunoRequest> requests) {
+    List<Aluno> alunos = requests.stream()
+        .map(req -> {
+            var aluno = new Aluno();
+            aluno.setNome(req.nome());
+            aluno.setRa(req.ra());
+            aluno.setEmail(req.email());
+            return aluno;
+        })
+        .toList();
+
+    return repository.saveAll(alunos);
+}
+```
+
+Para batch INSERT performático, configure o Hibernate para agrupar INSERTs:
+
+```yaml
+spring:
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+```
+
+Com `IDENTITY` como `GenerationType`, o batch INSERT do JDBC **não funciona** — o Hibernate precisa executar cada INSERT individualmente para obter o id. Para batch real, use `SEQUENCE` com `allocationSize`:
+
+```java
+@Id
+@GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "aluno_seq")
+@SequenceGenerator(name = "aluno_seq", sequenceName = "aluno_id_seq", allocationSize = 50)
+private Long id;
+```
+
+### JPA puro — batch com flush/clear periódico
+
+Para milhares de registros, limpe o persistence context periodicamente para evitar `OutOfMemoryError`:
+
+```java
+@Transactional
+public int importarAlunos(List<CriarAlunoRequest> requests) {
+    int batchSize = 50;
+
+    for (int i = 0; i < requests.size(); i++) {
+        var aluno = new Aluno();
+        aluno.setNome(requests.get(i).nome());
+        aluno.setRa(requests.get(i).ra());
+        entityManager.persist(aluno);
+
+        if (i > 0 && i % batchSize == 0) {
+            entityManager.flush();
+            entityManager.clear();
+        }
+    }
+
+    entityManager.flush();
+    entityManager.clear();
+
+    return requests.size();
+}
+```
+
+### Tratamento de constraint violation no INSERT
+
+```java
+@Transactional
+public Aluno criar(CriarAlunoRequest request) {
+    // Validação prévia (feedback amigável)
+    if (repository.existsByRa(request.ra())) {
+        throw new AlunoJaExisteException("RA já cadastrado: " + request.ra());
+    }
+
+    var aluno = new Aluno();
+    aluno.setNome(request.nome());
+    aluno.setRa(request.ra());
+
+    return repository.save(aluno);
+    // Constraint uk_aluno_ra é última defesa contra race condition
+}
+```
+
+### persist() vs merge() — quando cada um é chamado
+
+```mermaid
+flowchart TD
+    A["repository.save(entity)"] --> B{entity.getId() == null?}
+    B -->|Sim| C["entityManager.persist(entity)\nEntidade nova → INSERT"]
+    B -->|Não| D{Entidade está\nno persistence context?}
+
+    D -->|Sim, managed| E["Dirty checking no flush\n→ UPDATE automático"]
+    D -->|Não, detached| F["entityManager.merge(entity)\n→ SELECT + UPDATE"]
+
+    C --> G["Entidade retornada É a mesma instância"]
+    F --> H["Entidade retornada é uma CÓPIA managed\n(original continua detached)"]
+
+    style C fill:#9f9,stroke:#333
+    style E fill:#9cf,stroke:#333
+    style F fill:#fc9,stroke:#333
+```
+
+### Interface Persistable — controle explícito de isNew()
+
+O `save()` do Spring Data decide entre `persist()` e `merge()` verificando se a entidade é nova. Por padrão, a detecção é baseada no id: `id == null` → nova. Mas isso falha quando o id é atribuído manualmente (UUID, natural key, ou id vindo de sistema externo):
+
+```java
+// Problema: id atribuído manualmente
+var aluno = new Aluno();
+aluno.setId(UUID.randomUUID()); // id NÃO é null
+
+repository.save(aluno);
+// Spring Data vê id != null → chama merge() em vez de persist()
+// merge() faz SELECT antes do INSERT → SELECT desnecessário
+```
+
+A interface `Persistable<ID>` permite que a entidade controle explicitamente se é nova:
+
+```java
+@Entity
+@Table(name = "aluno")
+public class Aluno extends BaseEntity implements Persistable<Long> {
+
+    private String nome;
+    private String ra;
+
+    @Transient // não persiste no banco
+    private boolean isNew = true;
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    private void markNotNew() {
+        this.isNew = false;
+    }
+}
+```
+
+O `@PostPersist` marca como "não novo" após o INSERT. O `@PostLoad` marca como "não novo" quando carregada do banco. Assim o `save()` sempre chama `persist()` na primeira vez e `merge()` quando a entidade já foi carregada.
+
+#### Cenários onde Persistable é necessário
+
+```mermaid
+flowchart TD
+    A{Como o ID é gerado?} -->|"@GeneratedValue\n(IDENTITY, SEQUENCE)"| B["Detecção padrão funciona\nid == null → persist\nNÃO precisa de Persistable"]
+    A -->|"UUID atribuído\nno construtor"| C["Precisa de Persistable\nid nunca é null"]
+    A -->|"ID vindo de\nsistema externo"| D["Precisa de Persistable\nid já vem preenchido"]
+    A -->|"@NaturalId como PK\n(sem surrogate key)"| E["Precisa de Persistable\nid atribuído manualmente"]
+
+    style B fill:#9f9,stroke:#333
+    style C fill:#fc9,stroke:#333
+    style D fill:#fc9,stroke:#333
+    style E fill:#fc9,stroke:#333
+```
+
+#### Exemplo completo com UUID
+
+```java
+@Entity
+@Table(name = "documento")
+public class Documento implements Persistable<UUID> {
+
+    @Id
+    @Column(columnDefinition = "UUID")
+    private UUID id;
+
+    @Column(nullable = false)
+    private String titulo;
+
+    private String conteudo;
+
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime criadoEm;
+
+    @Transient
+    private boolean isNew = true;
+
+    protected Documento() {} // JPA
+
+    public Documento(String titulo, String conteudo) {
+        this.id = UUID.randomUUID();
+        this.titulo = titulo;
+        this.conteudo = conteudo;
+    }
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    private void markNotNew() {
+        this.isNew = false;
+    }
+}
+```
+
+```java
+// Agora save() chama persist() corretamente
+var doc = new Documento("Relatório Q3", "Conteúdo...");
+// doc.isNew() == true → persist() → INSERT direto, sem SELECT prévio
+repository.save(doc);
+```
+
+#### Persistable na BaseEntity (para uso em toda hierarquia)
+
+Se múltiplas entidades usam id manual, centralize na classe-base:
+
+```java
+@MappedSuperclass
+public abstract class BaseEntityWithManualId<ID extends Serializable>
+        implements Persistable<ID>, Serializable {
+
+    @Transient
+    private boolean isNew = true;
+
+    @Override
+    public boolean isNew() {
+        return isNew;
+    }
+
+    @PostPersist
+    @PostLoad
+    private void markNotNew() {
+        this.isNew = false;
+    }
+}
+```
+
+```java
+@Entity
+public class Documento extends BaseEntityWithManualId<UUID> {
+
+    @Id
+    @Column(columnDefinition = "UUID")
+    private UUID id;
+
+    // ... campos
+
+    @Override
+    public UUID getId() {
+        return id;
+    }
+}
+```
+
+#### Fluxo com e sem Persistable
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant SD as Spring Data
+    participant EM as EntityManager
+    participant DB as Banco
+
+    rect rgb(240, 210, 200)
+        Note over S,DB: SEM Persistable (UUID atribuído no construtor)
+        S->>SD: save(doc) — id != null
+        SD->>EM: merge(doc)
+        EM->>DB: SELECT * FROM documento WHERE id = ? (desnecessário!)
+        Note over DB: Não encontrou → INSERT
+        EM->>DB: INSERT INTO documento (...)
+    end
+
+    rect rgb(200, 230, 200)
+        Note over S,DB: COM Persistable — isNew() = true
+        S->>SD: save(doc) — isNew() == true
+        SD->>EM: persist(doc)
+        EM->>DB: INSERT INTO documento (...)
+        Note over DB: INSERT direto, sem SELECT
+    end
+```
+
+### Antipatterns de INSERT
+
+```java
+// ERRADO — save() dentro de loop gera N flushes individuais
+for (AlunoRequest req : requests) {
+    repository.save(toEntity(req)); // flush individual a cada save
+}
+
+// CORRETO — saveAll() agrupa em batch
+repository.saveAll(requests.stream().map(this::toEntity).toList());
+
+// ERRADO — merge() em entidade nova (SELECT desnecessário antes do INSERT)
+var aluno = new Aluno();
+aluno.setId(null);
+entityManager.merge(aluno); // faz SELECT antes, depois INSERT
+
+// CORRETO — persist() em entidade nova
+entityManager.persist(aluno); // INSERT direto
+
+// ERRADO — carregar entidade só para usar como FK
+Curso curso = cursoRepository.findById(cursoId).orElseThrow();
+matricula.setCurso(curso);
+
+// CORRETO — proxy para FK
+matricula.setCurso(cursoRepository.getReferenceById(cursoId));
+```
+
+---
+
+## 20. Atualização — Boas Práticas de UPDATE
+
+### Spring Data — dirty checking automático (recomendado)
+
+A forma mais idiomática: carregue a entidade, altere os campos, e o Hibernate gera o UPDATE no flush:
+
+```java
+@Service
+public class AlunoService {
+
+    private final AlunoRepository repository;
+
+    @Transactional
+    public AlunoResponse atualizar(Long id, AtualizarAlunoRequest request) {
+        Aluno aluno = repository.findById(id)
+            .orElseThrow(() -> new AlunoNotFoundException(id));
+
+        aluno.setNome(request.nome());
+        aluno.setEmail(request.email());
+
+        // NÃO precisa chamar save() — dirty checking gera UPDATE no flush
+        return AlunoResponse.of(aluno);
+    }
+}
+```
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant PC as Persistence Context
+    participant DB as Banco
+
+    S->>PC: findById(1L)
+    PC->>DB: SELECT * FROM aluno WHERE id = 1
+    DB->>PC: Aluno {nome="João", email="joao@old.com"}
+    Note over PC: Snapshot salvo para dirty checking
+
+    S->>PC: aluno.setNome("João Silva")
+    S->>PC: aluno.setEmail("joao@new.com")
+    Note over PC: Entidade modified, snapshot difere
+
+    Note over PC,DB: Flush (commit da @Transactional)
+    PC->>DB: UPDATE aluno SET nome='João Silva', email='joao@new.com' WHERE id=1
+```
+
+**Não chame `save()` em entidades managed.** É redundante — o dirty checking já resolve. O `save()` em entidade com id chama `merge()`, que faz um SELECT extra para verificar se existe.
+
+### JPA puro — dirty checking idêntico
+
+```java
+@Transactional
+public void atualizar(Long id, AtualizarAlunoRequest request) {
+    Aluno aluno = entityManager.find(Aluno.class, id);
+    if (aluno == null) throw new AlunoNotFoundException(id);
+
+    aluno.setNome(request.nome());
+    aluno.setEmail(request.email());
+
+    // Sem chamada explícita — flush no commit detecta as mudanças
+}
+```
+
+### Atualização parcial — só os campos informados
+
+```java
+@Transactional
+public Aluno atualizarParcial(Long id, Map<String, Object> campos) {
+    Aluno aluno = repository.findById(id)
+        .orElseThrow(() -> new AlunoNotFoundException(id));
+
+    campos.forEach((campo, valor) -> {
+        switch (campo) {
+            case "nome"  -> aluno.setNome((String) valor);
+            case "email" -> aluno.setEmail((String) valor);
+            case "ativo" -> aluno.setAtivo((Boolean) valor);
+            default -> throw new IllegalArgumentException("Campo desconhecido: " + campo);
+        }
+    });
+
+    return aluno; // dirty checking gera UPDATE só dos campos alterados com @DynamicUpdate
+}
+```
+
+Com `@DynamicUpdate`, o SQL gerado inclui **apenas** os campos que mudaram:
+
+```java
+@Entity
+@DynamicUpdate
+public class Aluno extends BaseEntity { }
+```
+
+```sql
+-- Sem @DynamicUpdate: UPDATE aluno SET nome=?, ra=?, email=?, ativo=? WHERE id=?
+-- Com @DynamicUpdate: UPDATE aluno SET email=? WHERE id=?  (só o que mudou)
+```
+
+### Atualização de relacionamentos
+
+```java
+@Transactional
+public void transferirDeCurso(Long matriculaId, Long novoCursoId) {
+    Matricula matricula = matriculaRepository.findById(matriculaId)
+        .orElseThrow(() -> new MatriculaNotFoundException(matriculaId));
+
+    // getReferenceById evita SELECT no curso novo
+    matricula.setCurso(cursoRepository.getReferenceById(novoCursoId));
+
+    // Dirty checking gera: UPDATE matricula SET curso_id = ? WHERE id = ?
+}
+```
+
+### Bulk UPDATE com @Modifying (sem carregar entidades)
+
+Para atualizações em massa sem precisar carregar cada entidade:
+
+```java
+public interface MatriculaRepository extends JpaRepository<Matricula, Long> {
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Matricula m SET m.status = :novoStatus WHERE m.status = :statusAtual")
+    int atualizarStatus(
+        @Param("statusAtual") StatusMatricula statusAtual,
+        @Param("novoStatus") StatusMatricula novoStatus
+    );
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("UPDATE Matricula m SET m.nota = m.nota + :bonus WHERE m.curso.id = :cursoId AND m.nota IS NOT NULL")
+    int aplicarBonus(@Param("cursoId") Long cursoId, @Param("bonus") BigDecimal bonus);
+}
+```
+
+### JPA puro — bulk UPDATE via JPQL
+
+```java
+@Transactional
+public int desativarAlunosSemMatricula() {
+    return entityManager.createQuery("""
+        UPDATE Aluno a SET a.ativo = false
+        WHERE a.id NOT IN (SELECT DISTINCT m.aluno.id FROM Matricula m WHERE m.status = 'ATIVA')
+        """)
+        .executeUpdate();
+}
+```
+
+### Bulk UPDATE nativo para operações complexas
+
+```java
+@Modifying
+@Query(value = """
+    UPDATE matricula m
+    SET nota = sub.nota_curva
+    FROM (
+        SELECT id,
+               nota + (10.0 - MAX(nota) OVER (PARTITION BY curso_id)) * 0.1 AS nota_curva
+        FROM matricula
+        WHERE nota IS NOT NULL
+    ) sub
+    WHERE m.id = sub.id
+    """, nativeQuery = true)
+int aplicarCurva();
+```
+
+### Optimistic Locking — proteção contra lost updates
+
+```java
+@Entity
+public class Matricula extends BaseEntity {
+
+    @Version
+    private Integer versao;
+
+    // ...
+}
+```
+
+```java
+@Transactional
+public void atualizarNota(Long matriculaId, BigDecimal novaNota) {
+    Matricula m = repository.findById(matriculaId)
+        .orElseThrow(() -> new MatriculaNotFoundException(matriculaId));
+
+    m.setNota(novaNota);
+
+    // No flush, o Hibernate gera:
+    // UPDATE matricula SET nota=?, versao=2 WHERE id=? AND versao=1
+    // Se outro usuário já atualizou (versao != 1) → OptimisticLockException
+}
+```
+
+```mermaid
+sequenceDiagram
+    participant U1 as Usuário A
+    participant U2 as Usuário B
+    participant DB as Banco
+
+    U1->>DB: SELECT * FROM matricula WHERE id=1 (versao=1)
+    U2->>DB: SELECT * FROM matricula WHERE id=1 (versao=1)
+
+    U1->>DB: UPDATE SET nota=8.5, versao=2 WHERE id=1 AND versao=1
+    Note over DB: 1 row affected ✅ versao agora é 2
+
+    U2->>DB: UPDATE SET nota=7.0, versao=2 WHERE id=1 AND versao=1
+    Note over DB: 0 rows affected ❌ versao já é 2
+    DB->>U2: OptimisticLockException
+```
+
+### Quando usar cada abordagem de UPDATE
+
+```mermaid
+flowchart TD
+    A{Quantas entidades\nserão atualizadas?} -->|"1 entidade\n(por ID)"| B{Precisa de lógica\nde negócio?}
+    A -->|"N entidades\n(em massa)"| C["Bulk @Modifying\n+ flushAutomatically\n+ clearAutomatically"]
+
+    B -->|Sim| D["findById + dirty checking\n(recomendado)"]
+    B -->|"Não, só setar campo"| E{Performance\ncrítica?}
+
+    E -->|Não| D
+    E -->|Sim| F["Bulk @Modifying\nmesmo para 1 registro"]
+
+    D --> G["@Version para\noptimistic locking"]
+
+    style D fill:#9f9,stroke:#333
+    style C fill:#9cf,stroke:#333
+```
+
+### Antipatterns de UPDATE
+
+```java
+// ERRADO — save() em entidade managed (redundante, merge() desnecessário)
+Aluno aluno = repository.findById(id).orElseThrow();
+aluno.setNome("Novo Nome");
+repository.save(aluno); // DESNECESSÁRIO — dirty checking já faz o UPDATE
+
+// CORRETO
+Aluno aluno = repository.findById(id).orElseThrow();
+aluno.setNome("Novo Nome");
+// fim — @Transactional garante o flush com UPDATE
+
+// ERRADO — carregar entidade só para setar um campo em massa
+List<Matricula> todas = repository.findByStatus(StatusMatricula.PENDENTE);
+todas.forEach(m -> m.setStatus(StatusMatricula.CANCELADA)); // N updates
+
+// CORRETO — bulk update
+repository.atualizarStatus(StatusMatricula.PENDENTE, StatusMatricula.CANCELADA); // 1 UPDATE
+
+// ERRADO — merge() de entidade detached sem @Version (possível lost update)
+Matricula detached = /* veio de um request DTO */;
+entityManager.merge(detached); // sobrescreve silenciosamente
+
+// CORRETO — find + set + @Version
+Matricula managed = repository.findById(detached.getId()).orElseThrow();
+managed.setNota(detached.getNota());
+// @Version protege contra lost update
+```
+
+---
+
+## 21. Exclusão — Boas Práticas de DELETE
+
+### Spring Data — `deleteById()` e `delete(entity)`
+
+```java
+@Service
+public class MatriculaService {
+
+    private final MatriculaRepository repository;
+
+    @Transactional
+    public void remover(Long id) {
+        // Opção 1: deleteById — faz SELECT + DELETE
+        repository.deleteById(id);
+        // Se não existe, lança EmptyResultDataAccessException
+
+        // Opção 2: verificação explícita com mensagem customizada
+        Matricula matricula = repository.findById(id)
+            .orElseThrow(() -> new MatriculaNotFoundException(id));
+        repository.delete(matricula);
+    }
+}
+```
+
+### JPA puro — `remove()`
+
+```java
+@Transactional
+public void remover(Long id) {
+    Matricula matricula = entityManager.find(Matricula.class, id);
+    if (matricula == null) throw new MatriculaNotFoundException(id);
+
+    entityManager.remove(matricula);
+    // DELETE executado no flush
+}
+```
+
+### getReference + remove — DELETE sem SELECT prévio
+
+```java
+@Transactional
+public void remover(Long id) {
+    // Cria proxy sem SELECT — DELETE direto no flush
+    Matricula ref = entityManager.getReference(Matricula.class, id);
+    entityManager.remove(ref);
+    // Se o id não existe, lança EntityNotFoundException no flush
+}
+```
+
+```java
+// Equivalente no Spring Data
+@Transactional
+public void remover(Long id) {
+    repository.delete(repository.getReferenceById(id));
+    // 0 SELECTs + 1 DELETE
+}
+```
+
+### Remoção via coleção com orphanRemoval
+
+```java
+@Transactional
+public void removerMatriculaDoCurso(Long cursoId, Long matriculaId) {
+    Curso curso = cursoRepository.findById(cursoId)
+        .orElseThrow(() -> new CursoNotFoundException(cursoId));
+
+    // orphanRemoval = true → Hibernate gera DELETE
+    curso.getMatriculas().removeIf(m -> m.getId().equals(matriculaId));
+}
+```
+
+**Cuidado:** `getMatriculas()` carrega **toda** a coleção. Para coleções grandes, prefira remoção direta.
+
+### Remoção direta sem carregar a coleção do pai
+
+```java
+@Transactional
+public void removerMatricula(Long cursoId, Long matriculaId) {
+    Matricula matricula = matriculaRepository.findById(matriculaId)
+        .filter(m -> m.getCurso().getId().equals(cursoId))
+        .orElseThrow(() -> new MatriculaNotFoundException(matriculaId));
+
+    matriculaRepository.delete(matricula);
+    // 1 SELECT + 1 DELETE, sem carregar a coleção do curso
+}
+```
+
+### Bulk DELETE com @Modifying
+
+```java
+public interface MatriculaRepository extends JpaRepository<Matricula, Long> {
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM Matricula m WHERE m.status = 'CANCELADA' AND m.criadoEm < :limite")
+    int limparCanceladas(@Param("limite") OffsetDateTime limite);
+
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("DELETE FROM Matricula m WHERE m.curso.id = :cursoId AND m.aluno.id = :alunoId")
+    int deleteByCursoAndAluno(@Param("cursoId") Long cursoId, @Param("alunoId") Long alunoId);
+}
+```
+
+Bulk DELETE não dispara `@PreRemove`, cascade nem `orphanRemoval`.
+
+### JPA puro — bulk DELETE via JPQL
+
+```java
+@Transactional
+public int limparDadosAntigos(OffsetDateTime limite) {
+    // Ordem importa: filhos primeiro, depois pais
+    int matriculas = entityManager.createQuery(
+            "DELETE FROM Matricula m WHERE m.criadoEm < :limite")
+        .setParameter("limite", limite)
+        .executeUpdate();
+
+    int cursosSemMatricula = entityManager.createQuery("""
+            DELETE FROM Curso c WHERE c.id NOT IN (
+                SELECT DISTINCT m.curso.id FROM Matricula m
+            )
+            """)
+        .executeUpdate();
+
+    return matriculas + cursosSemMatricula;
+}
+```
+
+### Soft Delete — @SoftDelete do Hibernate 6.4+
+
+Com `@SoftDelete`, toda operação de remoção gera UPDATE em vez de DELETE:
+
+```java
+@Entity
+@SoftDelete
+public class Aluno extends BaseEntity { }
+```
+
+```java
+// Todas essas operações geram UPDATE SET deleted = true:
+repository.deleteById(id);
+repository.delete(aluno);
+entityManager.remove(aluno);
+curso.getMatriculas().remove(matricula); // com orphanRemoval
+```
+
+Para consultar registros deletados:
+
+```java
+@Query(value = "SELECT * FROM aluno WHERE deleted = true", nativeQuery = true)
+List<Aluno> findDeletados();
+```
+
+### Tratamento de violação de FK na exclusão
+
+Se a entidade é referenciada por outra tabela, o DELETE falha com constraint violation:
+
+```java
+@ExceptionHandler(DataIntegrityViolationException.class)
+public ProblemDetail handleFkViolation(DataIntegrityViolationException ex) {
+    String message = ex.getMostSpecificCause().getMessage();
+
+    if (message.contains("fk_matricula_curso")) {
+        return ProblemDetail.forStatusAndDetail(
+            HttpStatus.CONFLICT,
+            "Curso não pode ser removido: existem matrículas vinculadas"
+        );
+    }
+
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT,
+        "Registro não pode ser removido: existem dependências"
+    );
+}
+```
+
+### Cascade DELETE — quando usar
+
+```java
+@Entity
+public class Curso extends BaseEntity {
+
+    // CASCADE REMOVE: ao deletar o curso, deleta TODAS as matrículas
+    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Matricula> matriculas = new HashSet<>();
+}
+```
+
+```java
+@Transactional
+public void removerCursoComMatriculas(Long cursoId) {
+    Curso curso = cursoRepository.findById(cursoId)
+        .orElseThrow(() -> new CursoNotFoundException(cursoId));
+
+    cursoRepository.delete(curso);
+    // Hibernate gera: DELETE matricula WHERE curso_id = ?
+    //                 DELETE curso WHERE id = ?
+}
+```
+
+**Cuidado:** cascade DELETE carrega **todas** as entidades filhas para o persistence context antes de deletar. Para coleções muito grandes, bulk DELETE é mais eficiente.
+
+### Comparação de abordagens de DELETE
+
+```mermaid
+flowchart TD
+    A{O que deletar?} -->|"1 entidade por ID"| B{Precisa de\nlifecycle callbacks?}
+    A -->|"N entidades\n(limpeza, batch)"| C["Bulk @Modifying\n1 DELETE, 0 SELECTs"]
+    A -->|"Filho de uma\ncoleção do pai"| D{Coleção é\ngrande?}
+    A -->|"Soft delete\n(manter histórico)"| E["@SoftDelete\nUPDATE SET deleted = true"]
+
+    B -->|"Sim (@PreRemove,\ncascade)"| F["findById + delete()\n1 SELECT + 1 DELETE"]
+    B -->|Não| G["getReferenceById + delete()\n0 SELECTs + 1 DELETE"]
+
+    D -->|"Pequena (<100)"| H["orphanRemoval\ncollection.remove()"]
+    D -->|"Grande (100+)"| I["Remoção direta\nmatriculaRepository.delete()"]
+
+    style F fill:#9f9,stroke:#333
+    style G fill:#9cf,stroke:#333
+    style C fill:#ff9,stroke:#333
+    style E fill:#f9f,stroke:#333
+```
+
+| Abordagem | Queries | Lifecycle | Cascade | Uso ideal |
+|---|---|---|---|---|
+| `deleteById()` | SELECT + DELETE | Sim | Sim | Remoção simples com validação |
+| `getReferenceById` + `delete()` | DELETE | Sim | Sim | Performance (sem SELECT) |
+| `orphanRemoval` | SELECT coleção + DELETE | Sim | Sim | Coleções pequenas |
+| Remoção direta do filho | SELECT filho + DELETE | Sim | Sim | Coleções grandes |
+| Bulk `@Modifying` | DELETE | Não | Não | Limpeza em massa |
+| `@SoftDelete` | UPDATE | Sim | Sim | Auditoria / histórico |
+
+### Antipatterns de DELETE
+
+```java
+// ERRADO — carregar coleção inteira do pai para deletar 1 filho
+Curso curso = cursoRepository.findById(cursoId).orElseThrow();
+curso.getMatriculas().removeIf(m -> m.getId().equals(matriculaId)); // carrega tudo!
+
+// CORRETO — deletar o filho diretamente
+matriculaRepository.deleteById(matriculaId);
+
+// ERRADO — findAll + forEach + delete (N+1 DELETEs)
+repository.findByStatus(StatusMatricula.CANCELADA)
+    .forEach(repository::delete); // N SELECTs + N DELETEs
+
+// CORRETO — bulk delete
+repository.limparCanceladas(limite); // 1 DELETE
+
+// ERRADO — cascade DELETE em entidades compartilhadas
+@ManyToOne(cascade = CascadeType.REMOVE) // deletar matrícula deleta o CURSO!
+private Curso curso;
+
+// CORRETO — cascade somente do pai para filhos compostos
+// Nunca cascade REMOVE no lado @ManyToOne
+```
+
+---
+
+## 22. Entity Listeners — Callbacks de Ciclo de Vida
+
+O JPA define callbacks que são invocados automaticamente em momentos específicos do ciclo de vida da entidade. Permitem executar lógica transversal (auditoria, validação, notificação) sem poluir o service.
+
+### Callbacks disponíveis
+
+```mermaid
+stateDiagram-v2
+    [*] --> Transient : new Entity()
+
+    Transient --> Managed : persist()
+    note right of Managed : @PrePersist → INSERT → @PostPersist
+
+    Managed --> Managed : flush (dirty)
+    note right of Managed : @PreUpdate → UPDATE → @PostUpdate
+
+    Managed --> Removed : remove()
+    note right of Removed : @PreRemove → DELETE → @PostRemove
+
+    state "Leitura" as Load
+    [*] --> Load : find() / query
+    Load --> Managed : @PostLoad
+```
+
+| Callback | Momento | Uso típico |
+|---|---|---|
+| `@PrePersist` | Antes do INSERT | Setar valores default, validação |
+| `@PostPersist` | Depois do INSERT | Auditoria, disparo de evento |
+| `@PreUpdate` | Antes do UPDATE | Validação, atualizar timestamp |
+| `@PostUpdate` | Depois do UPDATE | Auditoria, notificação |
+| `@PreRemove` | Antes do DELETE | Validação de regras de exclusão |
+| `@PostRemove` | Depois do DELETE | Auditoria, limpeza de cache |
+| `@PostLoad` | Depois do SELECT | Cálculos derivados, estado transient |
+
+### Callbacks inline na entidade
+
+Para lógica simples, diretamente na entidade:
+
+```java
+@Entity
+public class Aluno extends BaseEntity {
+
+    private String nome;
+    private String ra;
+    private String email;
+    private boolean ativo = true;
+
+    @Column(length = 200)
+    private String nomeNormalizado;
+
+    @PrePersist
+    private void prePersist() {
+        this.nomeNormalizado = nome != null ? nome.toUpperCase().trim() : null;
+        if (this.ra == null || this.ra.isBlank()) {
+            throw new IllegalStateException("RA é obrigatório");
+        }
+    }
+
+    @PreUpdate
+    private void preUpdate() {
+        this.nomeNormalizado = nome != null ? nome.toUpperCase().trim() : null;
+    }
+}
+```
+
+### @EntityListeners — listener externo (recomendado)
+
+Para lógica reutilizável em múltiplas entidades, extraia para uma classe listener separada:
+
+```java
+@Entity
+@EntityListeners(AuditListener.class)
+public class Matricula extends BaseEntity { }
+```
+
+```java
+public class AuditListener {
+
+    @PrePersist
+    public void prePersist(Object entity) {
+        log.info("[AUDIT] Criando {}: {}", entity.getClass().getSimpleName(), entity);
+    }
+
+    @PostPersist
+    public void postPersist(Object entity) {
+        log.info("[AUDIT] Criado {}: {}", entity.getClass().getSimpleName(), entity);
+    }
+
+    @PreUpdate
+    public void preUpdate(Object entity) {
+        log.info("[AUDIT] Atualizando {}: {}", entity.getClass().getSimpleName(), entity);
+    }
+
+    @PostUpdate
+    public void postUpdate(Object entity) {
+        log.info("[AUDIT] Atualizado {}: {}", entity.getClass().getSimpleName(), entity);
+    }
+
+    @PreRemove
+    public void preRemove(Object entity) {
+        log.info("[AUDIT] Removendo {}: {}", entity.getClass().getSimpleName(), entity);
+    }
+
+    @PostRemove
+    public void postRemove(Object entity) {
+        log.info("[AUDIT] Removido {}: {}", entity.getClass().getSimpleName(), entity);
+    }
+}
+```
+
+O listener recebe a entidade como parâmetro (`Object` para ser genérico). Cada método pode ter qualquer nome — é a annotation que define o callback.
+
+### Listener com injeção de dependência (Spring)
+
+Listeners JPA padrão não são beans Spring — o `@Autowired` não funciona. Para injetar dependências, use o `SpringBeanAutowiringSupport` ou registre como bean:
+
+#### Abordagem 1: @Configurable (AspectJ)
+
+```java
+@Configurable
+public class NotificacaoListener {
+
+    @Autowired
+    private EventPublisher eventPublisher;
+
+    @PostPersist
+    public void postPersist(Object entity) {
+        eventPublisher.publish(new EntityCreatedEvent(entity));
+    }
+}
+```
+
+Requer AspectJ weaving — complexo de configurar.
+
+#### Abordagem 2: BeanFactory lookup (pragmática)
+
+```java
+public class NotificacaoListener {
+
+    @PostPersist
+    public void postPersist(Object entity) {
+        EventPublisher publisher = SpringContext.getBean(EventPublisher.class);
+        publisher.publish(new EntityCreatedEvent(entity));
+    }
+}
+```
+
+```java
+@Component
+public class SpringContext implements ApplicationContextAware {
+
+    private static ApplicationContext context;
+
+    @Override
+    public void setApplicationContext(ApplicationContext ctx) {
+        context = ctx;
+    }
+
+    public static <T> T getBean(Class<T> beanClass) {
+        return context.getBean(beanClass);
+    }
+}
+```
+
+#### Abordagem 3: Spring Events no service (recomendada)
+
+Em vez de usar EntityListener para notificações, use `ApplicationEventPublisher` diretamente no service:
+
+```java
+@Service
+public class MatriculaService {
+
+    private final MatriculaRepository repository;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional
+    public Matricula criar(CriarMatriculaRequest request) {
+        var matricula = new Matricula();
+        // ... setar campos
+        Matricula salva = repository.save(matricula);
+
+        eventPublisher.publishEvent(new MatriculaCriadaEvent(salva));
+        return salva;
+    }
+}
+```
+
+```java
+public record MatriculaCriadaEvent(Matricula matricula) {}
+```
+
+```java
+@Component
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+public class MatriculaEventHandler {
+
+    public void handle(MatriculaCriadaEvent event) {
+        log.info("Matrícula criada: {}", event.matricula().getId());
+        // enviar email, notificação push, etc.
+    }
+}
+```
+
+O `@TransactionalEventListener` com `AFTER_COMMIT` garante que o handler só executa se a transação for bem-sucedida — evita enviar email de confirmação para uma matrícula que deu rollback.
+
+### Listener global via @MappedSuperclass
+
+Para aplicar callbacks em toda a hierarquia, defina na superclasse:
+
+```java
+@MappedSuperclass
+@EntityListeners(AuditListener.class)
+public abstract class BaseEntity implements Serializable {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime criadoEm;
+
+    @UpdateTimestamp
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime atualizadoEm;
+}
+```
+
+Todas as entidades que estendem `BaseEntity` herdam o `AuditListener` automaticamente.
+
+### Listener global via orm.xml (sem annotation)
+
+Para aplicar um listener a **todas** as entidades sem modificar nenhuma classe:
+
+```xml
+<!-- src/main/resources/META-INF/orm.xml -->
+<?xml version="1.0" encoding="UTF-8"?>
+<entity-mappings xmlns="https://jakarta.ee/xml/ns/persistence/orm"
+                 version="3.2">
+
+    <persistence-unit-metadata>
+        <persistence-unit-defaults>
+            <entity-listeners>
+                <entity-listener class="com.exemplo.listener.AuditListener"/>
+                <entity-listener class="com.exemplo.listener.SoftDeleteListener"/>
+            </entity-listeners>
+        </persistence-unit-defaults>
+    </persistence-unit-metadata>
+
+</entity-mappings>
+```
+
+Qualquer entidade do persistence unit recebe os callbacks — sem `@EntityListeners` em nenhuma classe.
+
+### Spring Data JPA Auditing — alternativa integrada
+
+O Spring Data oferece auditoria declarativa com `@CreatedBy`, `@LastModifiedBy`, `@CreatedDate`, `@LastModifiedDate`:
+
+```java
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+public abstract class AuditableEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private OffsetDateTime criadoEm;
+
+    @LastModifiedDate
+    @Column(nullable = false)
+    private OffsetDateTime atualizadoEm;
+
+    @CreatedBy
+    @Column(updatable = false, length = 100)
+    private String criadoPor;
+
+    @LastModifiedBy
+    @Column(length = 100)
+    private String atualizadoPor;
+}
+```
+
+Requer configuração:
+
+```java
+@Configuration
+@EnableJpaAuditing
+public class JpaConfig {
+
+    @Bean
+    public AuditorAware<String> auditorAware() {
+        return () -> Optional.ofNullable(SecurityContextHolder.getContext())
+            .map(SecurityContext::getAuthentication)
+            .filter(Authentication::isAuthenticated)
+            .map(Authentication::getName);
+    }
+}
+```
+
+O `AuditingEntityListener` é um `@EntityListeners` do Spring que preenche automaticamente os campos de auditoria.
+
+### Callbacks em entidades com @SoftDelete
+
+Com `@SoftDelete`, o `@PreRemove` e `@PostRemove` são invocados mesmo que a operação real seja um UPDATE:
+
+```java
+@Entity
+@SoftDelete
+@EntityListeners(ExclusaoListener.class)
+public class Aluno extends BaseEntity { }
+```
+
+```java
+public class ExclusaoListener {
+
+    @PreRemove
+    public void preRemove(Object entity) {
+        // Chamado antes do UPDATE SET deleted = true
+        log.info("Soft-deletando: {}", entity);
+    }
+
+    @PostRemove
+    public void postRemove(Object entity) {
+        // Chamado depois do UPDATE SET deleted = true
+        log.info("Soft-deletado: {}", entity);
+    }
+}
+```
+
+### Ordem de execução
+
+Quando há múltiplos listeners e callbacks inline, a ordem é:
+
+```mermaid
+flowchart TD
+    A["1. Listeners globais (orm.xml)\nem ordem de declaração"] --> B["2. @EntityListeners da classe\nem ordem de declaração"]
+    B --> C["3. @EntityListeners herdados\n(superclasse → subclasse)"]
+    C --> D["4. Callbacks inline da entidade\n(@PrePersist no método)"]
+
+    style A fill:#f9f,stroke:#333
+    style B fill:#9cf,stroke:#333
+    style C fill:#ff9,stroke:#333
+    style D fill:#9f9,stroke:#333
+```
+
+Para desabilitar listeners herdados em uma subclasse específica:
+
+```java
+@Entity
+@ExcludeDefaultListeners     // desabilita listeners de orm.xml
+@ExcludeSuperclassListeners  // desabilita listeners da superclasse
+public class EntidadeSemAuditoria extends BaseEntity { }
+```
+
+### Restrições dos callbacks
+
+- **Não inicie transações** — callbacks executam dentro da transação corrente.
+- **Não chame `EntityManager`** — alterações no persistence context dentro de callbacks podem causar comportamento imprevisível.
+- **Não lance checked exceptions** — apenas unchecked exceptions são permitidas.
+- **@PostPersist e @PostUpdate** — o id já está disponível, mas o registro pode não estar commitado no banco.
+- **Operações pesadas** (email, HTTP) — use `@TransactionalEventListener(AFTER_COMMIT)` no service em vez de EntityListener.
+
+### Comparação de abordagens
+
+| Abordagem | Escopo | Injeção Spring | Complexidade | Uso ideal |
+|---|---|---|---|---|
+| Callback inline (`@PrePersist`) | Uma entidade | Não | Baixa | Normalização, validação simples |
+| `@EntityListeners` na entidade | Entidades anotadas | Workaround | Média | Auditoria por entidade |
+| `@EntityListeners` na `@MappedSuperclass` | Toda hierarquia | Workaround | Média | Auditoria global |
+| `orm.xml` global | Todas as entidades | Workaround | Média | Auditoria/segurança cross-cutting |
+| Spring Data `AuditingEntityListener` | Entidades anotadas | Sim (nativo) | Baixa | `createdBy`, `modifiedBy` |
+| `@TransactionalEventListener` no service | Por operação | Sim (nativo) | Baixa | Notificações, efeitos colaterais |
+
+---
+
 ## Referências
 
 - [Spring Data JPA Reference — Query Methods](https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html)
 - [Hibernate ORM 6 — HQL/JPQL Guide](https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html#query-language)
 - [Vlad Mihalcea — High-Performance Java Persistence](https://vladmihalcea.com/)
+- [Thorben Janssen — Thoughts on Java / JPA & Hibernate](https://thorben-janssen.com/)
 - [PostgreSQL Full-Text Search Documentation](https://www.postgresql.org/docs/current/textsearch.html)
 - [Jakarta Persistence Specification — Query Language](https://jakarta.ee/specifications/persistence/)
