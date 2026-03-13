@@ -1215,13 +1215,169 @@ Resolve N+1 em uma única subselect, independente do tamanho.
 
 ### @ColumnTransformer — transformação no SQL
 
+Útil para criptografia ou conversões transparentes no banco:
+
 ```java
-@ColumnTransformer(
-    read = "pgp_sym_decrypt(cpf_enc, current_setting('app.encryption_key'))",
-    write = "pgp_sym_encrypt(?, current_setting('app.encryption_key'))"
-)
-private String cpf;
+@Entity
+public class Aluno {
+
+    @Column(name = "cpf_enc")
+    @ColumnTransformer(
+        read = "pgp_sym_decrypt(cpf_enc, current_setting('app.encryption_key'))",
+        write = "pgp_sym_encrypt(?, current_setting('app.encryption_key'))"
+    )
+    private String cpf;
+}
 ```
+
+A aplicação Java trabalha com texto limpo. O PostgreSQL armazena cifrado via extensão `pgcrypto`:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+```
+
+O `current_setting('app.encryption_key')` lê uma variável de sessão customizada do PostgreSQL (GUC). O PostgreSQL aceita variáveis com prefixo customizado sem configuração prévia (desde a versão 9.2+). A chave precisa ser **injetada na sessão JDBC** por uma das abordagens abaixo.
+
+#### Opção 1: HikariCP `connection-init-sql` (mais simples)
+
+```yaml
+app:
+  encryption-key: ${ENCRYPTION_KEY}  # variável de ambiente
+
+spring:
+  datasource:
+    hikari:
+      connection-init-sql: >-
+        SET app.encryption_key = '${app.encryption-key}'
+```
+
+Toda conexão criada pelo HikariCP executa o `SET` antes de ser entregue à aplicação. A variável persiste por toda a vida da conexão no pool.
+
+**Tradeoff:** a chave fica visível em logs do PostgreSQL (`log_statement = 'all'`).
+
+#### Opção 2: DataSource wrapper com `SET LOCAL` (mais seguro)
+
+A variável vale **só para a transação corrente** e é descartada no commit/rollback:
+
+```java
+public class EncryptionKeyDataSource extends DelegatingDataSource {
+
+    private final String encryptionKey;
+
+    public EncryptionKeyDataSource(DataSource delegate, String encryptionKey) {
+        super(delegate);
+        this.encryptionKey = encryptionKey;
+    }
+
+    @Override
+    public Connection getConnection() throws SQLException {
+        Connection conn = super.getConnection();
+        try (var stmt = conn.prepareStatement("SET LOCAL app.encryption_key = ?")) {
+            stmt.setString(1, encryptionKey);
+            stmt.execute();
+        }
+        return conn;
+    }
+
+    @Override
+    public Connection getConnection(String username, String password) throws SQLException {
+        Connection conn = super.getConnection(username, password);
+        try (var stmt = conn.prepareStatement("SET LOCAL app.encryption_key = ?")) {
+            stmt.setString(1, encryptionKey);
+            stmt.execute();
+        }
+        return conn;
+    }
+}
+```
+
+```java
+@Configuration
+public class DataSourceConfig {
+
+    @Value("${app.encryption-key}")
+    private String encryptionKey;
+
+    @Bean
+    public DataSource dataSource(DataSource originalDataSource) {
+        return new EncryptionKeyDataSource(originalDataSource, encryptionKey);
+    }
+}
+```
+
+**Vantagem:** `SET LOCAL` isola a chave por transação — se a conexão voltar ao pool, a variável já foi descartada.
+
+#### Opção 3: Aspecto que injeta no início de cada transação
+
+```java
+@Aspect
+@Component
+public class EncryptionKeyAspect {
+
+    @Value("${app.encryption-key}")
+    private String encryptionKey;
+
+    private final EntityManager entityManager;
+
+    public EncryptionKeyAspect(EntityManager entityManager) {
+        this.entityManager = entityManager;
+    }
+
+    @Before("@annotation(org.springframework.transaction.annotation.Transactional)")
+    public void setEncryptionKey() {
+        entityManager.createNativeQuery("SET LOCAL app.encryption_key = :key")
+            .setParameter("key", encryptionKey)
+            .executeUpdate();
+    }
+}
+```
+
+#### Onde armazenar a chave
+
+A chave **nunca** deve ficar hardcoded. Em produção, use um secret manager:
+
+```yaml
+# application.yml — referencia variável de ambiente
+app:
+  encryption-key: ${ENCRYPTION_KEY}
+```
+
+```bash
+# Docker / K8s — injetar via variável de ambiente
+export ENCRYPTION_KEY="chave-vinda-do-vault"
+```
+
+#### Fluxo completo
+
+```mermaid
+sequenceDiagram
+    participant Vault as Secret Manager
+    participant App as Spring Boot
+    participant Pool as HikariCP
+    participant PG as PostgreSQL
+
+    Vault->>App: ENCRYPTION_KEY (variável de ambiente)
+    App->>Pool: Configura connection-init-sql<br/>ou DataSource wrapper
+
+    App->>Pool: getConnection()
+    Pool->>PG: SET [LOCAL] app.encryption_key = '***'
+    Note over PG: Variável de sessão configurada
+
+    App->>PG: INSERT pgp_sym_encrypt(cpf, current_setting('app.encryption_key'))
+    Note over PG: Armazena CPF cifrado
+
+    App->>PG: SELECT pgp_sym_decrypt(cpf_enc, current_setting('app.encryption_key'))
+    PG->>App: CPF em texto limpo
+    Note over App: Entidade recebe String cpf descriptografado
+```
+
+#### Comparação das abordagens
+
+| Abordagem | Escopo da variável | Complexidade | Segurança |
+|---|---|---|---|
+| `connection-init-sql` | Por conexão (permanente no pool) | Baixa | Chave visível em logs do PG |
+| `DataSource` wrapper + `SET LOCAL` | Por transação | Média | Isolada por transação |
+| Aspecto + `SET LOCAL` | Por transação | Média | Isolada por transação |
 
 ### @Subselect — mapear query como entidade read-only
 
@@ -3012,14 +3168,7 @@ Migrações repeatable usam checksum — o Flyway reexecuta automaticamente quan
 
 ### Configuração de variáveis de sessão PostgreSQL (para @ColumnTransformer)
 
-```yaml
-spring:
-  datasource:
-    hikari:
-      connection-init-sql: SET app.encryption_key = '${app.encryption-key}'
-```
-
-Para isolamento por transação, use `SET LOCAL` via `DataSource` wrapper ou aspecto.
+Para uso de `current_setting()` em `@ColumnTransformer` com criptografia, a chave precisa ser injetada na sessão JDBC. Veja a [Seção 16 — @ColumnTransformer](#16-recursos-adicionais-do-jpahibernate) para as 3 abordagens completas (`connection-init-sql`, `DataSource` wrapper com `SET LOCAL`, e aspecto transacional) com diagrama de fluxo e comparação de segurança.
 
 | Recurso | Mapeamento JPA | Escrita | Refresh |
 |---|---|---|---|
