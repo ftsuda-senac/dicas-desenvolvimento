@@ -32,6 +32,7 @@
 22. [Entity Listeners — Callbacks de Ciclo de Vida](#22-entity-listeners--callbacks-de-ciclo-de-vida)
 23. [Configuração do Spring Boot para Banco de Dados](#23-configuração-do-spring-boot-para-banco-de-dados)
 24. [JPQL Avançado — Funções, Subconsultas e Recursos Pouco Explorados](#24-jpql-avançado--funções-subconsultas-e-recursos-pouco-explorados)
+25. [Transações — Jakarta EE e Spring Data JPA](#25-transações--jakarta-ee-e-spring-data-jpa)
 
 ---
 
@@ -5348,6 +5349,798 @@ flowchart TD
 | `NULLS FIRST/LAST` | Sim | Sim | — | — |
 | `EXISTS`, `ALL`, `ANY` | Sim | Sim | — | — |
 | `KEY`, `VALUE`, `ENTRY` (Maps) | Sim | Sim | — | — |
+
+---
+
+## 25. Transações — Jakarta EE e Spring Data JPA
+
+### O que é uma transação no contexto JPA
+
+Uma transação garante que um conjunto de operações no banco seja atômico: ou todas completam com sucesso (commit) ou nenhuma é aplicada (rollback). No JPA, a transação também delimita o ciclo de vida do persistence context — entidades managed existem dentro de uma transação.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Aberta : begin
+    Aberta --> Aberta : persist / merge / remove / query
+    Aberta --> Commitada : commit
+    note right of Commitada : Flush → SQL enviado ao banco\nPersistence context fechado
+    Aberta --> Revertida : rollback
+    note right of Revertida : Nenhum SQL aplicado\nPersistence context descartado
+    Commitada --> [*]
+    Revertida --> [*]
+```
+
+### Jakarta EE (JPA puro) — `EntityTransaction`
+
+Para aplicações sem Spring, a transação é gerenciada manualmente via `EntityTransaction`:
+
+```java
+EntityManagerFactory emf = Persistence.createEntityManagerFactory("meuPU");
+EntityManager em = emf.createEntityManager();
+EntityTransaction tx = em.getTransaction();
+
+try {
+    tx.begin();
+
+    var aluno = new Aluno();
+    aluno.setNome("João Silva");
+    aluno.setRa("2024001234");
+    em.persist(aluno);
+
+    var matricula = new Matricula();
+    matricula.setAluno(aluno);
+    matricula.setCurso(em.getReference(Curso.class, 1L));
+    matricula.setStatus(StatusMatricula.ATIVA);
+    em.persist(matricula);
+
+    tx.commit(); // flush + commit
+} catch (Exception e) {
+    if (tx.isActive()) {
+        tx.rollback();
+    }
+    throw e;
+} finally {
+    em.close();
+}
+```
+
+O padrão `begin → operações → commit` com `try/catch/finally` é verboso e propenso a erro.
+
+### Spring — `@Transactional` (declarativo)
+
+O Spring substitui o gerenciamento manual por uma annotation:
+
+```java
+@Service
+public class MatriculaService {
+
+    private final MatriculaRepository repository;
+    private final CursoRepository cursoRepository;
+    private final AlunoRepository alunoRepository;
+
+    @Transactional
+    public Matricula criar(CriarMatriculaRequest request) {
+        var matricula = new Matricula();
+        matricula.setCurso(cursoRepository.getReferenceById(request.cursoId()));
+        matricula.setAluno(alunoRepository.getReferenceById(request.alunoId()));
+        matricula.setStatus(StatusMatricula.ATIVA);
+
+        return repository.save(matricula);
+        // commit automático ao sair do método sem exceção
+        // rollback automático se lançar RuntimeException
+    }
+}
+```
+
+O Spring cria um proxy AOP que intercepta a chamada ao método, abre a transação antes e faz commit/rollback depois.
+
+### `@Transactional` do Spring vs Jakarta
+
+Existem **duas** annotations `@Transactional` — não confunda:
+
+```java
+// Spring Framework (RECOMENDADO no Spring Boot)
+import org.springframework.transaction.annotation.Transactional;
+
+// Jakarta EE / JTA (para containers Jakarta EE puros)
+import jakarta.transaction.Transactional;
+```
+
+| Aspecto | `org.springframework.transaction.annotation.Transactional` | `jakarta.transaction.Transactional` |
+|---|---|---|
+| Provedor | Spring Framework | Jakarta EE / JTA |
+| Atributo `readOnly` | Sim | Não |
+| Atributo `timeout` | Sim (em segundos) | Não |
+| Atributo `rollbackFor` | Sim (classe de exceção) | Sim (`rollbackOn`) |
+| Atributo `propagation` | Sim (7 opções) | Sim (`TxType`, 6 opções) |
+| Atributo `isolation` | Sim (5 opções) | Não (depende do container) |
+| Suporte a `@Transactional` em classe | Sim | Sim |
+| Funciona fora de container EE | Sim | Não |
+
+**Em projetos Spring Boot, sempre use `org.springframework.transaction.annotation.Transactional`** — mais atributos, mais controle.
+
+### Atributos do `@Transactional` do Spring
+
+#### `readOnly` — otimização para leituras
+
+```java
+@Service
+public class RelatorioService {
+
+    @Transactional(readOnly = true)
+    public List<CursoResumo> gerarRelatorio() {
+        return cursoRepository.findAllResumos();
+        // Hibernate desabilita dirty checking (economia de CPU/memória)
+        // PostgreSQL pode usar snapshot read-only (otimização do banco)
+    }
+
+    @Transactional(readOnly = true)
+    public Page<Aluno> listar(Pageable pageable) {
+        return alunoRepository.findByAtivoTrue(pageable);
+    }
+}
+```
+
+Com `readOnly = true`, o Hibernate **não mantém snapshot** para dirty checking — as entidades retornadas são efetivamente read-only. Se tentar modificar e fazer flush, as mudanças são silenciosamente ignoradas.
+
+#### `timeout` — limite de tempo
+
+```java
+@Transactional(timeout = 30) // 30 segundos
+public List<Matricula> relatorioCompleto() {
+    // Se a transação exceder 30s, lança TransactionTimedOutException
+    return matriculaRepository.findRelatorioCompleto();
+}
+```
+
+O Spring seta `SET LOCAL statement_timeout` no PostgreSQL (ou equivalente no dialeto do banco).
+
+#### `rollbackFor` e `noRollbackFor` — controle de rollback
+
+Por padrão, o Spring faz rollback apenas para **unchecked exceptions** (`RuntimeException` e subclasses). Checked exceptions fazem **commit**:
+
+```java
+// Default: rollback só para RuntimeException
+@Transactional
+public void processar() {
+    // RuntimeException → ROLLBACK ✓
+    // IOException (checked) → COMMIT (!!!)
+}
+
+// Rollback para checked exceptions específicas
+@Transactional(rollbackFor = {IOException.class, BusinessException.class})
+public void processarComChecked() throws IOException {
+    // IOException → ROLLBACK ✓
+    // BusinessException → ROLLBACK ✓
+}
+
+// Rollback para TODA exceção
+@Transactional(rollbackFor = Exception.class)
+public void processarTudo() throws Exception {
+    // Qualquer exceção → ROLLBACK ✓
+}
+
+// Não fazer rollback para exceção específica
+@Transactional(noRollbackFor = EmailNaoEnviadoException.class)
+public void criarComNotificacao() {
+    repository.save(matricula); // persiste
+    emailService.enviar(matricula); // se falhar, NÃO faz rollback
+}
+```
+
+```mermaid
+flowchart TD
+    A[Exceção lançada] --> B{Tipo da exceção?}
+    B -->|RuntimeException\nError| C[ROLLBACK automático]
+    B -->|Checked Exception| D{rollbackFor\nconfigurado?}
+
+    D -->|"Sim, inclui a classe"| C
+    D -->|Não| E[COMMIT mesmo com exceção!]
+
+    C --> F["Transação revertida\nNenhum SQL aplicado"]
+    E --> G["Transação commitada\nDados persistidos apesar do erro"]
+
+    style C fill:#f99,stroke:#333
+    style E fill:#fc9,stroke:#333
+    style G fill:#fc9,stroke:#333
+```
+
+#### `propagation` — comportamento com transações aninhadas
+
+```java
+// REQUIRED (default) — usa transação existente ou cria nova
+@Transactional(propagation = Propagation.REQUIRED)
+public void metodoA() {
+    // Se já existe transação: participa
+    // Se não existe: cria nova
+}
+
+// REQUIRES_NEW — sempre cria nova transação (suspende a existente)
+@Transactional(propagation = Propagation.REQUIRES_NEW)
+public void auditoria() {
+    // Cria transação independente
+    // Se a transação do chamador fizer rollback, esta JÁ commitou
+}
+
+// MANDATORY — exige transação existente (lança exceção se não houver)
+@Transactional(propagation = Propagation.MANDATORY)
+public void operacaoInterna() {
+    // Deve ser chamado dentro de outro @Transactional
+    // Senão: IllegalTransactionStateException
+}
+
+// SUPPORTS — participa se existir, executa sem transação se não existir
+@Transactional(propagation = Propagation.SUPPORTS)
+public List<Aluno> listar() {
+    // Com ou sem transação — flexível
+}
+
+// NOT_SUPPORTED — suspende transação existente, executa sem transação
+@Transactional(propagation = Propagation.NOT_SUPPORTED)
+public void operacaoSemTx() {
+    // Executa fora de transação (cada SQL é auto-commit)
+}
+
+// NEVER — lança exceção se existir transação
+@Transactional(propagation = Propagation.NEVER)
+public void somenteForaDeTx() {
+    // Garante que não está em transação
+}
+
+// NESTED — savepoint dentro da transação existente
+@Transactional(propagation = Propagation.NESTED)
+public void operacaoComSavepoint() {
+    // Rollback volta ao savepoint, não desfaz a transação pai
+    // Requer suporte do banco (PostgreSQL suporta)
+}
+```
+
+```mermaid
+sequenceDiagram
+    participant S1 as ServiceA
+    participant S2 as ServiceB
+    participant DB as Banco
+
+    rect rgb(200, 230, 200)
+        Note over S1,DB: REQUIRED (default)
+        S1->>DB: BEGIN tx1
+        S1->>S2: chama método REQUIRED
+        Note over S2: Participa da tx1 (mesma transação)
+        S2->>DB: INSERT (dentro de tx1)
+        S1->>DB: COMMIT tx1 (tudo junto)
+    end
+
+    rect rgb(200, 200, 240)
+        Note over S1,DB: REQUIRES_NEW
+        S1->>DB: BEGIN tx1
+        S1->>S2: chama método REQUIRES_NEW
+        Note over S2: Suspende tx1, cria tx2
+        S2->>DB: BEGIN tx2
+        S2->>DB: INSERT (dentro de tx2)
+        S2->>DB: COMMIT tx2 (independente)
+        Note over S1: tx1 retoma
+        S1->>DB: COMMIT tx1
+    end
+```
+
+#### `isolation` — nível de isolamento
+
+```java
+// READ_COMMITTED (default do PostgreSQL e recomendado)
+@Transactional(isolation = Isolation.READ_COMMITTED)
+public void operacaoPadrao() { }
+
+// REPEATABLE_READ — leituras consistentes dentro da transação
+@Transactional(isolation = Isolation.REPEATABLE_READ)
+public void relatorioConsistente() {
+    // Leituras dentro desta transação veem o mesmo snapshot
+    // Útil para relatórios que fazem múltiplas queries
+}
+
+// SERIALIZABLE — mais restritivo, previne phantom reads
+@Transactional(isolation = Isolation.SERIALIZABLE)
+public void operacaoCritica() {
+    // Transações executam como se fossem sequenciais
+    // Maior chance de deadlock — usar com cautela
+}
+```
+
+| Isolamento | Dirty Read | Non-Repeatable Read | Phantom Read | Performance |
+|---|---|---|---|---|
+| `READ_UNCOMMITTED` | Possível | Possível | Possível | Melhor |
+| `READ_COMMITTED` (default PG) | Não | Possível | Possível | Bom |
+| `REPEATABLE_READ` | Não | Não | Possível | Médio |
+| `SERIALIZABLE` | Não | Não | Não | Pior |
+
+Na prática, `READ_COMMITTED` é suficiente para 95% dos casos. Use `REPEATABLE_READ` para relatórios consistentes e `SERIALIZABLE` apenas quando a integridade exige execução serial.
+
+### Padrões práticos de uso
+
+#### Service com múltiplas operações transacionais
+
+```java
+@Service
+public class MatriculaService {
+
+    private final MatriculaRepository matriculaRepository;
+    private final CursoRepository cursoRepository;
+    private final AlunoRepository alunoRepository;
+    private final AuditService auditService;
+
+    // Operação de escrita — @Transactional padrão
+    @Transactional
+    public Matricula criar(CriarMatriculaRequest request) {
+        // Validações de negócio
+        if (matriculaRepository.existsByCursoIdAndAlunoId(request.cursoId(), request.alunoId())) {
+            throw new MatriculaDuplicadaException(request.cursoId(), request.alunoId());
+        }
+
+        var matricula = new Matricula();
+        matricula.setCurso(cursoRepository.getReferenceById(request.cursoId()));
+        matricula.setAluno(alunoRepository.getReferenceById(request.alunoId()));
+        matricula.setStatus(StatusMatricula.ATIVA);
+
+        return matriculaRepository.save(matricula);
+    }
+
+    // Operação de leitura — readOnly
+    @Transactional(readOnly = true)
+    public Page<Matricula> listar(Long cursoId, Pageable pageable) {
+        return matriculaRepository.findByCursoId(cursoId, pageable);
+    }
+
+    // Operação com timeout para queries pesadas
+    @Transactional(readOnly = true, timeout = 60)
+    public List<Object[]> gerarRelatorio(Long cursoId) {
+        return matriculaRepository.findEstatisticasCompletasPorAnoEStatus(cursoId);
+    }
+
+    // Operação que deve persistir auditoria mesmo com rollback da operação principal
+    @Transactional
+    public void cancelar(Long matriculaId, String motivo) {
+        Matricula matricula = matriculaRepository.findById(matriculaId)
+            .orElseThrow(() -> new MatriculaNotFoundException(matriculaId));
+
+        matricula.setStatus(StatusMatricula.CANCELADA);
+
+        // auditoria em transação separada — persiste mesmo se o método falhar depois
+        auditService.registrar(matriculaId, "CANCELAMENTO", motivo);
+    }
+}
+```
+
+```java
+@Service
+public class AuditService {
+
+    private final AuditLogRepository auditLogRepository;
+
+    // REQUIRES_NEW — transação independente que commita separadamente
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registrar(Long entidadeId, String operacao, String motivo) {
+        var log = new AuditLog();
+        log.setEntidadeId(entidadeId);
+        log.setOperacao(operacao);
+        log.setMotivo(motivo);
+        log.setUsuario(SecurityUtils.getUsuarioLogado());
+        log.setTimestamp(OffsetDateTime.now());
+
+        auditLogRepository.save(log);
+        // Commita imediatamente, independente da transação do chamador
+    }
+}
+```
+
+#### @Transactional no nível da classe
+
+```java
+@Service
+@Transactional(readOnly = true) // todos os métodos são readOnly por padrão
+public class CursoQueryService {
+
+    private final CursoRepository repository;
+
+    // Herda readOnly = true da classe
+    public List<CursoResumo> listarAtivos() {
+        return repository.findAllResumos();
+    }
+
+    // Herda readOnly = true da classe
+    public Optional<Curso> buscarPorId(Long id) {
+        return repository.findById(id);
+    }
+
+    // Sobrescreve — este método faz escrita
+    @Transactional // readOnly = false (default)
+    public Curso atualizar(Long id, AtualizarCursoRequest request) {
+        Curso curso = repository.findById(id).orElseThrow();
+        curso.setNome(request.nome());
+        return curso;
+    }
+}
+```
+
+#### Transação programática — `TransactionTemplate`
+
+Quando o `@Transactional` declarativo não é flexível o suficiente (transação dentro de loop, granularidade fina):
+
+```java
+@Service
+public class ImportacaoService {
+
+    private final TransactionTemplate txTemplate;
+    private final AlunoRepository repository;
+
+    public ImportacaoService(PlatformTransactionManager txManager, AlunoRepository repository) {
+        this.txTemplate = new TransactionTemplate(txManager);
+        this.repository = repository;
+    }
+
+    // Cada lote em sua própria transação — falha de um lote não afeta os demais
+    public ImportacaoResultado importar(List<CriarAlunoRequest> requests) {
+        List<List<CriarAlunoRequest>> lotes = particionar(requests, 100);
+        int sucesso = 0;
+        int falha = 0;
+
+        for (List<CriarAlunoRequest> lote : lotes) {
+            try {
+                txTemplate.executeWithoutResult(status -> {
+                    List<Aluno> alunos = lote.stream().map(this::toEntity).toList();
+                    repository.saveAll(alunos);
+                });
+                sucesso += lote.size();
+            } catch (Exception e) {
+                log.error("Falha no lote: {}", e.getMessage());
+                falha += lote.size();
+            }
+        }
+
+        return new ImportacaoResultado(sucesso, falha);
+    }
+
+    // Transação programática com retorno
+    public Aluno criarComRetorno(CriarAlunoRequest request) {
+        return txTemplate.execute(status -> {
+            var aluno = toEntity(request);
+            return repository.save(aluno);
+        });
+    }
+
+    // Transação read-only programática
+    public List<Aluno> listarProgramatico() {
+        TransactionTemplate readOnlyTx = new TransactionTemplate(txTemplate.getTransactionManager());
+        readOnlyTx.setReadOnly(true);
+
+        return readOnlyTx.execute(status -> repository.findByAtivoTrue());
+    }
+}
+```
+
+#### JPA puro — `EntityTransaction` com padrão try-with-resources
+
+```java
+@Repository
+public class MatriculaJpaRepository {
+
+    @PersistenceUnit
+    private EntityManagerFactory emf;
+
+    public Matricula criar(Matricula matricula) {
+        EntityManager em = emf.createEntityManager();
+        EntityTransaction tx = em.getTransaction();
+
+        try {
+            tx.begin();
+            em.persist(matricula);
+            tx.commit();
+            return matricula;
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            throw e;
+        } finally {
+            em.close();
+        }
+    }
+
+    // Múltiplas operações na mesma transação
+    public void transferir(Long matriculaId, Long novoCursoId) {
+        EntityManager em = emf.createEntityManager();
+        EntityTransaction tx = em.getTransaction();
+
+        try {
+            tx.begin();
+
+            Matricula m = em.find(Matricula.class, matriculaId);
+            if (m == null) throw new EntityNotFoundException("Matrícula não encontrada");
+
+            Curso novoCurso = em.getReference(Curso.class, novoCursoId);
+            m.setCurso(novoCurso);
+
+            var log = new AuditLog();
+            log.setOperacao("TRANSFERENCIA");
+            log.setEntidadeId(matriculaId);
+            em.persist(log);
+
+            tx.commit(); // ambas as operações atomicamente
+        } catch (Exception e) {
+            if (tx.isActive()) tx.rollback();
+            throw e;
+        } finally {
+            em.close();
+        }
+    }
+}
+```
+
+### Armadilhas comuns
+
+#### 1. `@Transactional` em método privado — NÃO funciona
+
+O proxy AOP do Spring só intercepta chamadas **externas** (via proxy). Chamadas internas (de dentro da mesma classe) ignoram o proxy:
+
+```java
+@Service
+public class AlunoService {
+
+    // Chamada externa — proxy intercepta, @Transactional funciona ✓
+    @Transactional
+    public void metodoPublico() {
+        // transação aberta pelo proxy
+        metodoPrivado(); // chamada INTERNA — @Transactional ignorado!
+    }
+
+    // @Transactional aqui NÃO funciona (chamada interna, sem proxy)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    private void metodoPrivado() {
+        // NÃO cria transação nova — roda dentro da transação de metodoPublico
+    }
+}
+```
+
+```mermaid
+flowchart LR
+    subgraph "Chamada EXTERNA (funciona)"
+        C1[Controller] -->|"via proxy"| P1["AlunoService$$Proxy"]
+        P1 -->|"abre tx"| S1["metodoPublico()"]
+    end
+
+    subgraph "Chamada INTERNA (não funciona)"
+        S2["metodoPublico()"] -->|"this.metodo()\nsem proxy"| S3["metodoPrivado()"]
+        note1["@Transactional ignorado!\nNão passa pelo proxy"]
+    end
+```
+
+**Solução:** extrair para outro bean ou usar `self-injection`:
+
+```java
+@Service
+public class AlunoService {
+
+    private final AuditService auditService; // outro bean
+
+    @Transactional
+    public void metodoPublico() {
+        // ...
+        auditService.registrar(...); // chamada EXTERNA — proxy intercepta ✓
+    }
+}
+```
+
+#### 2. Exceção capturada dentro do `@Transactional` — commit acontece
+
+```java
+@Transactional
+public void processar() {
+    repository.save(matricula);
+
+    try {
+        servicoExterno.notificar(); // lança RuntimeException
+    } catch (Exception e) {
+        log.error("Falha na notificação", e);
+        // Exceção CAPTURADA — Spring não vê a exceção
+        // Resultado: COMMIT (matricula salva, notificação falhou)
+    }
+}
+```
+
+Se o rollback é desejável, **não capture** ou relance:
+
+```java
+@Transactional
+public void processar() {
+    repository.save(matricula);
+
+    try {
+        servicoExterno.notificar();
+    } catch (Exception e) {
+        log.error("Falha na notificação", e);
+        throw e; // relança → Spring faz ROLLBACK
+    }
+}
+```
+
+Ou use `noRollbackFor` se quer commit apesar da falha na notificação:
+
+```java
+@Transactional(noRollbackFor = NotificacaoException.class)
+public void processar() {
+    repository.save(matricula);
+    servicoExterno.notificar(); // se falhar com NotificacaoException → COMMIT mesmo assim
+}
+```
+
+#### 3. `@Transactional` sem `@Service` / sem proxy — silenciosamente ignorado
+
+```java
+// SEM @Service ou @Component — Spring não cria proxy
+public class AlunoService {
+
+    @Transactional // ignorado — não é um bean Spring
+    public void criar() { }
+}
+```
+
+A classe precisa ser um bean gerenciado (`@Service`, `@Component`, `@Repository`) para o proxy AOP funcionar.
+
+#### 4. Lazy loading fora da transação
+
+```java
+@Transactional
+public Curso buscar(Long id) {
+    return cursoRepository.findById(id).orElseThrow();
+    // Transação fecha ao sair do método
+}
+
+// No controller:
+Curso curso = cursoService.buscar(1L);
+curso.getMatriculas().size(); // LazyInitializationException!
+// Transação já fechou — sessão Hibernate não existe mais
+```
+
+**Solução:** carregar os dados necessários dentro da transação:
+
+```java
+@Transactional(readOnly = true)
+public CursoComMatriculas buscar(Long id) {
+    Curso curso = cursoRepository.findCompletoById(id) // JOIN FETCH ou @EntityGraph
+        .orElseThrow();
+
+    return new CursoComMatriculas(
+        curso.getId(),
+        curso.getNome(),
+        curso.getMatriculas().stream().map(MatriculaResumo::of).toList()
+    );
+    // Tudo carregado dentro da transação — DTO seguro para serializar
+}
+```
+
+#### 5. Transação longa demais — connection starvation
+
+```java
+// RUIM — transação aberta durante chamada HTTP externa
+@Transactional
+public void processar(Long id) {
+    Matricula m = repository.findById(id).orElseThrow();
+    m.setStatus(StatusMatricula.ATIVA);
+
+    emailService.enviarConfirmacao(m); // chamada HTTP → 2-5 segundos
+    // Conexão JDBC presa por todo esse tempo!
+}
+
+// BOM — separar operação de banco da chamada externa
+@Transactional
+public Matricula ativar(Long id) {
+    Matricula m = repository.findById(id).orElseThrow();
+    m.setStatus(StatusMatricula.ATIVA);
+    return m;
+    // Transação fecha rapidamente
+}
+
+public void processarComNotificacao(Long id) {
+    Matricula m = ativar(id); // transação curta
+    emailService.enviarConfirmacao(m); // fora da transação
+}
+```
+
+### @TransactionalEventListener — eventos após commit
+
+Para efeitos colaterais que só devem executar se a transação for bem-sucedida:
+
+```java
+@Service
+public class MatriculaService {
+
+    private final MatriculaRepository repository;
+    private final ApplicationEventPublisher eventPublisher;
+
+    @Transactional
+    public Matricula criar(CriarMatriculaRequest request) {
+        var matricula = new Matricula();
+        // ... setar campos
+        Matricula salva = repository.save(matricula);
+
+        // Evento publicado, mas handler só executa APÓS COMMIT
+        eventPublisher.publishEvent(new MatriculaCriadaEvent(salva.getId()));
+
+        return salva;
+    }
+}
+```
+
+```java
+@Component
+public class MatriculaEventHandler {
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onMatriculaCriada(MatriculaCriadaEvent event) {
+        // Executa APENAS se o commit foi bem-sucedido
+        emailService.enviarConfirmacao(event.matriculaId());
+        // Se este handler falhar, a matrícula JÁ está commitada
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_ROLLBACK)
+    public void onMatriculaFalhou(MatriculaCriadaEvent event) {
+        // Executa APENAS se houve rollback
+        log.warn("Matrícula {} não foi criada", event.matriculaId());
+    }
+}
+
+public record MatriculaCriadaEvent(Long matriculaId) {}
+```
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant E as EventPublisher
+    participant DB as Banco
+    participant H as EventHandler
+
+    S->>DB: INSERT matricula
+    S->>E: publishEvent(MatriculaCriadaEvent)
+    Note over E: Evento enfileirado (não executa ainda)
+
+    S->>DB: COMMIT
+    Note over DB: Transação commitada ✓
+
+    E->>H: AFTER_COMMIT → onMatriculaCriada()
+    H->>H: enviarEmail()
+    Note over H: Se falhar aqui, matrícula já está salva
+```
+
+### Diagrama de decisão
+
+```mermaid
+flowchart TD
+    A{Tipo de operação?} -->|Leitura| B["@Transactional(readOnly = true)"]
+    A -->|Escrita simples| C["@Transactional"]
+    A -->|"Escrita + efeito colateral\n(email, HTTP)"| D["@Transactional + @TransactionalEventListener\n(efeito após commit)"]
+    A -->|"Lotes independentes"| E["TransactionTemplate\n(cada lote em sua tx)"]
+    A -->|"Auditoria que\nnão pode perder"| F["@Transactional\n(propagation = REQUIRES_NEW)"]
+    A -->|"Múltiplas operações\ncom rollback parcial"| G["@Transactional\n(propagation = NESTED)\n+ savepoint"]
+
+    B --> H["Hibernate pula dirty checking\nPostgreSQL otimiza snapshot"]
+    C --> I["Rollback em RuntimeException\nCommit em checked exception"]
+
+    style B fill:#9f9,stroke:#333
+    style C fill:#9f9,stroke:#333
+    style D fill:#9cf,stroke:#333
+    style F fill:#ff9,stroke:#333
+```
+
+### Referência rápida
+
+| Cenário | Configuração |
+|---|---|
+| Leitura simples | `@Transactional(readOnly = true)` |
+| Escrita padrão | `@Transactional` |
+| Query pesada com limite | `@Transactional(readOnly = true, timeout = 60)` |
+| Rollback em checked exception | `@Transactional(rollbackFor = Exception.class)` |
+| Auditoria independente | `@Transactional(propagation = Propagation.REQUIRES_NEW)` |
+| Método obrigatoriamente dentro de tx | `@Transactional(propagation = Propagation.MANDATORY)` |
+| Classe inteira read-only + método de escrita | Classe: `@Transactional(readOnly = true)` + Método: `@Transactional` |
+| Relatório consistente (sem phantom reads) | `@Transactional(isolation = Isolation.REPEATABLE_READ, readOnly = true)` |
+| Lote com transação por item | `TransactionTemplate` em loop |
+| Efeito colateral após commit | `@TransactionalEventListener(phase = AFTER_COMMIT)` |
 
 ---
 
