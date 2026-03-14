@@ -738,6 +738,112 @@ public class Matricula {
 }
 ```
 
+### Atributo `targetEntity` — especificar o tipo da entidade relacionada
+
+As annotations `@OneToMany`, `@ManyToOne`, `@OneToOne` e `@ManyToMany` possuem o atributo `targetEntity` que permite especificar explicitamente a classe da entidade no outro lado do relacionamento. Na maioria dos casos ele é **desnecessário**, porque o Hibernate infere o tipo pelos generics da coleção ou pelo tipo do campo:
+
+```java
+// Hibernate infere Matricula.class pelo generic Set<Matricula>
+@OneToMany(mappedBy = "curso")
+private Set<Matricula> matriculas = new HashSet<>();
+
+// Hibernate infere Curso.class pelo tipo do campo
+@ManyToOne(fetch = FetchType.LAZY)
+private Curso curso;
+```
+
+#### Quando `targetEntity` é necessário
+
+**Coleção sem generic (raw type)** — código legado ou integração com frameworks antigos:
+
+```java
+// Sem generic — Hibernate não sabe o tipo da entidade
+// targetEntity resolve a ambiguidade
+@OneToMany(mappedBy = "curso", targetEntity = Matricula.class)
+private Set matriculas = new HashSet(); // raw type (sem <>)
+
+// Com generic — targetEntity desnecessário
+@OneToMany(mappedBy = "curso")
+private Set<Matricula> matriculas = new HashSet<>(); // Hibernate infere
+```
+
+**Interface ou classe abstrata como tipo do campo:**
+
+```java
+// Interface como tipo — Hibernate não sabe qual entidade persistir
+public interface Avaliavel {
+    BigDecimal getNota();
+}
+
+@Entity
+public class Curso extends BaseEntity {
+
+    // targetEntity diz ao Hibernate: "nesta coleção, a entidade é Matricula"
+    @OneToMany(mappedBy = "curso", targetEntity = Matricula.class)
+    private Set<Avaliavel> avaliaveis = new HashSet<>();
+}
+```
+
+**Herança com tipo genérico no pai:**
+
+```java
+@MappedSuperclass
+public abstract class BaseComFilhos<T> {
+
+    // T é apagado em runtime (type erasure) — Hibernate não infere
+    @OneToMany(targetEntity = Matricula.class)
+    private Set<T> filhos = new HashSet<>();
+}
+
+@Entity
+public class Curso extends BaseComFilhos<Matricula> {
+    // targetEntity no pai resolve o type erasure
+}
+```
+
+#### targetEntity em cada annotation de relacionamento
+
+```java
+// @OneToMany
+@OneToMany(mappedBy = "curso", targetEntity = Matricula.class)
+private Set matriculas;
+
+// @ManyToOne
+@ManyToOne(fetch = FetchType.LAZY, targetEntity = Curso.class)
+private Object curso; // tipo genérico Object — raro mas possível em código legado
+
+// @OneToOne
+@OneToOne(mappedBy = "aluno", targetEntity = AlunoPerfil.class)
+private Object perfil;
+
+// @ManyToMany
+@ManyToMany(targetEntity = Professor.class)
+private Set professores;
+```
+
+#### Quando NÃO usar targetEntity
+
+Em código moderno com generics, **nunca use `targetEntity`** — ele adiciona redundância e um ponto de manutenção extra:
+
+```java
+// RUIM — redundante, targetEntity repete o que o generic já diz
+@OneToMany(mappedBy = "curso", targetEntity = Matricula.class)
+private Set<Matricula> matriculas = new HashSet<>();
+
+// BOM — generic é suficiente
+@OneToMany(mappedBy = "curso")
+private Set<Matricula> matriculas = new HashSet<>();
+```
+
+| Cenário | `targetEntity` necessário? |
+|---|---|
+| Coleção com generic (`Set<Matricula>`) | Não — Hibernate infere |
+| Campo tipado (`Curso curso`) | Não — Hibernate infere |
+| Raw type sem generic (`Set matriculas`) | Sim |
+| Interface/classe abstrata como tipo | Sim |
+| Type erasure em `@MappedSuperclass` genérico | Sim |
+| Código moderno com generics | Nunca — é redundância |
+
 ---
 
 ## 11. Recursos Pouco Conhecidos do JPA/Hibernate
@@ -805,6 +911,8 @@ public class CpfConverter implements AttributeConverter<Cpf, String> {
 
 ### @CreationTimestamp e @UpdateTimestamp
 
+Annotations do Hibernate que preenchem automaticamente timestamps de auditoria:
+
 ```java
 @MappedSuperclass
 public abstract class BaseEntity {
@@ -816,6 +924,72 @@ public abstract class BaseEntity {
     private OffsetDateTime atualizadoEm;
 }
 ```
+
+O Hibernate preenche `criadoEm` no `persist()` e `atualizadoEm` em todo `persist()` e `merge()`. Mais simples que `@PrePersist` / `@PreUpdate` manual.
+
+#### Spring Data JPA Auditing — @CreatedDate, @LastModifiedDate, @CreatedBy, @LastModifiedBy
+
+O Spring Data oferece uma alternativa que **também rastreia quem** fez a operação (além de quando):
+
+```java
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+public abstract class AuditableEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreatedDate
+    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime criadoEm;
+
+    @LastModifiedDate
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime atualizadoEm;
+
+    @CreatedBy
+    @Column(updatable = false, length = 100)
+    private String criadoPor;
+
+    @LastModifiedBy
+    @Column(length = 100)
+    private String atualizadoPor;
+}
+```
+
+Requer configuração:
+
+```java
+@Configuration
+@EnableJpaAuditing
+public class JpaAuditingConfig {
+
+    @Bean
+    public AuditorAware<String> auditorAware() {
+        return () -> Optional.ofNullable(SecurityContextHolder.getContext())
+            .map(SecurityContext::getAuthentication)
+            .filter(Authentication::isAuthenticated)
+            .map(Authentication::getName);
+    }
+}
+```
+
+O `AuditingEntityListener` é um `@EntityListeners` que o Spring Data registra automaticamente com `@EnableJpaAuditing`. O `AuditorAware` fornece o nome do usuário corrente — no exemplo, via Spring Security.
+
+#### Comparação
+
+| Aspecto | `@CreationTimestamp` / `@UpdateTimestamp` | `@CreatedDate` / `@LastModifiedDate` |
+|---|---|---|
+| Provedor | Hibernate | Spring Data JPA |
+| Rastreia "quando" | Sim | Sim |
+| Rastreia "quem" | Não | Sim (`@CreatedBy` / `@LastModifiedBy`) |
+| Requer `@EntityListeners` | Não | Sim (`AuditingEntityListener`) |
+| Requer `@EnableJpaAuditing` | Não | Sim |
+| Funciona sem Spring | Sim | Não |
+| Tipo suportado | `OffsetDateTime`, `Instant`, `Date`, `Calendar` | `OffsetDateTime`, `Instant`, `LocalDateTime`, `Date`, `Long` |
+
+Use `@CreationTimestamp` / `@UpdateTimestamp` quando precisa **apenas** de timestamps e quer menos configuração. Use Spring Data Auditing quando precisa de `@CreatedBy` / `@LastModifiedBy` ou já tem `@EnableJpaAuditing` configurado.
 
 ### @BatchSize — controle de N+1 sem JOIN FETCH
 
@@ -867,6 +1041,98 @@ public interface CursoResumo {
 @Immutable
 public class VwRelatorioMatriculas { }
 ```
+
+### @Transient — campos não persistidos
+
+Campos marcados com `@Transient` (JPA) ou `transient` (Java) são ignorados pelo Hibernate — não geram coluna no banco e não participam de INSERT/UPDATE/SELECT:
+
+```java
+@Entity
+public class Aluno extends BaseEntity {
+
+    @Column(nullable = false)
+    private String nome;
+
+    @Column(nullable = false, unique = true)
+    private String ra;
+
+    private BigDecimal nota;
+
+    // ── Campo calculado em memória — não existe no banco ──
+    @Transient
+    private String nomeCompleto;
+
+    // ── Flag de controle — não persistido ──
+    @Transient
+    private boolean editado;
+
+    // ── Dados temporários de integração ──
+    @Transient
+    private Map<String, Object> metadados;
+
+    // Inicialização via @PostLoad
+    @PostLoad
+    private void calcularCamposTransient() {
+        this.nomeCompleto = nome + " (" + ra + ")";
+    }
+}
+```
+
+#### @Transient vs transient (keyword Java)
+
+```java
+// @Transient (JPA) — ignorado pelo Hibernate, MAS serializado pelo Jackson
+@Transient
+private String campoCalculado; // aparece no JSON
+
+// transient (keyword Java) — ignorado pelo Hibernate E pelo Jackson
+transient private String cacheInterno; // NÃO aparece no JSON
+```
+
+| Modificador | Hibernate ignora | Jackson serializa | Uso típico |
+|---|---|---|---|
+| `@Transient` (JPA) | Sim | Sim | Campos calculados expostos na API |
+| `transient` (Java) | Sim | Não | Cache interno, flags temporários |
+| `@Transient` + `@JsonIgnore` | Sim | Não | Campo auxiliar invisível na API |
+
+#### Usos comuns de @Transient
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal subtotal;
+
+    @Column(nullable = false, precision = 5, scale = 2)
+    private BigDecimal taxaDesconto;
+
+    // Campo calculado — não existe coluna no banco
+    @Transient
+    private BigDecimal totalComDesconto;
+
+    @PostLoad
+    @PostPersist
+    @PostUpdate
+    private void calcularTotal() {
+        this.totalComDesconto = subtotal.multiply(
+            BigDecimal.ONE.subtract(taxaDesconto.divide(new BigDecimal("100")))
+        );
+    }
+
+    // Para Persistable — flag de controle de isNew()
+    @Transient
+    private boolean isNew = true;
+
+    @PostPersist
+    @PostLoad
+    private void markNotNew() {
+        this.isNew = false;
+    }
+}
+```
+
+**Regra prática:** se o campo é derivável de outros campos persistidos ou é estado temporário em memória, use `@Transient`. Se o valor precisa sobreviver entre sessões, deve ser persistido.
 
 ---
 
@@ -1191,6 +1457,258 @@ JPQL: `m.curso.id`. Spring Data: `findByCursoId()`.
 
 **Recomendação:** `@EmbeddedId` quando a PK é um conceito de domínio. `@IdClass` quando a PK é consequência técnica do relacionamento.
 
+### @MapsId em @OneToOne — PK compartilhada entre entidades
+
+Quando duas entidades compartilham a mesma PK (a filha usa a PK do pai como sua própria PK), use `@MapsId` para mapear o relacionamento `@OneToOne` diretamente no `@Id`:
+
+#### O cenário: Aluno tem um Perfil com o mesmo ID
+
+```mermaid
+erDiagram
+    aluno {
+        bigint id PK
+        varchar nome
+        varchar ra UK
+    }
+    aluno_perfil {
+        bigint aluno_id PK,FK "= aluno.id"
+        varchar bio
+        varchar foto_url
+        varchar linkedin
+    }
+
+    aluno ||--o| aluno_perfil : "PK compartilhada"
+```
+
+#### Implementação com @MapsId + @JoinColumn
+
+```java
+@Entity
+@Table(name = "aluno_perfil")
+public class AlunoPerfil {
+
+    @Id // a PK é o próprio aluno_id
+    @Column(name = "aluno_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId // mapeia o @Id para a FK do relacionamento
+    @JoinColumn(
+        name = "aluno_id",
+        foreignKey = @ForeignKey(name = "fk_aluno_perfil_aluno")
+    )
+    private Aluno aluno;
+
+    @Column(length = 1000)
+    private String bio;
+
+    @Column(length = 500)
+    private String fotoUrl;
+
+    @Column(length = 255)
+    private String linkedin;
+}
+```
+
+```java
+@Entity
+public class Aluno extends BaseEntity {
+
+    private String nome;
+    private String ra;
+
+    @OneToOne(mappedBy = "aluno", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private AlunoPerfil perfil;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE aluno_perfil (
+    aluno_id   BIGINT PRIMARY KEY,
+    bio        VARCHAR(1000),
+    foto_url   VARCHAR(500),
+    linkedin   VARCHAR(255),
+    CONSTRAINT fk_aluno_perfil_aluno FOREIGN KEY (aluno_id) REFERENCES aluno(id)
+);
+```
+
+A coluna `aluno_id` é **simultaneamente** PK e FK — não existe uma coluna `id` separada. Isso garante que existe no máximo um perfil por aluno em nível de banco.
+
+#### Uso no código
+
+```java
+@Transactional
+public AlunoPerfil criarPerfil(Long alunoId, CriarPerfilRequest request) {
+    Aluno aluno = alunoRepository.getReferenceById(alunoId); // 0 SELECTs
+
+    var perfil = new AlunoPerfil();
+    perfil.setAluno(aluno); // @MapsId preenche o id automaticamente
+    perfil.setBio(request.bio());
+    perfil.setLinkedin(request.linkedin());
+
+    return perfilRepository.save(perfil);
+    // INSERT INTO aluno_perfil (aluno_id, bio, linkedin, ...) VALUES (?, ?, ?)
+    // perfil.getId() == alunoId
+}
+```
+
+Ao setar o `aluno` via `setAluno()`, o `@MapsId` copia o `aluno.id` para o campo `id` da entidade. Não precisa chamar `setId()` manualmente.
+
+#### Busca por ID — funciona direto
+
+```java
+// A PK do perfil É a PK do aluno
+Optional<AlunoPerfil> perfil = perfilRepository.findById(alunoId);
+
+// Derived query no repository
+public interface AlunoPerfilRepository extends JpaRepository<AlunoPerfil, Long> {
+
+    Optional<AlunoPerfil> findByAlunoRa(String ra);
+}
+```
+
+#### Diagrama de classes
+
+```mermaid
+classDiagram
+    class Aluno {
+        -Long id
+        -String nome
+        -String ra
+        -AlunoPerfil perfil
+    }
+    class AlunoPerfil {
+        -Long id
+        -Aluno aluno
+        -String bio
+        -String fotoUrl
+    }
+
+    Aluno "1" --> "0..1" AlunoPerfil : "@OneToOne mappedBy"
+    AlunoPerfil "1" --> "1" Aluno : "@MapsId"
+
+    note for AlunoPerfil "id = aluno.id (PK compartilhada)\n@MapsId copia o ID do relacionamento"
+```
+
+#### @PrimaryKeyJoinColumn — alternativa sem @MapsId
+
+Antes do JPA 2.0, o padrão para PK compartilhada era `@PrimaryKeyJoinColumn`. Ainda funciona, mas `@MapsId` é mais explícito:
+
+```java
+@Entity
+@Table(name = "aluno_perfil")
+public class AlunoPerfil {
+
+    @Id
+    @Column(name = "aluno_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @PrimaryKeyJoinColumn(
+        name = "aluno_id",
+        foreignKey = @ForeignKey(name = "fk_aluno_perfil_aluno")
+    )
+    private Aluno aluno;
+
+    // ... campos
+}
+```
+
+A diferença: com `@PrimaryKeyJoinColumn`, o `id` precisa ser setado manualmente:
+
+```java
+var perfil = new AlunoPerfil();
+perfil.setId(alunoId);    // precisa setar explicitamente
+perfil.setAluno(aluno);
+```
+
+Com `@MapsId`, o id é preenchido automaticamente a partir do relacionamento:
+
+```java
+var perfil = new AlunoPerfil();
+perfil.setAluno(aluno);   // @MapsId copia aluno.id para perfil.id
+// perfil.getId() == aluno.getId()
+```
+
+#### @MapsId em @OneToOne bidirecional com @JoinColumn nomeado
+
+Para controlar o nome da coluna FK e da constraint:
+
+```java
+@Entity
+@Table(name = "curso_detalhe")
+public class CursoDetalhe {
+
+    @Id
+    @Column(name = "curso_id")
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(
+        name = "curso_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_curso_detalhe_curso")
+    )
+    private Curso curso;
+
+    @Column(columnDefinition = "TEXT")
+    private String ementa;
+
+    @Column(columnDefinition = "TEXT")
+    private String bibliografia;
+
+    private Integer vagasMaximas;
+}
+```
+
+```java
+@Entity
+public class Curso extends BaseEntity {
+
+    // ... campos existentes
+
+    @OneToOne(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private CursoDetalhe detalhe;
+
+    // Método de conveniência
+    public void setDetalhe(CursoDetalhe detalhe) {
+        this.detalhe = detalhe;
+        if (detalhe != null) {
+            detalhe.setCurso(this);
+        }
+    }
+}
+```
+
+#### Comparação: @MapsId vs @PrimaryKeyJoinColumn vs FK separada
+
+| Aspecto | `@MapsId` | `@PrimaryKeyJoinColumn` | FK separada (`@JoinColumn`) |
+|---|---|---|---|
+| Coluna no banco | 1 coluna (PK = FK) | 1 coluna (PK = FK) | 2 colunas (PK + FK) |
+| ID auto-preenchido | Sim (pelo relacionamento) | Não (manual) | N/A (usa `@GeneratedValue`) |
+| Garantia 1:1 no DDL | Sim (PK é a FK) | Sim (PK é a FK) | Via `UNIQUE` na FK |
+| Uso de memória | Menor (sem coluna extra) | Menor | Maior (coluna id + coluna FK) |
+| JPA version | 2.0+ | 1.0+ | 1.0+ |
+| Recomendação | Padrão para PK compartilhada | Legado — preferir `@MapsId` | Quando a filha precisa de id próprio |
+
+```mermaid
+flowchart TD
+    A{"@OneToOne:\nFilha compartilha\nPK com o pai?"} -->|Sim| B{JPA version?}
+    A -->|"Não — id próprio\n(mais flexível)"| C["@JoinColumn + @GeneratedValue\nFK separada com UNIQUE"]
+
+    B -->|"2.0+"| D["@MapsId + @JoinColumn\n(recomendado)"]
+    B -->|"1.0 legado"| E["@PrimaryKeyJoinColumn"]
+
+    D --> F["1 coluna: PK = FK\nid auto-preenchido\nmáxima economia"]
+
+    style D fill:#9f9,stroke:#333
+    style C fill:#9cf,stroke:#333
+    style E fill:#fc9,stroke:#333
+```
+
 ---
 
 ## 16. Recursos Adicionais do JPA/Hibernate
@@ -1391,11 +1909,475 @@ public class CursoEstatistica { }
 
 ### Hibernate Envers — auditoria com histórico
 
+O Envers mantém um histórico completo de todas as alterações em entidades auditadas, armazenando cada versão (revisão) em tabelas de auditoria separadas.
+
+#### Dependência
+
+```xml
+<dependency>
+    <groupId>org.hibernate.orm</groupId>
+    <artifactId>hibernate-envers</artifactId>
+</dependency>
+```
+
+O Spring Boot gerencia a versão automaticamente via BOM.
+
+#### Configuração básica — `@Audited` na entidade
+
 ```java
 @Entity
 @Audited
-public class Pedido { }
+public class Matricula extends BaseEntity {
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "curso_id", nullable = false)
+    private Curso curso;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "aluno_id", nullable = false)
+    private Aluno aluno;
+
+    @Column(precision = 4, scale = 2)
+    private BigDecimal nota;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private StatusMatricula status;
+}
 ```
+
+O Envers cria automaticamente a tabela `matricula_aud` e a tabela de revisões `revinfo`:
+
+```sql
+-- Tabela de revisões (gerada pelo Envers)
+CREATE TABLE revinfo (
+    rev        INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    revtstmp   BIGINT  -- timestamp da revisão em milissegundos
+);
+
+-- Tabela de auditoria (uma por entidade @Audited)
+CREATE TABLE matricula_aud (
+    id         BIGINT NOT NULL,
+    rev        INTEGER NOT NULL REFERENCES revinfo(rev),
+    revtype    SMALLINT,  -- 0=INSERT, 1=UPDATE, 2=DELETE
+    curso_id   BIGINT,
+    aluno_id   BIGINT,
+    nota       NUMERIC(4,2),
+    status     VARCHAR(31),
+    PRIMARY KEY (id, rev)
+);
+```
+
+O `revtype` indica o tipo de operação: `0` = INSERT (ADD), `1` = UPDATE (MOD), `2` = DELETE (DEL).
+
+#### Propriedades de configuração
+
+```yaml
+spring:
+  jpa:
+    properties:
+      # Prefixo/sufixo da tabela de auditoria
+      org.hibernate.envers:
+        audit_table_suffix: _aud                    # default: _AUD
+        revision_field_name: rev                     # default: REV
+        revision_type_field_name: revtype             # default: REVTYPE
+        # Armazenar dados da entidade no DELETE (por default só id + rev)
+        store_data_at_delete: true
+        # Auditoria de coleções em tabela separada
+        audit_strategy: org.hibernate.envers.strategy.ValidityAuditStrategy
+        # Coluna de validade (para ValidityAuditStrategy)
+        audit_strategy_validity_end_rev_field_name: rev_end
+        audit_strategy_validity_store_revend_timestamp: true
+        audit_strategy_validity_revend_timestamp_field_name: rev_end_tstmp
+```
+
+#### Estratégias de auditoria
+
+| Estratégia | Tabela `_aud` | Query de histórico | Uso |
+|---|---|---|---|
+| `DefaultAuditStrategy` (default) | Só `rev` e `revtype` | Subquery para encontrar revisão válida | Simples, menos colunas |
+| `ValidityAuditStrategy` | Adiciona `rev_end` e `rev_end_tstmp` | Range query direto (`rev <= ? AND rev_end > ?`) | Queries mais rápidas em tabelas grandes |
+
+A `ValidityAuditStrategy` é recomendada para produção — as queries de "estado na revisão X" são significativamente mais rápidas porque não precisam de subquery.
+
+#### Customizando a tabela de revisões — `@RevisionEntity`
+
+A tabela `revinfo` padrão só guarda `rev` (id) e `revtstmp` (timestamp). Para adicionar campos como usuário, IP e motivo da alteração:
+
+```java
+@Entity
+@Table(name = "revision_info")
+@RevisionEntity(CustomRevisionListener.class)
+public class CustomRevisionEntity extends DefaultRevisionEntity {
+
+    @Column(length = 100)
+    private String usuario;
+
+    @Column(length = 45)
+    private String enderecoIp;
+
+    @Column(length = 500)
+    private String motivo;
+
+    @Column(length = 100)
+    private String userAgent;
+
+    // Getters e setters
+    public String getUsuario() { return usuario; }
+    public void setUsuario(String usuario) { this.usuario = usuario; }
+
+    public String getEnderecoIp() { return enderecoIp; }
+    public void setEnderecoIp(String enderecoIp) { this.enderecoIp = enderecoIp; }
+
+    public String getMotivo() { return motivo; }
+    public void setMotivo(String motivo) { this.motivo = motivo; }
+
+    public String getUserAgent() { return userAgent; }
+    public void setUserAgent(String userAgent) { this.userAgent = userAgent; }
+}
+```
+
+O `RevisionListener` preenche os campos customizados a cada revisão:
+
+```java
+public class CustomRevisionListener implements RevisionListener {
+
+    @Override
+    public void newRevision(Object revisionEntity) {
+        CustomRevisionEntity rev = (CustomRevisionEntity) revisionEntity;
+
+        // Usuário via Spring Security
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated()) {
+            rev.setUsuario(auth.getName());
+        } else {
+            rev.setUsuario("SISTEMA");
+        }
+
+        // IP e User-Agent via RequestContextHolder
+        ServletRequestAttributes attrs =
+            (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attrs != null) {
+            HttpServletRequest request = attrs.getRequest();
+            rev.setEnderecoIp(request.getRemoteAddr());
+            rev.setUserAgent(request.getHeader("User-Agent"));
+        }
+
+        // Motivo via ThreadLocal (setado no service antes da operação)
+        rev.setMotivo(AuditContext.getMotivo());
+    }
+}
+```
+
+Contexto de auditoria para passar o motivo da alteração:
+
+```java
+public class AuditContext {
+
+    private static final ThreadLocal<String> motivo = new ThreadLocal<>();
+
+    public static void setMotivo(String valor) { motivo.set(valor); }
+    public static String getMotivo() { return motivo.get(); }
+    public static void clear() { motivo.remove(); }
+}
+```
+
+Uso no service:
+
+```java
+@Transactional
+public void atualizarNota(Long matriculaId, BigDecimal novaNota, String justificativa) {
+    try {
+        AuditContext.setMotivo(justificativa);
+
+        Matricula m = repository.findById(matriculaId).orElseThrow();
+        m.setNota(novaNota);
+        // Envers registra a revisão com o motivo no commit
+    } finally {
+        AuditContext.clear();
+    }
+}
+```
+
+DDL gerado para a tabela customizada:
+
+```sql
+CREATE TABLE revision_info (
+    id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    timestamp     BIGINT NOT NULL,
+    usuario       VARCHAR(100),
+    endereco_ip   VARCHAR(45),
+    motivo        VARCHAR(500),
+    user_agent    VARCHAR(100)
+);
+```
+
+#### Diagrama do fluxo de auditoria
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant H as Hibernate
+    participant E as Envers
+    participant DB as Banco
+
+    S->>H: matricula.setNota(8.5)
+    Note over H: Dirty checking detecta mudança
+
+    H->>DB: UPDATE matricula SET nota=8.5 WHERE id=1
+    H->>E: Notifica alteração em @Audited entity
+
+    E->>DB: INSERT INTO revision_info (timestamp, usuario, motivo, ...)
+    Note over DB: rev = 42
+
+    E->>DB: INSERT INTO matricula_aud (id, rev, revtype, nota, status, ...)
+    Note over DB: id=1, rev=42, revtype=1 (UPDATE)
+```
+
+#### Annotations do Envers
+
+**`@Audited`** — habilita auditoria na entidade ou campo:
+
+```java
+@Entity
+@Audited // audita todos os campos
+public class Matricula extends BaseEntity { }
+```
+
+**`@NotAudited`** — exclui campos específicos da auditoria:
+
+```java
+@Entity
+@Audited
+public class Aluno extends BaseEntity {
+
+    private String nome;  // auditado
+    private String ra;    // auditado
+
+    @NotAudited
+    private String fotoUrl;  // NÃO auditado (muda frequentemente, não é relevante)
+
+    @NotAudited
+    @OneToMany(mappedBy = "aluno")
+    private Set<Matricula> matriculas;  // coleção não auditada neste lado
+}
+```
+
+**`@AuditTable`** — customizar o nome da tabela de auditoria:
+
+```java
+@Entity
+@Audited
+@AuditTable("hist_matricula") // em vez de matricula_aud
+public class Matricula extends BaseEntity { }
+```
+
+**`@AuditOverride`** — controlar auditoria de campos herdados:
+
+```java
+@Entity
+@Audited
+@AuditOverride(forClass = BaseEntity.class, isAudited = false) // não audita campos de BaseEntity
+public class LogEvento extends BaseEntity {
+    private String mensagem;  // auditado
+    // criadoEm, atualizadoEm (de BaseEntity) NÃO são auditados
+}
+```
+
+**`@Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)`** — relacionamento com entidade não auditada:
+
+```java
+@Entity
+@Audited
+public class Matricula extends BaseEntity {
+
+    // Curso É auditado — referência normal
+    @ManyToOne(fetch = FetchType.LAZY)
+    private Curso curso;
+
+    // Professor NÃO é auditado — precisa de NOT_AUDITED para não dar erro
+    @ManyToOne(fetch = FetchType.LAZY)
+    @Audited(targetAuditMode = RelationTargetAuditMode.NOT_AUDITED)
+    private Professor professor;
+}
+```
+
+Sem `NOT_AUDITED`, o Envers exige que toda entidade referenciada também tenha `@Audited`. Com `NOT_AUDITED`, ele armazena apenas o ID da referência.
+
+**`@AuditJoinTable`** — customizar a tabela de auditoria de `@ManyToMany`:
+
+```java
+@Entity
+@Audited
+public class Curso extends BaseEntity {
+
+    @ManyToMany
+    @AuditJoinTable(name = "hist_curso_professor")
+    private Set<Professor> professores = new HashSet<>();
+}
+```
+
+#### Consultando o histórico — `AuditReader`
+
+```java
+@Service
+public class AuditService {
+
+    private final EntityManager entityManager;
+
+    public AuditService(EntityManager entityManager) {
+        this.entityManager = entityManager;
+    }
+
+    // Todas as revisões de uma entidade
+    public List<Number> getRevisoes(Long matriculaId) {
+        AuditReader reader = AuditReaderFactory.get(entityManager);
+        return reader.getRevisions(Matricula.class, matriculaId);
+    }
+
+    // Estado da entidade em uma revisão específica
+    public Matricula getEstadoNaRevisao(Long matriculaId, int revisao) {
+        AuditReader reader = AuditReaderFactory.get(entityManager);
+        return reader.find(Matricula.class, matriculaId, revisao);
+    }
+
+    // Histórico completo com metadados de revisão
+    public List<Object[]> getHistoricoCompleto(Long matriculaId) {
+        AuditReader reader = AuditReaderFactory.get(entityManager);
+        // Retorna [Matricula, CustomRevisionEntity, RevisionType] por revisão
+        return reader.createQuery()
+            .forRevisionsOfEntity(Matricula.class, false, true)
+            .add(AuditEntity.id().eq(matriculaId))
+            .addOrder(AuditEntity.revisionNumber().desc())
+            .getResultList();
+    }
+
+    // Entidades alteradas em um período
+    public List<Matricula> getAlteradasNoPeriodo(Date inicio, Date fim) {
+        AuditReader reader = AuditReaderFactory.get(entityManager);
+
+        Number revInicio = reader.getRevisionNumberForDate(inicio);
+        Number revFim = reader.getRevisionNumberForDate(fim);
+
+        return reader.createQuery()
+            .forRevisionsOfEntity(Matricula.class, true, false)
+            .add(AuditEntity.revisionNumber().between(revInicio, revFim))
+            .getResultList();
+    }
+
+    // Entidades em um estado específico no passado
+    public List<Matricula> getAtivasNaRevisao(int revisao) {
+        AuditReader reader = AuditReaderFactory.get(entityManager);
+        return reader.createQuery()
+            .forEntitiesAtRevision(Matricula.class, revisao)
+            .add(AuditEntity.property("status").eq(StatusMatricula.ATIVA))
+            .getResultList();
+    }
+
+    // Comparar duas revisões (diff)
+    public Map<String, Object[]> compararRevisoes(Long matriculaId, int rev1, int rev2) {
+        AuditReader reader = AuditReaderFactory.get(entityManager);
+        Matricula estado1 = reader.find(Matricula.class, matriculaId, rev1);
+        Matricula estado2 = reader.find(Matricula.class, matriculaId, rev2);
+
+        Map<String, Object[]> diff = new LinkedHashMap<>();
+
+        if (!Objects.equals(estado1.getNota(), estado2.getNota())) {
+            diff.put("nota", new Object[]{estado1.getNota(), estado2.getNota()});
+        }
+        if (!Objects.equals(estado1.getStatus(), estado2.getStatus())) {
+            diff.put("status", new Object[]{estado1.getStatus(), estado2.getStatus()});
+        }
+
+        return diff; // {"nota": [7.5, 8.5], "status": [PENDENTE, ATIVA]}
+    }
+}
+```
+
+#### Endpoint REST para consulta de auditoria
+
+```java
+@RestController
+@RequestMapping("/api/matriculas/{id}/auditoria")
+public class MatriculaAuditController {
+
+    private final AuditService auditService;
+
+    @GetMapping("/revisoes")
+    public List<Number> listarRevisoes(@PathVariable Long id) {
+        return auditService.getRevisoes(id);
+    }
+
+    @GetMapping("/revisoes/{rev}")
+    public Matricula verRevisao(@PathVariable Long id, @PathVariable int rev) {
+        return auditService.getEstadoNaRevisao(id, rev);
+    }
+
+    @GetMapping("/historico")
+    public List<AuditRecord> historico(@PathVariable Long id) {
+        return auditService.getHistoricoCompleto(id).stream()
+            .map(arr -> new AuditRecord(
+                (Matricula) arr[0],
+                (CustomRevisionEntity) arr[1],
+                (RevisionType) arr[2]
+            ))
+            .toList();
+    }
+}
+
+public record AuditRecord(
+    Matricula entidade,
+    CustomRevisionEntity revisao,
+    RevisionType tipo
+) {}
+```
+
+#### Diagrama ER das tabelas de auditoria
+
+```mermaid
+erDiagram
+    revision_info {
+        integer id PK
+        bigint timestamp
+        varchar usuario
+        varchar endereco_ip
+        varchar motivo
+        varchar user_agent
+    }
+    matricula_aud {
+        bigint id PK
+        integer rev PK,FK
+        smallint revtype "0=ADD 1=MOD 2=DEL"
+        bigint curso_id
+        bigint aluno_id
+        numeric nota
+        varchar status
+    }
+    aluno_aud {
+        bigint id PK
+        integer rev PK,FK
+        smallint revtype
+        varchar nome
+        varchar ra
+        varchar email
+        boolean ativo
+    }
+
+    revision_info ||--o{ matricula_aud : "rev"
+    revision_info ||--o{ aluno_aud : "rev"
+```
+
+#### Resumo de annotations do Envers
+
+| Annotation | Escopo | Efeito |
+|---|---|---|
+| `@Audited` | Entidade ou campo | Habilita auditoria |
+| `@NotAudited` | Campo | Exclui da auditoria |
+| `@AuditTable("nome")` | Entidade | Customiza nome da tabela `_aud` |
+| `@AuditOverride` | Entidade | Controla auditoria de campos herdados |
+| `@Audited(targetAuditMode = NOT_AUDITED)` | Relacionamento | Referência a entidade não auditada |
+| `@AuditJoinTable` | `@ManyToMany` | Customiza tabela de join auditada |
+| `@RevisionEntity` | Entidade de revisão | Customiza `revinfo` com campos extras |
 
 ### @Generated — campos populados pelo banco
 
@@ -1420,6 +2402,135 @@ public static Specification<Pedido> comStatus(StatusPedido status) {
 @DynamicInsert
 public class Configuracao { }
 ```
+
+Sem `@DynamicInsert`, o Hibernate inclui **todas** as colunas no INSERT — mesmo as nulas — e sobrescreve o `DEFAULT` definido no DDL:
+
+```sql
+-- Sem @DynamicInsert: campo nulo sobrescreve o DEFAULT do banco
+INSERT INTO configuracao (tema, idioma, timeout) VALUES (NULL, NULL, NULL);
+-- DEFAULT ignorado!
+
+-- Com @DynamicInsert: campos nulos omitidos, banco aplica DEFAULT
+INSERT INTO configuracao () VALUES ();
+-- DEFAULT aplicado!
+```
+
+### @ColumnDefault — declarar o DEFAULT na geração do DDL
+
+O `@ColumnDefault` do Hibernate define a cláusula `DEFAULT` da coluna no DDL gerado. É complementar ao `@DynamicInsert`:
+
+```java
+@Entity
+@DynamicInsert // necessário para que o DEFAULT seja respeitado no INSERT
+public class Configuracao extends BaseEntity {
+
+    @ColumnDefault("'escuro'")
+    @Column(nullable = false, length = 50)
+    private String tema;
+
+    @ColumnDefault("'pt-BR'")
+    @Column(nullable = false, length = 10)
+    private String idioma;
+
+    @ColumnDefault("30")
+    @Column(nullable = false)
+    private Integer timeoutMinutos;
+
+    @ColumnDefault("true")
+    @Column(nullable = false)
+    private boolean ativo;
+}
+```
+
+DDL gerado pelo Hibernate:
+
+```sql
+CREATE TABLE configuracao (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tema             VARCHAR(50) NOT NULL DEFAULT 'escuro',
+    idioma           VARCHAR(10) NOT NULL DEFAULT 'pt-BR',
+    timeout_minutos  INTEGER NOT NULL DEFAULT 30,
+    ativo            BOOLEAN NOT NULL DEFAULT true,
+    criado_em        TIMESTAMPTZ NOT NULL,
+    atualizado_em    TIMESTAMPTZ NOT NULL
+);
+```
+
+Uso — os campos não setados recebem o DEFAULT do banco:
+
+```java
+var config = new Configuracao();
+// Não seta tema, idioma, timeout, ativo
+repository.save(config);
+
+// Com @DynamicInsert, o INSERT omite os campos nulos:
+// INSERT INTO configuracao (criado_em, atualizado_em) VALUES (?, ?)
+// Banco aplica: tema='escuro', idioma='pt-BR', timeout_minutos=30, ativo=true
+
+Configuracao salva = repository.findById(config.getId()).orElseThrow();
+salva.getTema();           // "escuro" (DEFAULT do banco)
+salva.getIdioma();         // "pt-BR"
+salva.getTimeoutMinutos(); // 30
+salva.isAtivo();           // true
+```
+
+#### @ColumnDefault com expressões SQL
+
+O valor do `@ColumnDefault` é uma **expressão SQL literal** — strings precisam de aspas simples internas:
+
+```java
+// String literal — aspas simples dentro da anotação
+@ColumnDefault("'pendente'")
+private String status;
+
+// Expressão SQL — função do banco
+@ColumnDefault("NOW()")
+@Column(columnDefinition = "TIMESTAMPTZ")
+private OffsetDateTime criadoEm;
+
+// Expressão SQL — cálculo
+@ColumnDefault("0.00")
+@Column(precision = 19, scale = 2)
+private BigDecimal saldo;
+
+// UUID gerado pelo banco
+@ColumnDefault("GEN_RANDOM_UUID()")
+@Column(columnDefinition = "UUID")
+private UUID codigoPublico;
+
+// Sequência específica
+@ColumnDefault("NEXTVAL('numero_protocolo_seq')")
+private Long numeroProtocolo;
+```
+
+#### @ColumnDefault vs columnDefinition com DEFAULT
+
+Ambos definem DEFAULT, mas `@ColumnDefault` é mais limpo:
+
+```java
+// @ColumnDefault — só o DEFAULT, Hibernate cuida do tipo
+@ColumnDefault("'ativo'")
+@Column(nullable = false, length = 30)
+private String status;
+
+// columnDefinition — precisa repetir o tipo inteiro
+@Column(nullable = false, columnDefinition = "VARCHAR(30) DEFAULT 'ativo'")
+private String status;
+```
+
+O `@ColumnDefault` é preferível porque não acopla a definição de tipo com o default. O `columnDefinition` sobrescreve toda a definição da coluna, o que pode causar problemas em migrações.
+
+#### Quando @ColumnDefault é útil vs desnecessário
+
+| Cenário | @ColumnDefault + @DynamicInsert | Setar no Java |
+|---|---|---|
+| Default simples e fixo | Sim — banco é a fonte de verdade | Também funciona |
+| Default com lógica SQL (`NOW()`, `GEN_RANDOM_UUID()`) | Sim — só o banco executa | Não é possível |
+| Default que pode mudar sem deploy | Sim — altera no banco via Flyway | Precisa de deploy |
+| Campos que a aplicação sempre seta | Desnecessário | Setar no construtor/setter |
+| Compatibilidade com outros clientes SQL | Sim — qualquer INSERT usa o DEFAULT | Não — só via aplicação |
+
+**Regra prática:** use `@ColumnDefault` quando o valor default é relevante para o banco (outros clientes SQL, migrações de dados, consistência). Use inicialização em Java quando o default é puramente lógica da aplicação.
 
 ---
 
@@ -1817,6 +2928,199 @@ private Dinheiro valor; // converter para BigDecimal
 ### Múltiplas colunas → @Embeddable
 
 `AttributeConverter` é sempre 1 objeto → 1 coluna. Para múltiplas colunas, use `@Embeddable` com `@AttributeOverrides`.
+
+### Atributos avançados da annotation @Column
+
+Além dos atributos comuns (`name`, `nullable`, `unique`, `length`, `columnDefinition`), o `@Column` tem atributos menos utilizados mas poderosos:
+
+#### `precision` e `scale` — controle de casas decimais
+
+Aplicável a tipos numéricos (`BigDecimal`, `Double`). Mapeiam para `NUMERIC(precision, scale)` no PostgreSQL:
+
+```java
+@Entity
+public class Produto extends BaseEntity {
+
+    // NUMERIC(19,2) — até 19 dígitos total, 2 decimais → R$ 99.999.999.999.999.999,99
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal preco;
+
+    // NUMERIC(5,4) — até 5 dígitos, 4 decimais → 0.0000 a 9.9999 (taxa percentual)
+    @Column(nullable = false, precision = 5, scale = 4)
+    private BigDecimal taxaJuros;
+
+    // NUMERIC(10,6) — coordenadas geográficas
+    @Column(precision = 10, scale = 6)
+    private BigDecimal latitude;
+
+    @Column(precision = 10, scale = 6)
+    private BigDecimal longitude;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE produto (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    preco      NUMERIC(19,2) NOT NULL,
+    taxa_juros NUMERIC(5,4) NOT NULL,
+    latitude   NUMERIC(10,6),
+    longitude  NUMERIC(10,6)
+);
+```
+
+Convenções comuns para `precision` e `scale`:
+
+| Caso de uso | `precision` | `scale` | Tipo no PostgreSQL |
+|---|---|---|---|
+| Dinheiro (BRL) | 19 | 2 | `NUMERIC(19,2)` |
+| Dinheiro (crypto) | 19 | 8 | `NUMERIC(19,8)` |
+| Percentual (0-100%) | 5 | 2 | `NUMERIC(5,2)` |
+| Taxa/fator (0.0000-9.9999) | 5 | 4 | `NUMERIC(5,4)` |
+| Coordenada geográfica | 10 | 6 | `NUMERIC(10,6)` |
+| Peso/medida | 10 | 3 | `NUMERIC(10,3)` |
+
+#### `check` — constraint CHECK inline (JPA 3.2 / Hibernate 6.5+)
+
+Gera uma constraint `CHECK` diretamente na coluna, sem necessidade de Flyway:
+
+```java
+@Entity
+public class Matricula extends BaseEntity {
+
+    @Column(precision = 4, scale = 2, check = @Check(constraints = "nota >= 0 AND nota <= 10"))
+    private BigDecimal nota;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 31, check = @Check(constraints = "status IN ('ATIVA','PENDENTE','CANCELADA','TRANSFERIDA')"))
+    private StatusMatricula status;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE matricula (
+    nota   NUMERIC(4,2) CHECK (nota >= 0 AND nota <= 10),
+    status VARCHAR(31) NOT NULL CHECK (status IN ('ATIVA','PENDENTE','CANCELADA','TRANSFERIDA'))
+);
+```
+
+O `@Check` também pode ser aplicado no nível da entidade para constraints compostas:
+
+```java
+@Entity
+@Check(constraints = "data_fim > data_inicio")
+public class Reserva extends BaseEntity {
+
+    @Column(nullable = false)
+    private LocalDate dataInicio;
+
+    @Column(nullable = false)
+    private LocalDate dataFim;
+}
+```
+
+#### `options` — cláusula extra no DDL (Hibernate 6.5+)
+
+Adiciona texto literal após a definição da coluna no DDL gerado. Útil para opções específicas do banco:
+
+```java
+@Entity
+public class LogEvento extends BaseEntity {
+
+    // COMPRESSION lz4 no PostgreSQL (requer TOAST)
+    @Column(columnDefinition = "TEXT", options = "COMPRESSION lz4")
+    private String payload;
+
+    // COLLATE específico
+    @Column(length = 200, options = "COLLATE \"pt_BR.utf8\"")
+    private String descricao;
+
+    // STORAGE para controle de TOAST
+    @Column(columnDefinition = "TEXT", options = "STORAGE EXTERNAL")
+    private String dadosBrutos;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE log_evento (
+    payload      TEXT COMPRESSION lz4,
+    descricao    VARCHAR(200) COLLATE "pt_BR.utf8",
+    dados_brutos TEXT STORAGE EXTERNAL
+);
+```
+
+O `options` é concatenado diretamente após a definição da coluna — aceita qualquer texto válido para o dialeto do banco.
+
+#### `table` — coluna em @SecondaryTable
+
+Para mapear um campo em uma tabela secundária:
+
+```java
+@Entity
+@SecondaryTable(name = "aluno_detalhe")
+public class Aluno extends BaseEntity {
+
+    @Column(nullable = false)
+    private String nome;
+
+    // Campos na tabela secundária
+    @Column(table = "aluno_detalhe", length = 1000)
+    private String bio;
+
+    @Column(table = "aluno_detalhe", length = 500)
+    private String fotoUrl;
+}
+```
+
+#### `insertable` e `updatable` — campos read-only parciais
+
+```java
+@Entity
+public class Pagamento extends BaseEntity {
+
+    // Coluna discriminadora — gerenciada pelo Hibernate, read-only para a aplicação
+    @Column(name = "tipo", insertable = false, updatable = false)
+    @Enumerated(EnumType.STRING)
+    private TipoPagamento tipo;
+
+    // Campo setado apenas no INSERT, nunca alterado
+    @Column(nullable = false, updatable = false)
+    private BigDecimal valorOriginal;
+
+    // Campo setado apenas em UPDATE (via trigger ou procedure externa)
+    @Column(insertable = false)
+    private OffsetDateTime processadoEm;
+}
+```
+
+| Combinação | INSERT inclui | UPDATE inclui | Uso típico |
+|---|---|---|---|
+| `insertable=true, updatable=true` (default) | Sim | Sim | Campo normal |
+| `insertable=false, updatable=false` | Não | Não | Read-only (discriminador, campo calculado) |
+| `insertable=true, updatable=false` | Sim | Não | Valor imutável (data de criação, valor original) |
+| `insertable=false, updatable=true` | Não | Sim | Campo preenchido pelo banco, editável depois |
+
+#### Referência completa dos atributos de @Column
+
+| Atributo | Tipo | Default | Efeito |
+|---|---|---|---|
+| `name` | `String` | Nome do campo (snake_case) | Nome da coluna no DDL |
+| `nullable` | `boolean` | `true` | `NOT NULL` no DDL |
+| `unique` | `boolean` | `false` | `UNIQUE` constraint |
+| `length` | `int` | `255` | Tamanho do `VARCHAR` |
+| `precision` | `int` | `0` | Dígitos totais do `NUMERIC` |
+| `scale` | `int` | `0` | Dígitos decimais do `NUMERIC` |
+| `columnDefinition` | `String` | `""` | Sobrescreve **toda** a definição DDL |
+| `table` | `String` | `""` | Tabela da coluna (para `@SecondaryTable`) |
+| `insertable` | `boolean` | `true` | Inclui no `INSERT` |
+| `updatable` | `boolean` | `true` | Inclui no `UPDATE` |
+| `check` | `@Check` | — | Constraint `CHECK` inline (JPA 3.2+) |
+| `options` | `String` | `""` | Texto extra no DDL após a coluna (Hibernate 6.5+) |
 
 ---
 
@@ -4097,6 +5401,7 @@ Na grande maioria dos casos (etapas 1–5 e 7–9), a migração é puramente Ja
 - [Hibernate ORM 6 User Guide](https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html)
 - [Spring Data JPA Reference](https://docs.spring.io/spring-data/jpa/reference/)
 - [Vlad Mihalcea — High-Performance Java Persistence](https://vladmihalcea.com/)
+- [Thorben Janssen — Thoughts on Java / JPA & Hibernate](https://thorben-janssen.com/)
 - [Jakarta Persistence Specification](https://jakarta.ee/specifications/persistence/)
 - [Caelum Stella](https://github.com/caelum/caelum-stella)
 - [Apache Commons Validator](https://commons.apache.org/proper/commons-validator/)
