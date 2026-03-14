@@ -30,6 +30,8 @@
 20. [Atualização — Boas Práticas de UPDATE](#20-atualização--boas-práticas-de-update)
 21. [Exclusão — Boas Práticas de DELETE](#21-exclusão--boas-práticas-de-delete)
 22. [Entity Listeners — Callbacks de Ciclo de Vida](#22-entity-listeners--callbacks-de-ciclo-de-vida)
+23. [Configuração do Spring Boot para Banco de Dados](#23-configuração-do-spring-boot-para-banco-de-dados)
+24. [JPQL Avançado — Funções, Subconsultas e Recursos Pouco Explorados](#24-jpql-avançado--funções-subconsultas-e-recursos-pouco-explorados)
 
 ---
 
@@ -650,6 +652,8 @@ List<String> findNomesLike(@Param("termo") String termo);
 @Query("SELECT SIZE(c.matriculas) FROM Curso c WHERE c.id = :cursoId")
 int countMatriculasDoCurso(@Param("cursoId") Long cursoId);
 ```
+
+Para exemplos avançados de `COALESCE`, `NULLIF`, tratamento de nulos com `CASE WHEN` e funções nativas do PostgreSQL via `FUNCTION()`, veja a [Seção 24 — JPQL Avançado](#24-jpql-avançado--funções-subconsultas-e-recursos-pouco-explorados).
 
 ---
 
@@ -4037,6 +4041,1313 @@ public class EntidadeSemAuditoria extends BaseEntity { }
 | `orm.xml` global | Todas as entidades | Workaround | Média | Auditoria/segurança cross-cutting |
 | Spring Data `AuditingEntityListener` | Entidades anotadas | Sim (nativo) | Baixa | `createdBy`, `modifiedBy` |
 | `@TransactionalEventListener` no service | Por operação | Sim (nativo) | Baixa | Notificações, efeitos colaterais |
+
+---
+
+## 23. Configuração do Spring Boot para Banco de Dados
+
+Configurações divididas por profile: desenvolvimento (feedback rápido, debug) e produção (performance, segurança, resiliência). Todas as propriedades são para `application.yml` com PostgreSQL.
+
+### Configuração completa para desenvolvimento
+
+```yaml
+# application-dev.yml
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/meubanco_dev
+    username: ${DB_USERNAME:dev_user}
+    password: ${DB_PASSWORD:dev_pass}
+    driver-class-name: org.postgresql.Driver
+
+    hikari:
+      # Pool pequeno em dev — facilita identificar connection leaks
+      minimum-idle: 2
+      maximum-pool-size: 5
+      # Timeout curto para falhar rápido em dev
+      connection-timeout: 5000          # 5s para obter conexão do pool
+      idle-timeout: 300000              # 5min — conexão ociosa é removida
+      max-lifetime: 600000              # 10min — recicla conexões
+      leak-detection-threshold: 30000   # 30s — loga warning se conexão não for devolvida
+      # Timezone UTC em toda conexão
+      connection-init-sql: SET timezone = 'UTC'
+      # Nome do pool (visível em logs e métricas)
+      pool-name: HikariPool-Dev
+
+  jpa:
+    # DDL automático em dev (NUNCA em produção)
+    hibernate:
+      ddl-auto: validate  # validate é seguro; update para prototipagem rápida
+      naming:
+        # snake_case automático: nomeCompleto → nome_completo
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+    # Mostrar SQL em dev
+    show-sql: false  # prefira o logging abaixo (formatado e com parâmetros)
+    open-in-view: false  # DESABILITAR — evita queries acidentais na view
+
+    properties:
+      hibernate:
+        # ── Timezone ──
+        jdbc:
+          time_zone: UTC
+
+        # ── SQL formatado e comentado ──
+        format_sql: true
+        use_sql_comments: true
+
+        # ── Batch ──
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+        # ── Estatísticas em dev ──
+        generate_statistics: true
+
+        # ── Validação de queries no startup ──
+        query:
+          fail_on_pagination_over_collection_fetch: true  # erro se JOIN FETCH + paginação
+
+  # Flyway em dev
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+# ── Logging para debug de queries ──
+logging:
+  level:
+    # SQL gerado pelo Hibernate
+    org.hibernate.SQL: DEBUG
+    # Valores dos parâmetros bind
+    org.hibernate.orm.jdbc.bind: TRACE
+    # Transações
+    org.springframework.transaction: DEBUG
+    # Connection pool
+    com.zaxxer.hikari: DEBUG
+    # Queries lentas (Hibernate 6+)
+    org.hibernate.stat: DEBUG
+```
+
+### Configuração completa para produção
+
+```yaml
+# application-prod.yml
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+    hikari:
+      # ── Pool sizing ──
+      # Regra: connections = (core_count * 2) + disco_spindles
+      # Para SSD com 4 cores: (4 * 2) + 1 = 9 ~ 10
+      minimum-idle: 5
+      maximum-pool-size: 20
+      # ── Timeouts ──
+      connection-timeout: 10000          # 10s — falha rápida se pool cheio
+      idle-timeout: 600000               # 10min
+      max-lifetime: 1800000              # 30min — recicla antes do timeout do PG
+      validation-timeout: 3000           # 3s para validar conexão
+      leak-detection-threshold: 60000    # 1min
+      # ── Validação de conexão ──
+      connection-test-query: SELECT 1    # validação leve
+      # ── Timezone ──
+      connection-init-sql: SET timezone = 'UTC'
+      # ── Pool name para métricas ──
+      pool-name: HikariPool-Prod
+
+    # ── Propriedades do driver PostgreSQL ──
+    properties:
+      # Prepared statements cacheados no driver
+      preparedStatementCacheQueries: 256
+      preparedStatementCacheSizeMiB: 5
+      # Timeout de socket
+      socketTimeout: 30
+      # Timeout de login
+      loginTimeout: 10
+
+  jpa:
+    hibernate:
+      ddl-auto: none  # NUNCA auto-gerar DDL em produção — Flyway gerencia
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+    show-sql: false
+    open-in-view: false  # SEMPRE desabilitado
+
+    properties:
+      hibernate:
+        # ── Timezone ──
+        jdbc:
+          time_zone: UTC
+
+        # ── Batch — crítico para performance de escrita ──
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+        # Batch versioned entities (necessário com @Version)
+        jdbc:
+          batch_versioned_data: true
+
+        # ── Connection handling ──
+        connection:
+          handling_mode: DELAYED_ACQUISITION_AND_RELEASE_AFTER_TRANSACTION
+
+        # ── Cache L2 (se habilitado) ──
+        cache:
+          use_second_level_cache: false  # habilitar se usar EhCache/Caffeine
+          use_query_cache: false
+
+        # ── SQL comments para pg_stat_statements ──
+        use_sql_comments: true
+
+        # ── Desabilitar estatísticas em produção ──
+        generate_statistics: false
+
+        # ── Fail-fast em problemas de paginação ──
+        query:
+          fail_on_pagination_over_collection_fetch: true
+          # Plano de query — in_clause_parameter_padding reduz planos no PG
+          in_list_padding: true
+
+  # Flyway em produção
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+    # Lock para deploys em cluster
+    lock-retry-count: 10
+
+# ── Logging em produção — mínimo ──
+logging:
+  level:
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: OFF
+    com.zaxxer.hikari: INFO
+    org.springframework.transaction: WARN
+```
+
+### Explicação das propriedades críticas
+
+#### open-in-view: false (SEMPRE)
+
+```yaml
+spring:
+  jpa:
+    open-in-view: false
+```
+
+O `open-in-view` (OSIV) mantém a sessão Hibernate aberta durante toda a request HTTP, incluindo a serialização da response. Quando `true` (default do Spring Boot), permite lazy loading acidental na camada de apresentação:
+
+```mermaid
+flowchart LR
+    subgraph "open-in-view: true (PERIGOSO)"
+        direction LR
+        C1[Controller] --> S1[Service]
+        S1 --> R1[Repository]
+        R1 --> DB1[(DB)]
+        C1 -.->|"lazy load\nacidental"| DB1
+        note1["Sessão aberta\ndurante TODA a request"]
+    end
+```
+
+```mermaid
+flowchart LR
+    subgraph "open-in-view: false (CORRETO)"
+        direction LR
+        C2[Controller] --> S2[Service @Transactional]
+        S2 --> R2[Repository]
+        R2 --> DB2[(DB)]
+        C2 -.->|"LazyInitException\n(falha explícita)"| X2[X]
+        note2["Sessão fechada\nao sair do @Transactional"]
+    end
+```
+
+Com OSIV desabilitado, qualquer lazy loading fora do `@Transactional` lança `LazyInitializationException` — forçando o desenvolvedor a resolver o N+1 no service com `JOIN FETCH`, `@EntityGraph` ou projeções.
+
+#### ddl-auto: validate vs none
+
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate  # dev
+      # ddl-auto: none    # prod
+```
+
+| Valor | Comportamento | Quando usar |
+|---|---|---|
+| `none` | Não faz nada | Produção (Flyway gerencia) |
+| `validate` | Valida schema vs entidades no startup | Dev e staging (detecta drift) |
+| `update` | Altera schema para corresponder às entidades | Prototipagem rápida (nunca prod) |
+| `create` | Dropa e recria tudo | Testes com banco em memória |
+| `create-drop` | Cria no startup, dropa no shutdown | Testes unitários |
+
+`validate` é o melhor para dev porque detecta divergência entre entidades e Flyway sem modificar o banco.
+
+#### HikariCP — sizing do pool
+
+A fórmula recomendada pelo HikariCP:
+
+```
+maximum-pool-size = (core_count * 2) + effective_spindle_count
+```
+
+Para um servidor com 4 cores e SSD: `(4 * 2) + 1 = 9`. Arredonde para 10. Um pool grande demais **degrada** performance — cada conexão consome memória no PostgreSQL e aumenta contenção de locks.
+
+```mermaid
+flowchart TD
+    A["Servidor: 4 cores, SSD"] --> B["(4 × 2) + 1 = 9"]
+    B --> C["maximum-pool-size: 10"]
+    C --> D["minimum-idle: 5\n(metade do max)"]
+
+    E["Servidor: 8 cores, SSD"] --> F["(8 × 2) + 1 = 17"]
+    F --> G["maximum-pool-size: 20"]
+    G --> H["minimum-idle: 10"]
+```
+
+#### leak-detection-threshold
+
+```yaml
+hikari:
+  leak-detection-threshold: 30000  # 30s dev / 60s prod
+```
+
+Se uma conexão não é devolvida ao pool dentro do tempo configurado, o HikariCP loga um warning com stack trace completo de onde a conexão foi obtida. Essencial para detectar `@Transactional` faltando ou transações que nunca fecham.
+
+```
+WARN  HikariPool-Dev - Connection leak detection triggered for connection com.zaxxer.hikari.pool.ProxyConnection@abc123,
+stack trace follows
+java.lang.Exception: Apparent connection leak detected
+    at com.exemplo.service.AlunoService.metodoSemTransactional(AlunoService.java:42)
+```
+
+#### Batch sizing e ordering
+
+```yaml
+hibernate:
+  jdbc:
+    batch_size: 50
+  order_inserts: true
+  order_updates: true
+```
+
+`batch_size` agrupa INSERTs/UPDATEs em lotes JDBC. `order_inserts` e `order_updates` reordenam as operações por tabela para maximizar o batch — sem ordering, alternância entre tabelas quebra o batch:
+
+```sql
+-- SEM order_inserts (batch quebrado a cada troca de tabela)
+INSERT INTO curso ...     -- batch 1
+INSERT INTO matricula ... -- batch 2 (quebrou)
+INSERT INTO curso ...     -- batch 3 (quebrou de novo)
+INSERT INTO matricula ... -- batch 4
+
+-- COM order_inserts (agrupado por tabela)
+INSERT INTO curso ...     -- batch 1 (todos os cursos)
+INSERT INTO curso ...     -- batch 1 (continua)
+INSERT INTO matricula ... -- batch 2 (todas as matrículas)
+INSERT INTO matricula ... -- batch 2 (continua)
+```
+
+**Lembrete:** batch INSERT não funciona com `GenerationType.IDENTITY`. Use `SEQUENCE` com `allocationSize` para batch real.
+
+#### in_list_padding
+
+```yaml
+hibernate:
+  query:
+    in_list_padding: true
+```
+
+Sem padding, cada query com `IN` de tamanho diferente gera um plano de execução separado no PostgreSQL:
+
+```sql
+-- Sem padding: 3 planos diferentes no pg_stat_statements
+SELECT * FROM aluno WHERE id IN (?, ?)           -- 2 params
+SELECT * FROM aluno WHERE id IN (?, ?, ?)        -- 3 params
+SELECT * FROM aluno WHERE id IN (?, ?, ?, ?)     -- 4 params
+
+-- Com padding: padded para potências de 2 — reutiliza planos
+SELECT * FROM aluno WHERE id IN (?, ?)           -- 2 params
+SELECT * FROM aluno WHERE id IN (?, ?, ?, ?)     -- 3→4 (padded)
+SELECT * FROM aluno WHERE id IN (?, ?, ?, ?)     -- 4 params (mesmo plano)
+```
+
+Reduz o número de prepared statements cacheados no PostgreSQL e melhora hit rate de plano.
+
+#### fail_on_pagination_over_collection_fetch
+
+```yaml
+hibernate:
+  query:
+    fail_on_pagination_over_collection_fetch: true
+```
+
+Quando `true`, o Hibernate lança exceção em vez de paginação silenciosa em memória ao usar `JOIN FETCH` com coleções + `LIMIT/OFFSET`. Sem isso, o Hibernate carrega **todos** os registros e pagina em memória — disaster performance:
+
+```java
+// Com fail_on_pagination_over_collection_fetch = true → EXCEÇÃO (bom, falha explícita)
+// Com fail_on_pagination_over_collection_fetch = false → paginação em memória (silenciosamente lento)
+@Query("SELECT c FROM Curso c JOIN FETCH c.matriculas")
+Page<Curso> findAll(Pageable pageable); // PERIGO com coleção no JOIN FETCH
+```
+
+### Propriedades do driver PostgreSQL JDBC
+
+Configurações no nível do driver JDBC para tuning fino:
+
+```yaml
+spring:
+  datasource:
+    url: >-
+      jdbc:postgresql://localhost:5432/meubanco
+      ?prepareThreshold=5
+      &preparedStatementCacheQueries=256
+      &preparedStatementCacheSizeMiB=5
+      &reWriteBatchedInserts=true
+      &ApplicationName=minha-app
+```
+
+| Propriedade | Valor | Efeito |
+|---|---|---|
+| `prepareThreshold` | `5` | Após 5 execuções, promove para server-side prepared statement |
+| `preparedStatementCacheQueries` | `256` | Cache de prepared statements no driver |
+| `preparedStatementCacheSizeMiB` | `5` | Limite de memória para cache de statements |
+| `reWriteBatchedInserts` | `true` | Reescreve batch como multi-value INSERT (`INSERT INTO ... VALUES (...), (...), (...)`) |
+| `ApplicationName` | `minha-app` | Visível em `pg_stat_activity` — identifica a aplicação |
+
+O `reWriteBatchedInserts=true` é particularmente impactante — transforma N INSERTs individuais em um único multi-value INSERT, reduzindo roundtrips:
+
+```sql
+-- Sem reWriteBatchedInserts (N roundtrips)
+INSERT INTO aluno (nome, ra) VALUES ('João', '001');
+INSERT INTO aluno (nome, ra) VALUES ('Maria', '002');
+INSERT INTO aluno (nome, ra) VALUES ('Pedro', '003');
+
+-- Com reWriteBatchedInserts (1 roundtrip)
+INSERT INTO aluno (nome, ra) VALUES ('João', '001'), ('Maria', '002'), ('Pedro', '003');
+```
+
+### Configuração de logging por cenário
+
+#### Debug de queries (dev)
+
+```yaml
+logging:
+  level:
+    org.hibernate.SQL: DEBUG                    # SQL gerado
+    org.hibernate.orm.jdbc.bind: TRACE          # valores dos parâmetros
+```
+
+Saída:
+
+```
+DEBUG org.hibernate.SQL -
+    select a.id, a.nome, a.ra
+    from aluno a
+    where a.ra = ?
+
+TRACE org.hibernate.orm.jdbc.bind - binding parameter (1:VARCHAR) <- [2024001234]
+```
+
+#### Debug de transações
+
+```yaml
+logging:
+  level:
+    org.springframework.transaction: DEBUG
+    org.springframework.transaction.interceptor: TRACE
+```
+
+#### Debug de connection pool
+
+```yaml
+logging:
+  level:
+    com.zaxxer.hikari: DEBUG
+    com.zaxxer.hikari.pool.HikariPool: DEBUG
+```
+
+#### Queries lentas — Hibernate statistics
+
+```yaml
+spring:
+  jpa:
+    properties:
+      hibernate:
+        generate_statistics: true
+        session:
+          events:
+            log:
+              LOG_QUERIES_SLOWER_THAN_MS: 500  # loga queries > 500ms
+```
+
+Saída:
+
+```
+WARN  SlowQuery - Query took 1234ms: SELECT * FROM matricula WHERE ...
+```
+
+#### Queries lentas — PostgreSQL (complementar)
+
+```sql
+-- No PostgreSQL (via Flyway ou manual)
+ALTER SYSTEM SET log_min_duration_statement = 500;  -- loga queries > 500ms
+ALTER SYSTEM SET log_statement = 'none';            -- não loga todas (performance)
+SELECT pg_reload_conf();
+```
+
+### Configuração para testes de integração
+
+```yaml
+# application-test.yml
+spring:
+  datasource:
+    # Testcontainers — PostgreSQL real em container descartável
+    url: jdbc:tc:postgresql:18:///test_db
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop  # recria a cada suíte de teste
+    show-sql: false
+    open-in-view: false
+
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 10
+        format_sql: true
+        generate_statistics: false
+
+  flyway:
+    enabled: true  # ou false se usar ddl-auto: create-drop
+```
+
+### Resumo por profile
+
+```mermaid
+flowchart TD
+    subgraph DEV["Profile: dev"]
+        D1["ddl-auto: validate"]
+        D2["pool: 2-5 conexões"]
+        D3["leak-detection: 30s"]
+        D4["logging: SQL + bind + stats"]
+        D5["show-sql: false\n(usar logging formatado)"]
+        D6["open-in-view: false"]
+    end
+
+    subgraph PROD["Profile: prod"]
+        P1["ddl-auto: none"]
+        P2["pool: 10-20 conexões\n(fórmula por cores)"]
+        P3["leak-detection: 60s"]
+        P4["logging: WARN only"]
+        P5["batch: 50 + ordering"]
+        P6["in_list_padding: true"]
+        P7["reWriteBatchedInserts: true"]
+        P8["open-in-view: false"]
+    end
+
+    subgraph TEST["Profile: test"]
+        T1["ddl-auto: create-drop"]
+        T2["pool: 2 conexões"]
+        T3["Testcontainers\nPostgreSQL real"]
+        T4["logging: off"]
+    end
+```
+
+| Propriedade | Dev | Prod | Test |
+|---|---|---|---|
+| `ddl-auto` | `validate` | `none` | `create-drop` |
+| `open-in-view` | `false` | `false` | `false` |
+| `show-sql` | `false` | `false` | `false` |
+| `format_sql` | `true` | `false` | `true` |
+| `use_sql_comments` | `true` | `true` | `false` |
+| `generate_statistics` | `true` | `false` | `false` |
+| `batch_size` | `25` | `50` | `10` |
+| `order_inserts/updates` | `true` | `true` | `true` |
+| `in_list_padding` | `false` | `true` | `false` |
+| `fail_on_pagination_over_collection_fetch` | `true` | `true` | `true` |
+| `leak-detection-threshold` | `30s` | `60s` | — |
+| `maximum-pool-size` | `5` | `10–20` | `2` |
+| Logging SQL | `DEBUG` | `WARN` | `OFF` |
+| Logging bind params | `TRACE` | `OFF` | `OFF` |
+| `reWriteBatchedInserts` | `false` | `true` | `false` |
+
+---
+
+## 24. JPQL Avançado — Funções, Subconsultas e Recursos Pouco Explorados
+
+### Funções de String do JPQL
+
+O JPQL define funções built-in que funcionam em qualquer banco:
+
+```java
+// CONCAT — concatenação (alternativa ao operador ||)
+@Query("SELECT CONCAT(a.nome, ' (', a.ra, ')') FROM Aluno a WHERE a.ativo = true")
+List<String> findNomesComRa();
+
+// SUBSTRING — extrair parte da string (1-indexed)
+@Query("SELECT SUBSTRING(a.ra, 1, 4) FROM Aluno a")
+List<String> findAnoIngresso(); // ex: "2024" dos primeiros 4 chars do RA
+
+// TRIM — remover espaços (LEADING, TRAILING, BOTH)
+@Query("SELECT a FROM Aluno a WHERE TRIM(BOTH ' ' FROM a.nome) = :nome")
+Optional<Aluno> findByNomeTrimmed(@Param("nome") String nome);
+
+// LENGTH — tamanho da string
+@Query("SELECT a FROM Aluno a WHERE LENGTH(a.email) > :max")
+List<Aluno> findComEmailLongo(@Param("max") int max);
+
+// LOCATE — posição de substring (0 se não encontrar)
+@Query("SELECT a FROM Aluno a WHERE LOCATE('@', a.email) > 0")
+List<Aluno> findComEmailValido();
+
+// UPPER / LOWER
+@Query("SELECT a FROM Aluno a WHERE UPPER(a.nome) = UPPER(:nome)")
+Optional<Aluno> findByNomeCaseInsensitive(@Param("nome") String nome);
+
+// REPLACE (Hibernate 6+ / JPA 3.2)
+@Query("SELECT REPLACE(a.nome, 'Dr. ', '') FROM Aluno a")
+List<String> findNomesSemTitulo();
+
+// LEFT / RIGHT (Hibernate 6+)
+@Query("SELECT LEFT(a.ra, 4) FROM Aluno a")
+List<String> findPrefixosRa();
+```
+
+### Funções numéricas do JPQL
+
+```java
+// ABS — valor absoluto
+@Query("SELECT m FROM Matricula m WHERE ABS(m.nota - :referencia) <= :tolerancia")
+List<Matricula> findComNotaProximaDe(
+    @Param("referencia") BigDecimal referencia,
+    @Param("tolerancia") BigDecimal tolerancia
+);
+
+// MOD — resto da divisão
+@Query("SELECT a FROM Aluno a WHERE MOD(a.id, :divisor) = 0")
+List<Aluno> findPorModuloId(@Param("divisor") long divisor);
+
+// SQRT — raiz quadrada
+@Query("SELECT SQRT(AVG(m.nota * m.nota)) FROM Matricula m WHERE m.curso.id = :cursoId")
+Double findRmsNotasDoCurso(@Param("cursoId") Long cursoId);
+
+// ROUND / FLOOR / CEILING (Hibernate 6+ / JPA 3.2)
+@Query("SELECT a.nome, ROUND(AVG(m.nota), 2) FROM Aluno a JOIN a.matriculas m GROUP BY a.id, a.nome")
+List<Object[]> findMediasArredondadas();
+
+@Query("SELECT FLOOR(m.nota) FROM Matricula m WHERE m.curso.id = :cursoId")
+List<Long> findNotasTruncadas(@Param("cursoId") Long cursoId);
+
+// SIGN — retorna -1, 0 ou 1 (Hibernate 6+)
+@Query("SELECT m FROM Matricula m WHERE SIGN(m.nota - 7.0) >= 0")
+List<Matricula> findAprovados();
+
+// POWER / LN / EXP (Hibernate 6+)
+@Query("SELECT POWER(m.nota, 2) FROM Matricula m WHERE m.curso.id = :cursoId")
+List<Double> findNotasAoQuadrado(@Param("cursoId") Long cursoId);
+```
+
+### Funções de data/hora do JPQL
+
+```java
+// CURRENT_DATE, CURRENT_TIME, CURRENT_TIMESTAMP
+@Query("SELECT m FROM Matricula m WHERE m.criadoEm < CURRENT_TIMESTAMP")
+List<Matricula> findAntesDeMomentoAtual();
+
+// LOCAL DATE / LOCAL TIME / LOCAL DATETIME (JPA 3.1+)
+@Query("SELECT p FROM PagamentoBoleto p WHERE p.vencimento < LOCAL DATE")
+List<PagamentoBoleto> findBoletosVencidos();
+
+// EXTRACT — extrair componentes de data (Hibernate 6+ / JPA 3.2)
+@Query("""
+    SELECT EXTRACT(YEAR FROM m.criadoEm) AS ano,
+           EXTRACT(MONTH FROM m.criadoEm) AS mes,
+           COUNT(m)
+    FROM Matricula m
+    GROUP BY EXTRACT(YEAR FROM m.criadoEm), EXTRACT(MONTH FROM m.criadoEm)
+    ORDER BY ano DESC, mes DESC
+    """)
+List<Object[]> findMatriculasPorMes();
+
+// YEAR / MONTH / DAY / HOUR / MINUTE / SECOND (Hibernate 6+, atalhos para EXTRACT)
+@Query("SELECT m FROM Matricula m WHERE YEAR(m.criadoEm) = :ano AND MONTH(m.criadoEm) = :mes")
+List<Matricula> findPorAnoMes(@Param("ano") int ano, @Param("mes") int mes);
+
+// Diferença de datas via função nativa inline (PostgreSQL)
+@Query("""
+    SELECT a.nome, a.ra,
+           FUNCTION('AGE', CURRENT_TIMESTAMP, a.criadoEm) AS tempoCadastro
+    FROM Aluno a
+    WHERE a.ativo = true
+    """)
+List<Object[]> findComTempoDeCadastro();
+```
+
+### COALESCE, NULLIF e tratamento de nulos no JPQL
+
+Funções essenciais para lidar com `NULL` em consultas — evitam `NullPointerException` no Java e produzem resultados mais previsíveis.
+
+#### COALESCE — primeiro valor não-nulo da lista
+
+Retorna o primeiro argumento não-nulo. Aceita 2 ou mais argumentos:
+
+```java
+// Básico — valor default para nota nula
+@Query("SELECT a.nome, COALESCE(m.nota, 0) FROM Matricula m JOIN m.aluno a WHERE m.curso.id = :cursoId")
+List<Object[]> findNotasComDefault(@Param("cursoId") Long cursoId);
+
+// Múltiplos fallbacks — tenta email, depois gera um, depois literal
+@Query("""
+    SELECT a.nome, COALESCE(a.email, CONCAT(a.ra, '@instituicao.edu.br'), 'sem-email')
+    FROM Aluno a
+    """)
+List<Object[]> findNomesComEmailOuDefault();
+
+// Em agregações — evita NULL quando não há dados
+@Query("""
+    SELECT c.nome,
+           COALESCE(AVG(m.nota), 0) AS media,
+           COALESCE(MIN(m.nota), 0) AS menor,
+           COALESCE(MAX(m.nota), 0) AS maior,
+           COALESCE(SUM(m.nota), 0) AS soma
+    FROM Curso c
+    LEFT JOIN c.matriculas m
+    GROUP BY c.id, c.nome
+    """)
+List<Object[]> findEstatisticasSemNulls();
+
+// Em WHERE — tratar campo nulo como valor específico para comparação
+@Query("SELECT m FROM Matricula m WHERE COALESCE(m.nota, 0) >= :minima")
+List<Matricula> findComNotaOuZeroAcimaDe(@Param("minima") BigDecimal minima);
+
+// Em ORDER BY — nulos tratados como zero para ordenação
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.curso.id = :cursoId
+    ORDER BY COALESCE(m.nota, 0) DESC
+    """)
+List<Matricula> findOrdenadoNuloComoZero(@Param("cursoId") Long cursoId);
+
+// COALESCE com subconsulta — nota do aluno ou média do curso como fallback
+@Query("""
+    SELECT a.nome,
+           COALESCE(
+               m.nota,
+               (SELECT AVG(m2.nota) FROM Matricula m2 WHERE m2.curso = m.curso AND m2.nota IS NOT NULL)
+           ) AS notaOuMedia
+    FROM Matricula m
+    JOIN m.aluno a
+    WHERE m.curso.id = :cursoId
+    """)
+List<Object[]> findNotaComFallbackMedia(@Param("cursoId") Long cursoId);
+```
+
+#### NULLIF — retorna NULL se os dois valores forem iguais
+
+Útil para evitar divisão por zero e tratar valores sentinela:
+
+```java
+// Evitar divisão por zero — NULLIF retorna NULL se COUNT = 0
+@Query("""
+    SELECT c.nome,
+           COALESCE(
+               SUM(m.nota) / NULLIF(COUNT(m.nota), 0),
+               0
+           ) AS mediaSafe
+    FROM Curso c
+    LEFT JOIN c.matriculas m
+    GROUP BY c.id, c.nome
+    """)
+List<Object[]> findMediaSemDivisaoPorZero();
+
+// Tratar valor sentinela como NULL — ex: nota -1 significa "não avaliado"
+@Query("SELECT a.nome, NULLIF(m.nota, -1) FROM Matricula m JOIN m.aluno a WHERE m.curso.id = :cursoId")
+List<Object[]> findNotasIgnorandoSentinela(@Param("cursoId") Long cursoId);
+
+// NULLIF em string — tratar string vazia como NULL
+@Query("SELECT a FROM Aluno a WHERE NULLIF(TRIM(a.email), '') IS NULL")
+List<Aluno> findSemEmailReal();
+
+// Combinando COALESCE + NULLIF — fallback quando campo é vazio ou nulo
+@Query("""
+    SELECT a.nome, COALESCE(NULLIF(TRIM(a.email), ''), CONCAT(a.ra, '@default.edu.br'))
+    FROM Aluno a
+    """)
+List<Object[]> findEmailTratandoVazios();
+```
+
+#### CASE WHEN como alternativa expressiva ao COALESCE
+
+Para lógica condicional mais complexa que `COALESCE` e `NULLIF` não cobrem:
+
+```java
+// Classificação de completude do cadastro
+@Query("""
+    SELECT a.nome,
+           CASE
+               WHEN a.email IS NOT NULL AND a.ra IS NOT NULL THEN 'COMPLETO'
+               WHEN a.email IS NULL AND a.ra IS NOT NULL THEN 'FALTA_EMAIL'
+               WHEN a.email IS NOT NULL AND a.ra IS NULL THEN 'FALTA_RA'
+               ELSE 'INCOMPLETO'
+           END
+    FROM Aluno a
+    """)
+List<Object[]> findComStatusCadastro();
+
+// Contagem condicional de nulos
+@Query("""
+    SELECT c.nome,
+           COUNT(m) AS total,
+           SUM(CASE WHEN m.nota IS NOT NULL THEN 1L ELSE 0L END) AS comNota,
+           SUM(CASE WHEN m.nota IS NULL THEN 1L ELSE 0L END) AS semNota,
+           COALESCE(AVG(m.nota), 0) AS media
+    FROM Curso c
+    LEFT JOIN c.matriculas m
+    GROUP BY c.id, c.nome
+    """)
+List<Object[]> findRelatorioCadastroNotas();
+```
+
+#### Comparação de funções null-handling
+
+| Função | Sintaxe | Retorno | Uso típico |
+|---|---|---|---|
+| `COALESCE` | `COALESCE(a, b, c, ...)` | Primeiro não-nulo | Valor default para campos nulos |
+| `NULLIF` | `NULLIF(a, b)` | `NULL` se `a = b`, senão `a` | Divisão por zero, sentinela → null |
+| `IS NULL` | `x IS NULL` | Boolean | Filtro de nulos no `WHERE` |
+| `IS NOT NULL` | `x IS NOT NULL` | Boolean | Filtro de não-nulos |
+| `CASE WHEN` | `CASE WHEN x IS NULL THEN ...` | Valor calculado | Lógica condicional complexa |
+
+### Funções de coleção do JPQL
+
+```java
+// SIZE — tamanho de coleção @OneToMany
+@Query("SELECT c FROM Curso c WHERE SIZE(c.matriculas) > :min")
+List<Curso> findCursosComMinimoAlunos(@Param("min") int min);
+
+@Query("SELECT c FROM Curso c WHERE SIZE(c.matriculas) = 0")
+List<Curso> findCursosSemAlunos();
+
+// IS EMPTY / IS NOT EMPTY
+@Query("SELECT c FROM Curso c WHERE c.matriculas IS EMPTY")
+List<Curso> findCursosVazios();
+
+@Query("SELECT a FROM Aluno a WHERE a.matriculas IS NOT EMPTY AND a.ativo = true")
+List<Aluno> findAlunosAtivosComMatriculas();
+
+// MEMBER OF — verifica pertinência
+@Query("SELECT c FROM Curso c WHERE :aluno MEMBER OF c.alunos")
+List<Curso> findCursosDoAluno(@Param("aluno") Aluno aluno);
+```
+
+### FUNCTION() — chamada de funções nativas do banco dentro do JPQL
+
+A função `FUNCTION()` (ou `function()`) permite chamar qualquer função do PostgreSQL sem sair do JPQL:
+
+```java
+// DATE_TRUNC do PostgreSQL
+@Query("""
+    SELECT FUNCTION('DATE_TRUNC', 'month', m.criadoEm) AS mes,
+           COUNT(m),
+           SUM(p.valor)
+    FROM Matricula m
+    JOIN Pagamento p ON p.id = m.id
+    GROUP BY FUNCTION('DATE_TRUNC', 'month', m.criadoEm)
+    ORDER BY mes DESC
+    """)
+List<Object[]> findResumoMensal();
+
+// TO_CHAR do PostgreSQL — formatação de data
+@Query("""
+    SELECT FUNCTION('TO_CHAR', m.criadoEm, 'DD/MM/YYYY HH24:MI'),
+           a.nome,
+           m.nota
+    FROM Matricula m
+    JOIN m.aluno a
+    WHERE m.curso.id = :cursoId
+    ORDER BY m.criadoEm DESC
+    """)
+List<Object[]> findMatriculasFormatadas(@Param("cursoId") Long cursoId);
+
+// GENERATE_SERIES do PostgreSQL (via subquery nativa)
+// Para isso, query nativa é mais adequada
+
+// GREATEST / LEAST — maior/menor entre valores
+@Query("SELECT m FROM Matricula m WHERE m.nota >= FUNCTION('GREATEST', :nota1, :nota2)")
+List<Matricula> findComNotaAcimaDaMaior(
+    @Param("nota1") BigDecimal nota1,
+    @Param("nota2") BigDecimal nota2
+);
+
+// REGEXP_LIKE do PostgreSQL (via ~ operator não funciona no JPQL — usar FUNCTION)
+@Query("SELECT a FROM Aluno a WHERE FUNCTION('REGEXP_LIKE', a.email, :pattern) = true")
+List<Aluno> findByEmailRegex(@Param("pattern") String pattern);
+
+// MD5 — hash para verificação
+@Query("SELECT FUNCTION('MD5', a.ra) FROM Aluno a WHERE a.id = :id")
+String findRaHash(@Param("id") Long id);
+```
+
+### Registrando funções para JPQL via FunctionContributor (Hibernate 6+)
+
+Para usar funções nativas **sem** o wrapper `FUNCTION()`, registre-as no Hibernate:
+
+```java
+public class PostgresFunctions implements FunctionContributor {
+
+    @Override
+    public void contributeFunctions(FunctionContributions fc) {
+        var registry = fc.getFunctionRegistry();
+        var types = fc.getTypeConfiguration();
+
+        // DATE_TRUNC(unit, timestamp) → timestamp
+        registry.registerPattern(
+            "date_trunc",
+            "DATE_TRUNC(?1, ?2)",
+            types.getBasicTypeForJavaType(OffsetDateTime.class)
+        );
+
+        // AGE(timestamp, timestamp) → interval (retorna como String)
+        registry.registerPattern(
+            "pg_age",
+            "AGE(?1, ?2)",
+            types.getBasicTypeForJavaType(String.class)
+        );
+
+        // TO_CHAR(timestamp, format) → varchar
+        registry.registerPattern(
+            "to_char",
+            "TO_CHAR(?1, ?2)",
+            types.getBasicTypeForJavaType(String.class)
+        );
+
+        // SIMILARITY(text, text) → real (pg_trgm extension)
+        registry.registerPattern(
+            "similarity",
+            "SIMILARITY(?1, ?2)",
+            types.getBasicTypeForJavaType(Double.class)
+        );
+
+        // STRING_AGG(expression, delimiter) → text
+        registry.registerPattern(
+            "string_agg",
+            "STRING_AGG(?1, ?2)",
+            types.getBasicTypeForJavaType(String.class)
+        );
+    }
+}
+```
+
+Registrar em `META-INF/services/org.hibernate.boot.model.FunctionContributor`:
+
+```
+com.exemplo.config.PostgresFunctions
+```
+
+Agora as funções ficam naturais no JPQL, sem `FUNCTION()`:
+
+```java
+// DATE_TRUNC como função registrada — limpo
+@Query("""
+    SELECT date_trunc('month', m.criadoEm) AS mes, COUNT(m)
+    FROM Matricula m
+    GROUP BY date_trunc('month', m.criadoEm)
+    ORDER BY mes DESC
+    """)
+List<Object[]> findMatriculasPorMesNativo();
+
+// SIMILARITY para busca fuzzy (requer pg_trgm)
+@Query("SELECT a FROM Aluno a WHERE similarity(a.nome, :termo) > 0.3 ORDER BY similarity(a.nome, :termo) DESC")
+List<Aluno> findPorSimilaridade(@Param("termo") String termo);
+
+// STRING_AGG para agregação de strings
+@Query("""
+    SELECT c.nome, string_agg(a.nome, ', ')
+    FROM Curso c
+    JOIN c.matriculas m
+    JOIN m.aluno a
+    GROUP BY c.id, c.nome
+    """)
+List<Object[]> findCursosComListaAlunos();
+
+// TO_CHAR registrado
+@Query("SELECT to_char(m.criadoEm, 'DD/MM/YYYY') FROM Matricula m WHERE m.id = :id")
+String findDataFormatada(@Param("id") Long id);
+```
+
+### EXISTS e NOT EXISTS — mais eficiente que IN/NOT IN
+
+```java
+// NOT IN — carrega todos os IDs na subquery
+@Query("""
+    SELECT a FROM Aluno a
+    WHERE a.id NOT IN (SELECT m.aluno.id FROM Matricula m WHERE m.curso.id = :cursoId)
+    """)
+List<Aluno> findNaoMatriculadosComIn(@Param("cursoId") Long cursoId);
+
+// NOT EXISTS — para no primeiro match, melhor performance em tabelas grandes
+@Query("""
+    SELECT a FROM Aluno a
+    WHERE NOT EXISTS (
+        SELECT 1 FROM Matricula m WHERE m.aluno = a AND m.curso.id = :cursoId
+    )
+    """)
+List<Aluno> findNaoMatriculadosComExists(@Param("cursoId") Long cursoId);
+
+// EXISTS com correlação múltipla
+@Query("""
+    SELECT c FROM Curso c
+    WHERE EXISTS (
+        SELECT 1 FROM Matricula m
+        WHERE m.curso = c AND m.status = 'ATIVA' AND m.nota >= 9.0
+    )
+    """)
+List<Curso> findCursosComAlunoExcelente();
+
+// EXISTS para verificação de duplicatas
+@Query("""
+    SELECT a FROM Aluno a
+    WHERE EXISTS (
+        SELECT 1 FROM Aluno a2
+        WHERE a2.email = a.email AND a2.id <> a.id
+    )
+    """)
+List<Aluno> findComEmailDuplicado();
+```
+
+### ALL, ANY, SOME — comparação com subquery
+
+```java
+// ALL — nota maior que TODAS as notas do outro curso
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.curso.id = :cursoId
+      AND m.nota > ALL (
+          SELECT m2.nota FROM Matricula m2 WHERE m2.curso.id = :outroCursoId AND m2.nota IS NOT NULL
+      )
+    """)
+List<Matricula> findComNotaMaiorQueTodosDoOutroCurso(
+    @Param("cursoId") Long cursoId,
+    @Param("outroCursoId") Long outroCursoId
+);
+
+// ANY (= SOME) — nota maior que ALGUMA nota do outro curso
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.curso.id = :cursoId
+      AND m.nota > ANY (
+          SELECT m2.nota FROM Matricula m2 WHERE m2.curso.id = :outroCursoId AND m2.nota IS NOT NULL
+      )
+    """)
+List<Matricula> findComNotaMaiorQueAlgumDoOutroCurso(
+    @Param("cursoId") Long cursoId,
+    @Param("outroCursoId") Long outroCursoId
+);
+```
+
+### Subconsultas no SELECT (scalar subquery)
+
+```java
+@Query("""
+    SELECT a.nome,
+           a.ra,
+           (SELECT COUNT(m) FROM Matricula m WHERE m.aluno = a AND m.status = 'ATIVA') AS cursosAtivos,
+           (SELECT AVG(m.nota) FROM Matricula m WHERE m.aluno = a AND m.nota IS NOT NULL) AS media
+    FROM Aluno a
+    WHERE a.ativo = true
+    ORDER BY a.nome
+    """)
+List<Object[]> findAlunosComEstatisticasInline();
+
+// Subconsulta correlacionada com MAX
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.nota = (
+        SELECT MAX(m2.nota) FROM Matricula m2 WHERE m2.curso = m.curso
+    )
+    """)
+List<Matricula> findMelhorNotaPorCurso();
+```
+
+### NULLS FIRST / NULLS LAST — controle de ordenação de nulos
+
+```java
+// Notas nulas por último (padrão no PostgreSQL para ASC)
+@Query("SELECT m FROM Matricula m WHERE m.curso.id = :cursoId ORDER BY m.nota DESC NULLS LAST")
+List<Matricula> findPorCursoOrdenadoNullsLast(@Param("cursoId") Long cursoId);
+
+// Notas nulas primeiro (útil para "pendentes de avaliação" no topo)
+@Query("SELECT m FROM Matricula m WHERE m.curso.id = :cursoId ORDER BY m.nota ASC NULLS FIRST")
+List<Matricula> findPorCursoNullsFirst(@Param("cursoId") Long cursoId);
+
+// Ordenação mista: primeiro por status, nulos de nota primeiro dentro de cada status
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.curso.id = :cursoId
+    ORDER BY m.status ASC, m.nota ASC NULLS FIRST
+    """)
+List<Matricula> findOrdenadoComNulls(@Param("cursoId") Long cursoId);
+```
+
+### Expressão CASE avançada — CASE simples e CASE buscado
+
+```java
+// CASE simples (switch-like)
+@Query("""
+    SELECT a.nome,
+           CASE a.ativo
+               WHEN true THEN 'Ativo'
+               WHEN false THEN 'Inativo'
+           END
+    FROM Aluno a
+    """)
+List<Object[]> findComStatusDescritivo();
+
+// CASE buscado (condições arbitrárias) — usado em ORDER BY
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.curso.id = :cursoId
+    ORDER BY CASE m.status
+        WHEN 'ATIVA' THEN 1
+        WHEN 'PENDENTE' THEN 2
+        WHEN 'TRANSFERIDA' THEN 3
+        WHEN 'CANCELADA' THEN 4
+        ELSE 5
+    END, m.nota DESC NULLS LAST
+    """)
+List<Matricula> findOrdenadoPorPrioridadeStatus(@Param("cursoId") Long cursoId);
+
+// CASE no SELECT para faixas
+@Query("""
+    SELECT CASE
+               WHEN m.nota >= 9.0 THEN 'A'
+               WHEN m.nota >= 7.0 THEN 'B'
+               WHEN m.nota >= 5.0 THEN 'C'
+               WHEN m.nota IS NOT NULL THEN 'D'
+               ELSE 'SEM NOTA'
+           END AS conceito,
+           COUNT(m)
+    FROM Matricula m
+    WHERE m.curso.id = :cursoId
+    GROUP BY CASE
+               WHEN m.nota >= 9.0 THEN 'A'
+               WHEN m.nota >= 7.0 THEN 'B'
+               WHEN m.nota >= 5.0 THEN 'C'
+               WHEN m.nota IS NOT NULL THEN 'D'
+               ELSE 'SEM NOTA'
+           END
+    ORDER BY conceito
+    """)
+List<Object[]> findDistribuicaoConceitos(@Param("cursoId") Long cursoId);
+```
+
+### DISTINCT em cenários não triviais
+
+```java
+// DISTINCT em JOIN — evitar duplicatas quando JOIN multiplica linhas
+@Query("SELECT DISTINCT c FROM Curso c JOIN c.matriculas m WHERE m.status = 'ATIVA'")
+List<Curso> findCursosComMatriculasAtivas();
+
+// DISTINCT com ORDER BY — cuidado: campo no ORDER BY deve estar no SELECT com DISTINCT
+@Query("SELECT DISTINCT a.nome FROM Aluno a ORDER BY a.nome")
+List<String> findNomesDistintos();
+
+// COUNT DISTINCT
+@Query("SELECT COUNT(DISTINCT m.aluno) FROM Matricula m WHERE m.curso.id = :cursoId")
+long countAlunosDistintosDoCurso(@Param("cursoId") Long cursoId);
+```
+
+### KEY, VALUE, ENTRY — operações em Map collections
+
+Para entidades que usam `@MapKey` ou `@MapKeyColumn` (ver Seção 33 do Guia de Modelagem):
+
+```java
+// KEY — acessar a chave do Map
+@Query("SELECT KEY(c) FROM Aluno a JOIN a.configuracoes c WHERE a.id = :alunoId")
+List<String> findChavesConfiguracoes(@Param("alunoId") Long alunoId);
+
+// VALUE — acessar o valor do Map
+@Query("SELECT VALUE(c) FROM Aluno a JOIN a.configuracoes c WHERE KEY(c) = :chave")
+List<String> findValoresConfiguracao(@Param("chave") String chave);
+
+// ENTRY — acessar par chave-valor
+@Query("SELECT ENTRY(c) FROM Aluno a JOIN a.configuracoes c WHERE a.id = :alunoId")
+List<Map.Entry<String, String>> findConfiguracoesDoAluno(@Param("alunoId") Long alunoId);
+```
+
+### NEW — construtor no JPQL para DTOs tipados
+
+```java
+// Record como DTO
+public record DashboardCurso(
+    String nomeCurso,
+    String nomeProfessor,
+    long totalAlunos,
+    double mediaNotas,
+    long alunosExcelentes
+) {}
+
+@Query("""
+    SELECT new com.exemplo.dto.DashboardCurso(
+        c.nome,
+        p.nome,
+        COUNT(m),
+        COALESCE(AVG(m.nota), 0),
+        SUM(CASE WHEN m.nota >= 9.0 THEN 1L ELSE 0L END)
+    )
+    FROM Curso c
+    LEFT JOIN c.professor p
+    LEFT JOIN c.matriculas m
+    WHERE c.ativo = true
+    GROUP BY c.id, c.nome, p.nome
+    ORDER BY AVG(m.nota) DESC NULLS LAST
+    """)
+List<DashboardCurso> findDashboardCursos();
+```
+
+O fully qualified name (`com.exemplo.dto.DashboardCurso`) é obrigatório no JPQL. O construtor do record/classe deve ter os parâmetros na mesma ordem e tipos compatíveis.
+
+### Múltiplas agregações com GROUP BY composto
+
+```java
+@Query("""
+    SELECT EXTRACT(YEAR FROM m.criadoEm) AS ano,
+           m.status,
+           COUNT(m) AS total,
+           COALESCE(AVG(m.nota), 0) AS media,
+           COALESCE(MIN(m.nota), 0) AS menor,
+           COALESCE(MAX(m.nota), 0) AS maior,
+           SUM(CASE WHEN m.nota >= 7.0 THEN 1L ELSE 0L END) AS aprovados,
+           SUM(CASE WHEN m.nota < 7.0 AND m.nota IS NOT NULL THEN 1L ELSE 0L END) AS reprovados,
+           SUM(CASE WHEN m.nota IS NULL THEN 1L ELSE 0L END) AS semNota
+    FROM Matricula m
+    WHERE m.curso.id = :cursoId
+    GROUP BY EXTRACT(YEAR FROM m.criadoEm), m.status
+    ORDER BY ano DESC, m.status
+    """)
+List<Object[]> findEstatisticasCompletasPorAnoEStatus(@Param("cursoId") Long cursoId);
+```
+
+### Subconsultas correlacionadas avançadas
+
+```java
+// Alunos cuja nota em um curso está acima da média daquele curso
+@Query("""
+    SELECT m FROM Matricula m
+    WHERE m.nota > (
+        SELECT AVG(m2.nota) FROM Matricula m2
+        WHERE m2.curso = m.curso AND m2.nota IS NOT NULL
+    )
+    ORDER BY m.curso.nome, m.nota DESC
+    """)
+List<Matricula> findAlunosAcimaDaMediaDoCurso();
+
+// Aluno com mais matrículas ativas
+@Query("""
+    SELECT a FROM Aluno a
+    WHERE (SELECT COUNT(m) FROM Matricula m WHERE m.aluno = a AND m.status = 'ATIVA')
+        = (SELECT MAX(sub.total) FROM (
+              SELECT COUNT(m2) AS total FROM Matricula m2
+              WHERE m2.status = 'ATIVA' GROUP BY m2.aluno
+           ) sub)
+    """)
+List<Aluno> findAlunosComMaisMatriculas();
+
+// Cursos onde TODOS os alunos foram aprovados
+@Query("""
+    SELECT c FROM Curso c
+    WHERE c.matriculas IS NOT EMPTY
+      AND NOT EXISTS (
+          SELECT 1 FROM Matricula m
+          WHERE m.curso = c
+            AND m.status = 'ATIVA'
+            AND (m.nota IS NULL OR m.nota < 7.0)
+      )
+    """)
+List<Curso> findCursosComTodosAprovados();
+```
+
+### TREAT para polimorfismo em JPQL
+
+```java
+// Acessar campos de subtipos em query polimórfica
+@Query("""
+    SELECT CASE TYPE(p)
+               WHEN PagamentoPix THEN CONCAT('Pix: ', TREAT(p AS PagamentoPix).chave)
+               WHEN PagamentoCartao THEN CONCAT(TREAT(p AS PagamentoCartao).bandeira,
+                    ' ', CAST(TREAT(p AS PagamentoCartao).parcelas AS string), 'x')
+               WHEN PagamentoBoleto THEN CONCAT('Boleto venc. ',
+                    CAST(TREAT(p AS PagamentoBoleto).vencimento AS string))
+               ELSE 'Desconhecido'
+           END,
+           p.valor
+    FROM Pagamento p
+    ORDER BY p.criadoEm DESC
+    """)
+List<Object[]> findDescricoesPagamentos();
+
+// JOIN com TREAT — buscar dados de subtipo específico sem filtrar os demais
+@Query("""
+    SELECT p.valor,
+           TREAT(p AS PagamentoCartao).bandeira,
+           TREAT(p AS PagamentoCartao).parcelas
+    FROM Pagamento p
+    WHERE TYPE(p) = PagamentoCartao AND p.valor > :minimo
+    ORDER BY p.valor DESC
+    """)
+List<Object[]> findCartoesPorValor(@Param("minimo") BigDecimal minimo);
+```
+
+### Referência rápida de funções JPQL
+
+```mermaid
+flowchart TD
+    subgraph "Funções JPQL padrão"
+        S["String:\nCONCAT, SUBSTRING, TRIM,\nLENGTH, LOCATE, UPPER,\nLOWER, REPLACE"]
+        N["Numérica:\nABS, MOD, SQRT,\nROUND, FLOOR, CEILING,\nSIGN, POWER"]
+        D["Data/Hora:\nCURRENT_DATE, LOCAL DATE,\nEXTRACT, YEAR, MONTH, DAY"]
+        C["Coleção:\nSIZE, IS EMPTY,\nMEMBER OF"]
+        G["Geral:\nCOALESCE, NULLIF,\nCASE WHEN, CAST,\nTYPE, TREAT"]
+    end
+
+    subgraph "Funções nativas via FUNCTION()"
+        F1["FUNCTION('DATE_TRUNC', ...)\nFUNCTION('TO_CHAR', ...)\nFUNCTION('MD5', ...)"]
+    end
+
+    subgraph "Funções registradas (FunctionContributor)"
+        F2["date_trunc(...)\nsimilarity(...)\nstring_agg(...)"]
+    end
+
+    F1 -->|"Registrar para\nremover FUNCTION()"| F2
+
+    style S fill:#9f9,stroke:#333
+    style N fill:#9cf,stroke:#333
+    style D fill:#ff9,stroke:#333
+    style C fill:#f9f,stroke:#333
+    style G fill:#fc9,stroke:#333
+```
+
+| Recurso | JPQL padrão | Hibernate 6+ | Via FUNCTION() | Via FunctionContributor |
+|---|---|---|---|---|
+| `CONCAT`, `SUBSTRING`, `TRIM` | Sim | Sim | — | — |
+| `REPLACE`, `LEFT`, `RIGHT` | JPA 3.2 | Sim | — | — |
+| `ROUND`, `FLOOR`, `CEILING` | JPA 3.2 | Sim | — | — |
+| `EXTRACT(YEAR FROM ...)` | JPA 3.1 | Sim | — | — |
+| `YEAR()`, `MONTH()`, `DAY()` | Não | Sim | — | — |
+| `DATE_TRUNC` | Não | Não | Sim | Sim (registrar) |
+| `TO_CHAR` | Não | Não | Sim | Sim (registrar) |
+| `SIMILARITY` (pg_trgm) | Não | Não | Sim | Sim (registrar) |
+| `STRING_AGG` | Não | Não | Sim | Sim (registrar) |
+| `NULLS FIRST/LAST` | Sim | Sim | — | — |
+| `EXISTS`, `ALL`, `ANY` | Sim | Sim | — | — |
+| `KEY`, `VALUE`, `ENTRY` (Maps) | Sim | Sim | — | — |
 
 ---
 
