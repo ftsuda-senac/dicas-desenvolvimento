@@ -652,6 +652,110 @@ public class Curso {
 
 `Cascade` propaga operações do `EntityManager`. `OrphanRemoval` reage à desassociação de um filho do pai.
 
+### Entidades de exemplo
+
+#### Lado pai — COM cascade e orphanRemoval
+
+```java
+@Entity
+public class Curso extends BaseEntity {
+
+    @Column(nullable = false, length = 200)
+    private String nome;
+
+    @Column(nullable = false)
+    private Integer cargaHoraria;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "professor_id", foreignKey = @ForeignKey(name = "fk_curso_professor"))
+    private Professor professor;
+
+    // CASCADE ALL + orphanRemoval: composição forte
+    // Matrículas não existem sem o Curso
+    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Matricula> matriculas = new HashSet<>();
+
+    // Método helper para manter ambos os lados sincronizados
+    public void adicionarMatricula(Matricula matricula) {
+        matriculas.add(matricula);
+        matricula.setCurso(this);
+    }
+
+    public void removerMatricula(Matricula matricula) {
+        matriculas.remove(matricula);
+        matricula.setCurso(null);
+    }
+}
+```
+
+#### Lado filho — SEM cascade (nunca cascatear do filho para o pai)
+
+```java
+@Entity
+public class Matricula extends BaseEntity {
+
+    // SEM cascade — remover matrícula NÃO deve remover o Curso
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "curso_id", nullable = false, foreignKey = @ForeignKey(name = "fk_matricula_curso"))
+    private Curso curso;
+
+    // SEM cascade — remover matrícula NÃO deve remover o Aluno
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "aluno_id", nullable = false, foreignKey = @ForeignKey(name = "fk_matricula_aluno"))
+    private Aluno aluno;
+
+    @Column(precision = 4, scale = 2)
+    private BigDecimal nota;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 31)
+    private StatusMatricula status = StatusMatricula.PENDENTE;
+}
+```
+
+#### Entidade independente — referenciada mas não cascateada
+
+```java
+@Entity
+public class Aluno extends BaseEntity {
+
+    @Column(nullable = false, length = 200)
+    private String nome;
+
+    @NaturalId
+    @Column(nullable = false, unique = true, length = 20)
+    private String ra;
+
+    // SEM cascade, SEM orphanRemoval
+    // Aluno existe independentemente de suas matrículas
+    @OneToMany(mappedBy = "aluno")
+    private Set<Matricula> matriculas = new HashSet<>();
+}
+```
+
+#### Diagrama: quem cascateia para quem
+
+```mermaid
+classDiagram
+    class Curso {
+        cascade = ALL
+        orphanRemoval = true
+    }
+    class Matricula {
+        sem cascade
+        sem cascade
+    }
+    class Aluno {
+        sem cascade
+        sem orphanRemoval
+    }
+
+    Curso "1" --> "*" Matricula : "cascade ALL\n+ orphanRemoval"
+    Matricula "*" --> "1" Curso : "SEM cascade"
+    Matricula "*" --> "1" Aluno : "SEM cascade"
+    Aluno "1" --> "*" Matricula : "SEM cascade\nSEM orphanRemoval"
+```
+
 ### Cascade — propaga operações do EntityManager
 
 ```mermaid
@@ -1715,16 +1819,180 @@ flowchart TD
 
 ### @Version — Optimistic Locking
 
+Evita lost updates sem lock pessimista. O Hibernate inclui a versão no `WHERE` do `UPDATE` — se outro usuário já alterou a entidade, o `UPDATE` afeta 0 linhas e o Hibernate lança `OptimisticLockException`.
+
+#### Na entidade
+
 ```java
-@Version
-private Integer versao;
+@Entity
+public class Matricula extends BaseEntity {
+
+    @Version
+    private Integer versao; // Hibernate gerencia automaticamente
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "curso_id", nullable = false)
+    private Curso curso;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "aluno_id", nullable = false)
+    private Aluno aluno;
+
+    @Column(precision = 4, scale = 2)
+    private BigDecimal nota;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private StatusMatricula status;
+}
+```
+
+SQL gerado no UPDATE:
+
+```sql
+-- Hibernate inclui a versão no WHERE e incrementa automaticamente
+UPDATE matricula SET nota = ?, status = ?, versao = 2
+WHERE id = ? AND versao = 1
+-- Se versao != 1 → 0 rows affected → OptimisticLockException
+```
+
+Tipos suportados: `Integer`, `Long`, `Short`, `Timestamp`, `Instant`. O `Integer` é o mais comum.
+
+#### Cenários onde @Version é útil
+
+**Formulários web com edição concorrente** — dois usuários abrem o mesmo registro e salvam em momentos diferentes:
+
+```java
+@Transactional
+public MatriculaResponse atualizarNota(Long id, AtualizarNotaRequest request) {
+    Matricula m = repository.findById(id)
+        .orElseThrow(() -> new MatriculaNotFoundException(id));
+
+    // Verifica se a versão do request é a mesma do banco
+    if (!m.getVersao().equals(request.versao())) {
+        throw new ConflictException("Registro foi alterado por outro usuário. Recarregue e tente novamente.");
+    }
+
+    m.setNota(request.nota());
+    return MatriculaResponse.of(m);
+    // @Version no flush garante a atomicidade
+}
+```
+
+**APIs REST** — inclua a versão no DTO para que o cliente envie de volta:
+
+```java
+public record MatriculaResponse(
+    Long id,
+    String nomeAluno,
+    BigDecimal nota,
+    StatusMatricula status,
+    Integer versao  // cliente reenvia no request de update
+) {}
+
+public record AtualizarNotaRequest(
+    BigDecimal nota,
+    Integer versao  // versão que o cliente conhece
+) {}
+```
+
+**Tratamento da exceção:**
+
+```java
+@ExceptionHandler(OptimisticLockException.class)
+public ProblemDetail handleOptimisticLock(OptimisticLockException ex) {
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT,
+        "O registro foi alterado por outro usuário. Recarregue os dados e tente novamente."
+    );
+}
+```
+
+**Filas e workers concorrentes** — múltiplos workers processando a mesma fila:
+
+```java
+@Transactional
+public boolean processarPagamento(Long pagamentoId) {
+    try {
+        Pagamento p = pagamentoRepository.findById(pagamentoId).orElseThrow();
+
+        if (p.getStatus() != StatusPagamento.PENDENTE) return false;
+
+        p.setStatus(StatusPagamento.PROCESSANDO);
+        pagamentoRepository.flush(); // força UPDATE com @Version aqui
+
+        // ... lógica de processamento ...
+        p.setStatus(StatusPagamento.CONCLUIDO);
+        return true;
+    } catch (OptimisticLockException e) {
+        // Outro worker já pegou — não é erro, é concorrência
+        log.info("Pagamento {} já sendo processado por outro worker", pagamentoId);
+        return false;
+    }
+}
 ```
 
 ### @EntityGraph — controle de fetch por query
 
+Define quais relacionamentos carregar junto (EAGER) por query, sem alterar o `FetchType` na entidade.
+
+#### Entidade com @NamedEntityGraph
+
 ```java
-@EntityGraph(attributePaths = {"matriculas", "professor"})
-List<Curso> findByNomeContaining(String nome);
+@Entity
+@Table(name = "curso")
+@NamedEntityGraphs({
+    @NamedEntityGraph(
+        name = "Curso.resumo",
+        attributeNodes = @NamedAttributeNode("professor")
+    ),
+    @NamedEntityGraph(
+        name = "Curso.completo",
+        attributeNodes = {
+            @NamedAttributeNode("professor"),
+            @NamedAttributeNode(value = "matriculas", subgraph = "matriculas-aluno")
+        },
+        subgraphs = @NamedSubgraph(
+            name = "matriculas-aluno",
+            attributeNodes = @NamedAttributeNode("aluno")
+        )
+    )
+})
+public class Curso extends BaseEntity {
+
+    @Column(nullable = false, length = 200)
+    private String nome;
+
+    @Column(nullable = false)
+    private Integer cargaHoraria;
+
+    // LAZY por padrão — EntityGraph sobrescreve para EAGER quando necessário
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "professor_id")
+    private Professor professor;
+
+    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Matricula> matriculas = new HashSet<>();
+}
+```
+
+#### No repository — inline ou referenciando o grafo nomeado
+
+```java
+public interface CursoRepository extends JpaRepository<Curso, Long> {
+
+    // Inline — attributePaths direto na query
+    @EntityGraph(attributePaths = {"matriculas", "professor"})
+    @Query("SELECT c FROM Curso c WHERE c.id = :id")
+    Optional<Curso> findCompletoById(@Param("id") Long id);
+
+    // Referenciando @NamedEntityGraph
+    @EntityGraph("Curso.resumo")
+    Optional<Curso> findComProfessorById(Long id);
+
+    @EntityGraph("Curso.completo")
+    List<Curso> findByNomeContaining(String nome);
+}
 ```
 
 ### @Fetch(FetchMode.SUBSELECT)
@@ -2367,6 +2635,95 @@ erDiagram
     revision_info ||--o{ aluno_aud : "rev"
 ```
 
+#### Spring Data Envers — `RevisionRepository`
+
+O Spring Data oferece integração com Envers via o módulo `spring-data-envers`, que adiciona o `RevisionRepository` — uma interface de repository que expõe consultas de auditoria sem precisar do `AuditReader` manual:
+
+```xml
+<dependency>
+    <groupId>org.springframework.data</groupId>
+    <artifactId>spring-data-envers</artifactId>
+</dependency>
+```
+
+Habilitar no `@Configuration`:
+
+```java
+@Configuration
+@EnableJpaRepositories(repositoryFactoryBeanClass = EnversRevisionRepositoryFactoryBean.class)
+public class JpaEnversConfig { }
+```
+
+O repository estende `RevisionRepository<T, ID, N>` onde `N` é o tipo do número de revisão (`Integer` ou `Long`):
+
+```java
+public interface MatriculaRepository extends
+        JpaRepository<Matricula, Long>,
+        RevisionRepository<Matricula, Long, Integer> {
+
+    // Métodos do JpaRepository (CRUD normal)
+    // +
+    // Métodos do RevisionRepository (auditoria):
+    // - findRevisions(ID id) → Revisions<N, T>
+    // - findRevisions(ID id, Pageable pageable) → Page<Revision<N, T>>
+    // - findLastChangeRevision(ID id) → Optional<Revision<N, T>>
+    // - findRevision(ID id, N revisionNumber) → Optional<Revision<N, T>>
+}
+```
+
+Uso no service — sem `AuditReader`, tudo via repository:
+
+```java
+@Service
+public class MatriculaAuditService {
+
+    private final MatriculaRepository repository;
+
+    @Transactional(readOnly = true)
+    public List<RevisionInfo> getHistorico(Long matriculaId) {
+        Revisions<Integer, Matricula> revisions = repository.findRevisions(matriculaId);
+
+        return revisions.getContent().stream()
+            .map(rev -> new RevisionInfo(
+                rev.getRevisionNumber().orElse(0),
+                rev.getRevisionInstant().orElse(null),
+                rev.getMetadata().getRevisionType(), // ADD, MOD, DEL
+                rev.getEntity() // estado da entidade nesta revisão
+            ))
+            .toList();
+    }
+
+    // Última alteração
+    @Transactional(readOnly = true)
+    public Optional<Matricula> getUltimaVersao(Long matriculaId) {
+        return repository.findLastChangeRevision(matriculaId)
+            .map(Revision::getEntity);
+    }
+
+    // Histórico paginado
+    @Transactional(readOnly = true)
+    public Page<Revision<Integer, Matricula>> getHistoricoPaginado(Long matriculaId, Pageable pageable) {
+        return repository.findRevisions(matriculaId, pageable);
+    }
+
+    // Estado em revisão específica
+    @Transactional(readOnly = true)
+    public Optional<Matricula> getEstadoNaRevisao(Long matriculaId, int revisao) {
+        return repository.findRevision(matriculaId, revisao)
+            .map(Revision::getEntity);
+    }
+}
+
+public record RevisionInfo(
+    int numero,
+    Instant timestamp,
+    RevisionType tipo,
+    Matricula entidade
+) {}
+```
+
+A vantagem do `RevisionRepository` sobre o `AuditReader` manual é que segue o padrão Spring Data (paginação, tipagem forte) e não exige `entityManager.unwrap(Session.class)`.
+
 #### Resumo de annotations do Envers
 
 | Annotation | Escopo | Efeito |
@@ -2381,18 +2738,241 @@ erDiagram
 
 ### @Generated — campos populados pelo banco
 
+Indica ao Hibernate que o valor do campo é gerado pelo banco de dados (via `DEFAULT`, trigger ou `GENERATED ALWAYS AS`). Após o INSERT (e opcionalmente após UPDATE), o Hibernate faz um `SELECT` para buscar o valor gerado.
+
+#### Valor gerado apenas no INSERT
+
 ```java
-@Generated
-@Column(name = "numero", insertable = false, updatable = false)
-private String numero;
+@Entity
+public class Protocolo extends BaseEntity {
+
+    // Gerado por DEFAULT ou trigger no INSERT — nunca atualizado depois
+    @Generated(event = EventType.INSERT)
+    @Column(name = "numero", insertable = false, updatable = false)
+    private String numero;
+    // Após INSERT, Hibernate faz: SELECT numero FROM protocolo WHERE id = ?
+}
 ```
+
+DDL com `DEFAULT` no PostgreSQL:
+
+```sql
+CREATE TABLE protocolo (
+    id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    numero  VARCHAR(20) DEFAULT 'PROT-' || LPAD(NEXTVAL('protocolo_num_seq')::TEXT, 10, '0')
+);
+```
+
+#### Valor gerado no INSERT e UPDATE
+
+```java
+@Entity
+public class Documento extends BaseEntity {
+
+    @Column(nullable = false)
+    private String conteudo;
+
+    // Hash recalculado em toda gravação (INSERT e UPDATE)
+    @Generated(event = {EventType.INSERT, EventType.UPDATE})
+    @Column(name = "hash_conteudo", insertable = false, updatable = false)
+    private String hashConteudo;
+}
+```
+
+DDL com `GENERATED ALWAYS AS` (PostgreSQL 12+):
+
+```sql
+CREATE TABLE documento (
+    id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    conteudo       TEXT NOT NULL,
+    hash_conteudo  VARCHAR(64) GENERATED ALWAYS AS (ENCODE(SHA256(conteudo::BYTEA), 'hex')) STORED
+);
+```
+
+#### @GeneratedColumn — atalho para colunas `GENERATED ALWAYS AS` (Hibernate 6.5+)
+
+```java
+@Entity
+public class Produto extends BaseEntity {
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal preco;
+
+    @Column(nullable = false, precision = 5, scale = 2)
+    private BigDecimal desconto;
+
+    // Coluna calculada pelo banco — Hibernate nunca tenta inserir ou atualizar
+    @GeneratedColumn("preco - (preco * desconto / 100)")
+    @Column(precision = 19, scale = 2)
+    private BigDecimal precoFinal;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE produto (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    preco       NUMERIC(19,2) NOT NULL,
+    desconto    NUMERIC(5,2) NOT NULL,
+    preco_final NUMERIC(19,2) GENERATED ALWAYS AS (preco - (preco * desconto / 100)) STORED
+);
+```
+
+#### @CurrentTimestamp — timestamp gerenciado pelo banco ou pelo Hibernate
+
+```java
+@Entity
+public class AuditLog extends BaseEntity {
+
+    // Gerado pelo BANCO (column default NOW())
+    @CurrentTimestamp(source = SourceType.DB)
+    @Column(name = "registrado_em", insertable = false, updatable = false)
+    private OffsetDateTime registradoEm;
+
+    // Gerado pela JVM (Hibernate seta antes do INSERT)
+    @CurrentTimestamp(source = SourceType.JVM)
+    @Column(name = "processado_em", updatable = false)
+    private OffsetDateTime processadoEm;
+}
+```
+
+`@CurrentTimestamp(source = DB)` é semanticamente equivalente a `@Generated` + `DEFAULT NOW()`. `@CurrentTimestamp(source = JVM)` é equivalente a `@CreationTimestamp`.
+
+#### Comparação
+
+| Annotation | Quem gera o valor | SELECT após INSERT | SELECT após UPDATE |
+|---|---|---|---|
+| `@Generated(INSERT)` | Banco (DEFAULT/trigger) | Sim | Não |
+| `@Generated(INSERT, UPDATE)` | Banco (trigger) | Sim | Sim |
+| `@GeneratedColumn(expr)` | Banco (`GENERATED ALWAYS AS`) | Sim | Sim |
+| `@CurrentTimestamp(DB)` | Banco (`NOW()`) | Sim | Não |
+| `@CurrentTimestamp(JVM)` | Hibernate (JVM) | Não | Não |
+| `@CreationTimestamp` | Hibernate (JVM) | Não | Não |
 
 ### Spring Data Specifications — queries dinâmicas tipadas
 
+Specifications permitem construir filtros dinâmicos em runtime, compostos com `AND`/`OR`. O repository precisa estender `JpaSpecificationExecutor<T>`.
+
+#### A interface `Specification<T>` — é uma `@FunctionalInterface`
+
 ```java
-public static Specification<Pedido> comStatus(StatusPedido status) {
-    return (root, query, cb) -> cb.equal(root.get("status"), status);
+// Definição no Spring Data JPA
+@FunctionalInterface
+public interface Specification<T> {
+
+    @Nullable
+    Predicate toPredicate(Root<T> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder);
 }
+```
+
+É uma interface funcional — pode ser escrita como lambda `(root, query, cb) -> ...`:
+
+| Parâmetro | Tipo | O que representa | Uso principal |
+|---|---|---|---|
+| `root` | `Root<T>` | A entidade raiz do `FROM` — ponto de partida para acessar campos e navegar relacionamentos | `root.get("campo")`, `root.join("relacionamento")` |
+| `query` | `CriteriaQuery<?>` | A query inteira — permite adicionar `DISTINCT`, `ORDER BY`, subqueries | `query.distinct(true)`, `query.orderBy(...)` |
+| `cb` | `CriteriaBuilder` | Fábrica de predicados e expressões — cria `equal`, `like`, `between`, `and`, `or` etc. | `cb.equal(...)`, `cb.like(...)`, `cb.greaterThan(...)` |
+
+#### Exemplo com metamodel
+
+```java
+public static Specification<Matricula> comStatus(StatusMatricula status) {
+    return (root, query, cb) -> cb.equal(root.get(Matricula_.status), status);
+    //      ▲     ▲     ▲       ▲              ▲
+    //      │     │     │       │              └─ campo da entidade via metamodel
+    //      │     │     │       └─ CriteriaBuilder cria o predicado equal()
+    //      │     │     └─ CriteriaBuilder
+    //      │     └─ CriteriaQuery (não usado aqui)
+    //      └─ Root<Matricula> (FROM matricula)
+}
+```
+
+#### Anatomia de cada parâmetro
+
+**`root` — acesso aos campos da entidade:**
+
+```java
+// Campo direto
+root.get(Matricula_.nota)             // matricula.nota
+root.get(Matricula_.status)           // matricula.status
+
+// Navegação em relacionamento (gera JOIN implícito)
+root.get(Matricula_.curso).get(Curso_.id)       // matricula.curso.id
+root.get(Matricula_.aluno).get(Aluno_.nome)     // matricula.aluno.nome
+
+// JOIN explícito (necessário para condições no relacionamento)
+Join<Matricula, Aluno> aluno = root.join(Matricula_.aluno);
+aluno.get(Aluno_.nome)                // aluno.nome (via JOIN)
+```
+
+**`cb` (CriteriaBuilder) — cria predicados e expressões:**
+
+```java
+// Comparação
+cb.equal(root.get(Matricula_.status), StatusMatricula.ATIVA)
+cb.notEqual(root.get(Matricula_.status), StatusMatricula.CANCELADA)
+cb.greaterThan(root.get(Matricula_.nota), minima)
+cb.greaterThanOrEqualTo(root.get(Matricula_.nota), minima)
+cb.lessThan(root.get(Matricula_.nota), maxima)
+cb.between(root.get(Matricula_.nota), min, max)
+cb.isNull(root.get(Matricula_.nota))
+cb.isNotNull(root.get(Matricula_.nota))
+
+// String
+cb.like(root.get(Aluno_.nome), "%" + termo + "%")
+cb.like(cb.lower(root.get(Aluno_.nome)), "%" + termo.toLowerCase() + "%")
+
+// Lógica
+cb.and(predicado1, predicado2)
+cb.or(predicado1, predicado2)
+cb.not(predicado)
+
+// Agregação (em subqueries)
+cb.count(root)
+cb.avg(root.get(Matricula_.nota))
+cb.sum(root.get(Matricula_.nota))
+```
+
+**`query` (CriteriaQuery) — controle da query inteira:**
+
+```java
+// DISTINCT
+query.distinct(true);
+
+// ORDER BY
+query.orderBy(cb.desc(root.get(Matricula_.nota)));
+
+// Subquery
+Subquery<Long> sub = query.subquery(Long.class);
+Root<Matricula> subRoot = sub.from(Matricula.class);
+sub.select(subRoot.get(Matricula_.aluno).get(Aluno_.id))
+   .where(cb.equal(subRoot.get(Matricula_.curso).get(Curso_.id), cursoId));
+```
+
+#### Composição fluente
+
+```java
+public static Specification<Matricula> comStatus(StatusMatricula status) {
+    return (root, query, cb) -> cb.equal(root.get(Matricula_.status), status);
+}
+
+public static Specification<Matricula> notaAcimaDe(BigDecimal minima) {
+    return (root, query, cb) -> cb.greaterThanOrEqualTo(root.get(Matricula_.nota), minima);
+}
+
+public static Specification<Matricula> doCurso(Long cursoId) {
+    return (root, query, cb) -> cb.equal(root.get(Matricula_.curso).get(Curso_.id), cursoId);
+}
+```
+
+```java
+// Composição dinâmica
+Specification<Matricula> spec = Specification.where(comStatus(StatusMatricula.ATIVA))
+    .and(notaAcimaDe(new BigDecimal("7.0")))
+    .and(doCurso(1L));
+
+Page<Matricula> resultado = repository.findAll(spec, pageable);
 ```
 
 ### @DynamicInsert — INSERT sem campos nulos (respeita DEFAULTs)
