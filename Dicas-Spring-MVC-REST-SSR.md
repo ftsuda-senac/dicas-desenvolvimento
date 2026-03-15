@@ -191,11 +191,11 @@ public class RelatorioService {
 }
 ```
 
-**Interfaces funcionais e lambdas:**
+**Interfaces funcionais e lambdas — visão rápida:**
 
 ```java
 // Interfaces com exatamente UM método abstrato podem ser usadas com lambdas.
-// As mais comuns do Java estão no pacote java.util.function:
+// Ver seção J.6 para o catálogo completo de java.util.function.
 
 // Supplier<T>: sem parâmetros, retorna T
 Supplier<Produto>  supplier  = () -> new Produto("Notebook", BigDecimal.TEN);
@@ -500,6 +500,325 @@ String comEspacos = """
 //   - Templates de e-mail em serviços de notificação
 //   - Queries SQL nativas com JdbcClient
 ```
+
+---
+
+### J.6 Programação Funcional — `java.util.function`, Composição e Method References
+
+O pacote `java.util.function` define as interfaces funcionais padrão do Java.
+Todas possuem exatamente **um método abstrato** (`@FunctionalInterface`) e por
+isso aceitam lambdas e method references como implementações.
+
+#### J.6.1 Catálogo das interfaces principais
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// GRUPO 1 — Transformação (recebe algo, retorna algo diferente)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Function<T, R> — recebe T, produz R
+// Método abstrato: R apply(T t)
+Function<String, Integer>    tamanho  = String::length;        // "abc" → 3
+Function<Produto, String>    nomeFn   = Produto::getNome;      // Produto → "Notebook"
+Function<String, LocalDate>  parseData = LocalDate::parse;    // "2024-01-15" → LocalDate
+
+// BiFunction<T, U, R> — recebe T e U, produz R
+// Método abstrato: R apply(T t, U u)
+BiFunction<String, Integer, String> repetir =
+        (s, n) -> s.repeat(n);                                 // ("AB", 3) → "ABABAB"
+BiFunction<BigDecimal, BigDecimal, BigDecimal> soma =
+        BigDecimal::add;                                       // (1.0, 2.0) → 3.0
+
+// UnaryOperator<T> — especialização de Function<T,T> (entrada e saída do mesmo tipo)
+// Método abstrato: T apply(T t)
+UnaryOperator<String>     maiusculo = String::toUpperCase;     // "abc" → "ABC"
+UnaryOperator<BigDecimal> dobrar    = v -> v.multiply(BigDecimal.TWO);
+
+// BinaryOperator<T> — especialização de BiFunction<T,T,T>
+// Método abstrato: T apply(T t1, T t2)
+BinaryOperator<BigDecimal> maior    = BigDecimal::max;         // (3, 5) → 5
+BinaryOperator<String>     concat   = String::concat;          // ("a","b") → "ab"
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GRUPO 2 — Produção (sem entrada, retorna algo)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Supplier<T> — sem parâmetros, fornece T (lazy evaluation)
+// Método abstrato: T get()
+Supplier<Instant>  agora      = Instant::now;                  // () → Instant.now()
+Supplier<Produto>  novoProduto = Produto::new;                 // () → new Produto()
+Supplier<List<String>> listaVazia = ArrayList::new;            // () → new ArrayList<>()
+
+// Uso típico: valor default lazy (só avaliado se necessário)
+String nome = optional.orElseGet(() -> gerarNomeDefault());    // Supplier<String>
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GRUPO 3 — Consumo (recebe algo, sem retorno — side effect)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Consumer<T> — recebe T, sem retorno (void)
+// Método abstrato: void accept(T t)
+Consumer<String>  log    = System.out::println;
+Consumer<Produto> salvar = produtoRepository::save;
+Consumer<Pedido>  enviar = emailService::enviarConfirmacao;
+
+// BiConsumer<T, U> — recebe T e U, sem retorno
+// Método abstrato: void accept(T t, U u)
+BiConsumer<String, Integer> logComNivel =
+        (msg, nivel) -> logger.log(nivel, msg);
+BiConsumer<Map<String, Object>, String> remover =
+        (mapa, chave) -> mapa.remove(chave);
+
+// Uso típico: forEach, ifPresent, peek
+produtos.forEach(salvar);                                      // Consumer
+optional.ifPresent(log);                                       // Consumer
+stream.peek(p -> logger.debug("Processando: {}", p.getId())); // Consumer
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GRUPO 4 — Predicados (recebe algo, retorna boolean)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Predicate<T> — recebe T, retorna boolean
+// Método abstrato: boolean test(T t)
+Predicate<String>  naoVazio   = s -> !s.isBlank();
+Predicate<Produto> emEstoque  = p -> p.getEstoque() > 0;
+Predicate<Pedido>  confirmado = p -> p.getStatus() == Status.CONFIRMADO;
+
+// BiPredicate<T, U> — recebe T e U, retorna boolean
+// Método abstrato: boolean test(T t, U u)
+BiPredicate<String, Integer> tamanhoMinimo =
+        (s, min) -> s.length() >= min;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// GRUPO 5 — Versões primitivas (evitam boxing/unboxing — mais performáticas)
+// ════════════════════════════════════════════════════════════════════════════════
+
+// IntFunction<R>, LongFunction<R>, DoubleFunction<R>
+IntFunction<String>    intToStr  = Integer::toString;       // int → String
+LongFunction<Instant>  epochToTs = Instant::ofEpochMilli;  // long → Instant
+
+// ToIntFunction<T>, ToLongFunction<T>, ToDoubleFunction<T>
+ToIntFunction<String>    strlen  = String::length;          // String → int
+ToDoubleFunction<Produto> preco  = p -> p.getPreco().doubleValue();
+
+// IntUnaryOperator, LongUnaryOperator, DoubleUnaryOperator
+IntUnaryOperator    dobrarInt  = n -> n * 2;                // int → int
+DoubleUnaryOperator arredondar = Math::floor;               // double → double
+
+// IntBinaryOperator, LongBinaryOperator, DoubleBinaryOperator
+IntBinaryOperator    somaInt = Integer::sum;                // (int, int) → int
+DoubleBinaryOperator maiorD  = Math::max;                   // (double, double) → double
+
+// IntSupplier, LongSupplier, DoubleSupplier
+IntSupplier    contador = atomicInt::getAndIncrement;       // () → int
+DoubleSupplier random   = Math::random;                     // () → double
+
+// IntConsumer, LongConsumer, DoubleConsumer
+IntConsumer    printInt  = System.out::println;             // int → void
+DoubleConsumer logDouble = d -> logger.debug("val={}", d);  // double → void
+
+// IntPredicate, LongPredicate, DoublePredicate
+IntPredicate  positivo = n -> n > 0;                        // int → boolean
+LongPredicate par      = n -> n % 2 == 0;                   // long → boolean
+```
+
+#### J.6.2 Composição de funções
+
+Todas as interfaces funcionais do `java.util.function` oferecem métodos `default`
+para **encadear e combinar** funções sem variáveis intermediárias.
+
+```java
+// ─── Function: andThen e compose ─────────────────────────────────────────────
+
+Function<String, String>  trim      = String::trim;
+Function<String, String>  maiusculo = String::toUpperCase;
+Function<String, Integer> tamanho   = String::length;
+
+// andThen: aplica this, depois a função argumento
+// trim → maiusculo → tamanho: "  abc  " → "ABC" → 3
+Function<String, Integer> pipeline = trim.andThen(maiusculo).andThen(tamanho);
+int resultado = pipeline.apply("  abc  ");  // 3
+
+// compose: aplica a função argumento ANTES de this
+// maiusculo.compose(trim) ≡ trim.andThen(maiusculo)
+Function<String, String> trimThenMaiusculo = maiusculo.compose(trim);
+
+// ─── Predicate: and, or, negate ───────────────────────────────────────────────
+
+Predicate<Produto> ativo    = p -> p.isAtivo();
+Predicate<Produto> emEstoque = p -> p.getEstoque() > 0;
+Predicate<Produto> barato   = p -> p.getPreco().compareTo(new BigDecimal("100")) < 0;
+
+// and: ambos devem ser verdadeiros
+Predicate<Produto> disponivel = ativo.and(emEstoque);
+
+// or: pelo menos um deve ser verdadeiro
+Predicate<Produto> interessante = barato.or(emEstoque);
+
+// negate: inverte o resultado
+Predicate<Produto> indisponivel = disponivel.negate();
+
+// Predicate.not (Java 11+) — inverso de um method reference
+Predicate<String> naoVazio = Predicate.not(String::isBlank);
+
+// Uso em stream com composição
+List<Produto> catalogo = produtos.stream()
+        .filter(ativo.and(emEstoque).and(Predicate.not(Produto::isRemovido)))
+        .toList();
+
+// ─── Consumer: andThen ────────────────────────────────────────────────────────
+
+Consumer<Pedido> salvar  = pedidoRepository::save;
+Consumer<Pedido> auditar = auditService::registrar;
+Consumer<Pedido> notificar = emailService::enviarConfirmacao;
+
+// Executa salvar → auditar → notificar em sequência
+Consumer<Pedido> processarPedido = salvar.andThen(auditar).andThen(notificar);
+processarPedido.accept(pedido);
+
+// ─── BinaryOperator como acumulador em reduce ─────────────────────────────────
+
+BinaryOperator<BigDecimal> soma  = BigDecimal::add;
+BinaryOperator<String>     concat = (a, b) -> a + ", " + b;
+
+BigDecimal totalPrecos = precos.stream()
+        .reduce(BigDecimal.ZERO, soma);           // 0 + p1 + p2 + ...
+
+String nomesCSV = nomes.stream()
+        .reduce("", concat);                       // "" + n1 + ", " + n2 + ...
+
+// Function.identity() — retorna o próprio argumento (útil em collectors)
+Map<Long, Produto> porId = produtos.stream()
+        .collect(Collectors.toMap(Produto::getId, Function.identity()));
+```
+
+#### J.6.3 Method references — quatro formas
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// FORMA 1: Classe::métodoEstático
+// Equivale a: (args) -> Classe.metodoEstatico(args)
+// ════════════════════════════════════════════════════════════════════════════════
+Function<String, Integer>  parseInt    = Integer::parseInt;      // s -> Integer.parseInt(s)
+Function<String, String>   valueOf     = String::valueOf;        // s -> String.valueOf(s)
+Function<Double, Double>   sqrt        = Math::sqrt;             // d -> Math.sqrt(d)
+Predicate<String>          isNullFn    = Objects::isNull;        // s -> Objects.isNull(s)
+BiFunction<Object,Object,Boolean> eq   = Objects::equals;        // (a,b) -> Objects.equals(a,b)
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FORMA 2: instância::método
+// Equivale a: (args) -> instancia.metodo(args)
+// ════════════════════════════════════════════════════════════════════════════════
+Consumer<String>  printer   = System.out::println;               // s -> System.out.println(s)
+Consumer<Produto> salvar    = produtoRepository::save;           // p -> produtoRepository.save(p)
+Supplier<Instant> agora     = Instant::now;                      // () -> Instant.now()
+// (Instant::now é estático — comporta-se como Forma 1 aqui)
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FORMA 3: Classe::métodoDeInstância
+// O primeiro argumento da lambda vira o receptor (this) do método
+// Equivale a: (obj, args) -> obj.metodo(args)
+// ════════════════════════════════════════════════════════════════════════════════
+Function<String, String>      upper    = String::toUpperCase;    // s -> s.toUpperCase()
+Function<String, Integer>     length   = String::length;         // s -> s.length()
+Function<Produto, String>     getNome  = Produto::getNome;       // p -> p.getNome()
+BiFunction<String,String,Boolean> startsWith = String::startsWith; // (s,p) -> s.startsWith(p)
+Predicate<String>             vazio    = String::isEmpty;         // s -> s.isEmpty()
+ToIntFunction<String>         tamanho  = String::length;         // s -> s.length() (int primitivo)
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FORMA 4: Classe::new (construtor)
+// Equivale a: (args) -> new Classe(args)
+// ════════════════════════════════════════════════════════════════════════════════
+Supplier<ArrayList<String>>         listaVazia = ArrayList::new;   // () -> new ArrayList<>()
+Function<String, StringBuilder>     sbFactory  = StringBuilder::new; // s -> new StringBuilder(s)
+BiFunction<String,BigDecimal,Produto> prodFactory =
+        Produto::new;                                               // (n,p) -> new Produto(n,p)
+
+// ─── Uso prático dos quatro tipos em conjunto ─────────────────────────────────
+List<String> nomes = List.of("  Ana  ", "  Bob  ", "");
+
+List<String> resultado = nomes.stream()
+        .map(String::trim)             // Forma 3: instance method
+        .filter(Predicate.not(String::isEmpty))  // Forma 3: instance method
+        .map(String::toUpperCase)      // Forma 3: instance method
+        .sorted(String::compareTo)     // Forma 3: instance method (BiFunction)
+        .collect(Collectors.toList()); // ["ANA", "BOB"]
+```
+
+#### J.6.4 Interfaces funcionais customizadas e usos no Spring MVC
+
+```java
+// ─── @FunctionalInterface — garante que a interface tem exatamente 1 método abs.
+// O compilador emite erro se alguém adicionar um segundo método abstrato.
+
+@FunctionalInterface
+public interface Validator<T> {
+    ValidationResult validate(T obj);
+
+    // Composição: encadeia validadores
+    default Validator<T> andThen(Validator<T> other) {
+        return obj -> {
+            ValidationResult r = this.validate(obj);
+            return r.isValid() ? other.validate(obj) : r;
+        };
+    }
+}
+
+// Uso:
+Validator<ProdutoRequest> nomeValido  = req -> req.nome() != null && !req.nome().isBlank()
+        ? ValidationResult.ok()
+        : ValidationResult.erro("Nome obrigatório");
+
+Validator<ProdutoRequest> precoValido = req -> req.preco() != null && req.preco().signum() > 0
+        ? ValidationResult.ok()
+        : ValidationResult.erro("Preço deve ser positivo");
+
+Validator<ProdutoRequest> validarProduto = nomeValido.andThen(precoValido);
+ValidationResult resultado = validarProduto.validate(request);
+
+// ─── Tipos funcionais recorrentes no Spring Framework ─────────────────────────
+
+// HandlerFunction<T> (WebMvc.fn) — Function<ServerRequest, ServerResponse>
+// RouterFunction<T>  (WebMvc.fn) — encadeia rotas como predicados
+
+// Comparator — interface funcional com método estático e helpers
+Comparator<Produto> porPreco = Comparator.comparing(Produto::getPreco);
+Comparator<Produto> porNome  = Comparator.comparing(Produto::getNome);
+Comparator<Produto> ordem    = porPreco.reversed()           // maior preço primeiro
+                                       .thenComparing(porNome); // desempate por nome
+
+produtos.sort(ordem);
+List<Produto> ordenados = produtos.stream().sorted(ordem).toList();
+
+// Runnable — () -> void (sem parâmetros, sem retorno)
+// Muito comum com @Async e CompletableFuture
+Runnable tarefa = () -> processarRelatorio(id);
+CompletableFuture.runAsync(tarefa, executor);
+
+// Callable<T> — () throws Exception -> T (com checagem de exceção)
+// Usado em @Async e controllers assíncronos (seção 10.9)
+Callable<RelatorioResponse> callable = () -> relatorioService.gerarCompleto(periodo);
+```
+
+#### J.6.5 Resumo — guia de escolha rápida
+
+| Preciso... | Interface | Assinatura |
+|---|---|---|
+| Transformar `T` em `R` | `Function<T,R>` | `R apply(T)` |
+| Transformar `T` em `T` | `UnaryOperator<T>` | `T apply(T)` |
+| Transformar `T` e `U` em `R` | `BiFunction<T,U,R>` | `R apply(T,U)` |
+| Combinar dois `T` em `T` | `BinaryOperator<T>` | `T apply(T,T)` |
+| Produzir `T` sem entrada | `Supplier<T>` | `T get()` |
+| Consumir `T` sem retorno | `Consumer<T>` | `void accept(T)` |
+| Consumir `T` e `U` sem retorno | `BiConsumer<T,U>` | `void accept(T,U)` |
+| Testar `T` → boolean | `Predicate<T>` | `boolean test(T)` |
+| Testar `T` e `U` → boolean | `BiPredicate<T,U>` | `boolean test(T,U)` |
+| Executar sem parâmetros / retorno | `Runnable` | `void run()` |
+| Produzir `T` com exceção checada | `Callable<T>` | `T call() throws Exception` |
+| Transformar `int` → `R` (sem boxing) | `IntFunction<R>` | `R apply(int)` |
+| Transformar `T` → `int` (sem boxing) | `ToIntFunction<T>` | `int applyAsInt(T)` |
+| Operar `int` → `int` | `IntUnaryOperator` | `int applyAsInt(int)` |
 
 ---
 
