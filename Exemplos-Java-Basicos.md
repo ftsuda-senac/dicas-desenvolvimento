@@ -912,11 +912,16 @@ A tabela abaixo resume vários símbolos e atalhos muito usados com `Pattern` e 
 | `\\W` | não caractere de palavra | `\\W+` | complemento de `\\w` |
 | `\\s` | espaço em branco | `\\s+` | inclui espaço, tab, quebra de linha |
 | `\\S` | não espaço em branco | `\\S+` | complemento de `\\s` |
+| `\\t` | tabulação | `\\t+` | útil para textos separados por tab |
+| `\\n` | quebra de linha | `\\n` | representa nova linha |
+| `\\r` | carriage return | `\\r` | comum em finais de linha Windows junto com `\\n` |
 | `[abc]` | um dos caracteres listados | `[aeiou]` | casa um item do conjunto |
 | `[^abc]` | negação do conjunto | `[^0-9]` | qualquer caractere exceto os informados |
 | `[a-z]` | intervalo | `[A-Z]` | útil para letras e faixas |
 | `^` | início da linha/string | `^Java` | com `MULTILINE`, vale por linha |
 | `$` | fim da linha/string | `fim$` | com `MULTILINE`, vale por linha |
+| `\\A` | início da entrada inteira | `\\AJava` | diferente de `^` em contextos multiline |
+| `\\z` | fim da entrada inteira | `fim\\z` | diferente de `$` em certos contextos |
 | `?` | zero ou uma ocorrência | `colou?r` | aceita presença opcional |
 | `*` | zero ou mais ocorrências | `a*` | pode casar vazio |
 | `+` | uma ou mais ocorrências | `a+` | precisa existir ao menos uma |
@@ -926,10 +931,48 @@ A tabela abaixo resume vários símbolos e atalhos muito usados com `Pattern` e 
 | `(...)` | grupo capturante | `(\\d{2})/(\\d{2})` | permite `group(1)`, `group(2)` |
 | `(?<nome>...)` | grupo capturante nomeado | `(?<dia>\\d{2})` | permite acessar com `group("dia")` |
 | `(?:...)` | grupo não capturante | `(?:abc)+` | agrupa sem capturar |
+| `\\1` | backreference para grupo anterior | `(\\w+)\\s+\\1` | reutiliza o conteúdo capturado no grupo 1 |
+| `(?=...)` | lookahead positivo | `\\d+(?=kg)` | exige algo à frente sem consumir |
+| `(?!...)` | lookahead negativo | `Java(?!Script)` | rejeita determinado padrão à frente |
+| `(?<=...)` | lookbehind positivo | `(?<=R\\$)\\d+` | exige algo antes sem consumir |
+| `(?<!...)` | lookbehind negativo | `(?<!-)\\d+` | rejeita determinado padrão antes |
 | `|` | alternativa / ou | `sim|não` | muito usado para opções |
 | `\\` | escape | `\\.` | trata metacaractere literalmente |
 | `\\b` | limite de palavra | `\\bJava\\b` | evita casar dentro de outra palavra |
 | `\\B` | não limite de palavra | `\\Babc\\B` | caso oposto ao `\\b` |
+
+#### Regex prontos usados no dia a dia
+
+Os exemplos abaixo são úteis como ponto de partida. Em cenários reais, vale ajustar as regras conforme o contexto da aplicação.
+
+| Caso | Regex | Observação |
+|---|---|---|
+| senha com mínimo de 8 caracteres, maiúscula, minúscula, número e especial | `^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,}$` | valida regras comuns de senha |
+| e-mail simples | `^[\\w.-]+@[\\w.-]+\\.[A-Za-z]{2,}$` | útil para validações básicas, mas não cobre todos os casos do padrão oficial |
+| CEP brasileiro | `^\\d{5}-?\\d{3}$` | aceita com ou sem hífen |
+| telefone brasileiro simples | `^\\(?\\d{2}\\)?\\s?9?\\d{4}-?\\d{4}$` | formato simplificado para uso comum |
+| data no formato `dd/MM/yyyy` | `^\\d{2}/\\d{2}/\\d{4}$` | valida só o formato, não a data real |
+| UUID | `^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$` | valida UUID textual padrão |
+| hexadecimal | `^[0-9a-fA-F]+$` | útil para IDs, hashes e cores sem `#` |
+| slug | `^[a-z0-9]+(?:-[a-z0-9]+)*$` | útil para URLs amigáveis |
+
+Exemplo validando senha:
+
+```java
+Pattern pattern = Pattern.compile("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,}$");
+
+System.out.println(pattern.matcher("Senha@123").matches()); // true
+System.out.println(pattern.matcher("senha123").matches());  // false
+```
+
+Exemplo validando CEP:
+
+```java
+Pattern pattern = Pattern.compile("^\\d{5}-?\\d{3}$");
+
+System.out.println(pattern.matcher("01310-100").matches()); // true
+System.out.println(pattern.matcher("01310100").matches());  // true
+```
 
 #### Exemplos rápidos
 
@@ -967,6 +1010,35 @@ System.out.println(pattern.matcher("12345").matches()); // true
 ```java
 Pattern pattern = Pattern.compile("\\bJava\\b");
 System.out.println(pattern.matcher("Gosto de Java moderno").find()); // true
+```
+
+#### Lookahead positivo
+
+```java
+Pattern pattern = Pattern.compile("\\d+(?=kg)");
+Matcher matcher = pattern.matcher("Peso: 25kg");
+
+if (matcher.find()) {
+    System.out.println(matcher.group()); // 25
+}
+```
+
+#### Lookbehind positivo
+
+```java
+Pattern pattern = Pattern.compile("(?<=R\\$)\\d+");
+Matcher matcher = pattern.matcher("Valor: R$150");
+
+if (matcher.find()) {
+    System.out.println(matcher.group()); // 150
+}
+```
+
+#### Backreference
+
+```java
+Pattern pattern = Pattern.compile("(\\w+)\\s+\\1");
+System.out.println(pattern.matcher("teste teste").find()); // true
 ```
 
 #### Grupo nomeado com label
@@ -1153,6 +1225,7 @@ Principais classes:
 - `LocalDate` → só data
 - `LocalTime` → só hora
 - `LocalDateTime` → data e hora sem fuso
+- `OffsetDateTime` → data e hora com offset, como `-03:00`
 - `ZonedDateTime` → data e hora com fuso
 - `Instant` → ponto exato na linha do tempo
 - `Period` → diferença entre datas
@@ -1186,6 +1259,24 @@ import java.time.ZonedDateTime;
 ZonedDateTime agoraSaoPaulo = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo"));
 System.out.println(agoraSaoPaulo);
 ```
+
+#### Exemplo com `OffsetDateTime`
+
+```java
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+
+OffsetDateTime agoraComOffset = OffsetDateTime.now(ZoneOffset.of("-03:00"));
+System.out.println(agoraComOffset);
+```
+
+#### Diferença entre `OffsetDateTime` e `ZonedDateTime`
+
+- `OffsetDateTime` guarda a data/hora com um offset fixo, como `-03:00`
+- `ZonedDateTime` guarda a data/hora com uma região de fuso, como `America/Sao_Paulo`
+- `ZonedDateTime` considera regras reais de fuso, incluindo mudanças históricas e horário de verão
+- `OffsetDateTime` é muito comum em APIs, bancos e serialização técnica
+- `ZonedDateTime` é mais útil quando o identificador da região faz diferença para a regra de negócio
 
 #### Exemplo com `Instant`
 
@@ -2030,6 +2121,131 @@ Set<String> nomesNormalizados = List.of(" ana ", " bruno ", " ana ").stream()
     ));
 
 System.out.println(nomesNormalizados);
+```
+
+#### Usando `Collectors.filtering`
+
+`filtering` é útil quando você quer aplicar um filtro dentro de outro collector, como um `groupingBy`.
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+record Produto(String categoria, String nome, int estoque) {}
+
+List<Produto> produtos = List.of(
+    new Produto("Informática", "Mouse", 10),
+    new Produto("Informática", "Teclado", 0),
+    new Produto("Áudio", "Fone", 5)
+);
+
+Map<String, List<Produto>> disponiveisPorCategoria = produtos.stream()
+    .collect(Collectors.groupingBy(
+        Produto::categoria,
+        Collectors.filtering(produto -> produto.estoque() > 0, Collectors.toList())
+    ));
+
+System.out.println(disponiveisPorCategoria);
+```
+
+#### Usando `Collectors.flatMapping`
+
+`flatMapping` ajuda a achatar listas internas durante a coleta.
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+record Turma(String nome, List<String> alunos) {}
+
+List<Turma> turmas = List.of(
+    new Turma("Turma A", List.of("Ana", "Bruno")),
+    new Turma("Turma B", List.of("Carla", "Daniel"))
+);
+
+List<String> alunos = turmas.stream()
+    .collect(Collectors.flatMapping(turma -> turma.alunos().stream(), Collectors.toList()));
+
+System.out.println(alunos); // [Ana, Bruno, Carla, Daniel]
+```
+
+#### Usando `Collectors.summingInt` e `Collectors.averagingDouble`
+
+```java
+import java.util.List;
+import java.util.stream.Collectors;
+
+record Venda(String produto, int quantidade, double valor) {}
+
+List<Venda> vendas = List.of(
+    new Venda("Mouse", 2, 50.0),
+    new Venda("Teclado", 1, 120.0),
+    new Venda("Monitor", 1, 900.0)
+);
+
+int totalItens = vendas.stream()
+    .collect(Collectors.summingInt(Venda::quantidade));
+
+double mediaValores = vendas.stream()
+    .collect(Collectors.averagingDouble(Venda::valor));
+
+System.out.println(totalItens);   // 4
+System.out.println(mediaValores); // 356.666...
+```
+
+#### Usando `Collectors.maxBy` e `Collectors.minBy`
+
+```java
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+Optional<String> maiorNome = List.of("Ana", "Bruno", "Carla").stream()
+    .collect(Collectors.maxBy(Comparator.comparingInt(String::length)));
+
+Optional<String> menorNome = List.of("Ana", "Bruno", "Carla").stream()
+    .collect(Collectors.minBy(Comparator.comparingInt(String::length)));
+
+System.out.println(maiorNome.orElse("")); // Bruno
+System.out.println(menorNome.orElse("")); // Ana
+```
+
+#### Usando `Collectors.reducing`
+
+```java
+import java.util.List;
+import java.util.stream.Collectors;
+
+int total = List.of(10, 20, 30).stream()
+    .collect(Collectors.reducing(0, Integer::intValue, Integer::sum));
+
+System.out.println(total); // 60
+```
+
+#### Usando `groupingBy` com collector downstream
+
+Esse padrão é muito comum quando você quer agrupar e já resumir o grupo em vez de guardar a lista completa.
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+record Funcionario(String departamento, String nome) {}
+
+List<Funcionario> funcionarios = List.of(
+    new Funcionario("TI", "Ana"),
+    new Funcionario("TI", "Bruno"),
+    new Funcionario("RH", "Carla")
+);
+
+Map<String, Long> quantidadePorDepartamento = funcionarios.stream()
+    .collect(Collectors.groupingBy(Funcionario::departamento, Collectors.counting()));
+
+System.out.println(quantidadePorDepartamento);
 ```
 
 ### 10.6 Observações práticas
