@@ -2,6 +2,22 @@
 
 Este arquivo reúne exemplos simples e práticos de recursos muito usados no Java moderno, com foco em APIs atuais da JDK e algumas boas práticas comuns no dia a dia.
 
+## Sumário
+
+- [1. Verificar se uma `String` é blank](#1-verificar-se-uma-string-é-blank)
+- [2. Comparação de strings mantendo constantes do lado esquerdo](#2-comparação-de-strings-mantendo-constantes-do-lado-esquerdo)
+- [3. Uso de collections comuns (`List`, `Set`, `Map`)](#3-uso-de-collections-comuns-list-set-map)
+- [4. Abrir arquivos em disco para leitura e escrita usando recursos do Java moderno](#4-abrir-arquivos-em-disco-para-leitura-e-escrita-usando-recursos-do-java-moderno)
+- [5. Navegar por arquivos em um diretório](#5-navegar-por-arquivos-em-um-diretório)
+- [6. Uso de `Pattern` e `Matcher`](#6-uso-de-pattern-e-matcher)
+- [7. Trabalhando com datas: `Date`, `Calendar` e `java.time`](#7-trabalhando-com-datas-date-calendar-e-javatime)
+- [8. Uso do `Optional`](#8-uso-do-optional)
+- [9. Interface funcional e classes auxiliares](#9-interface-funcional-e-classes-auxiliares)
+- [10. Uso do `Stream API` e `Collectors`](#10-uso-do-stream-api-e-collectors)
+- [11. Uso do `CompletableFuture`](#11-uso-do-completablefuture)
+- [12. Exceções em Java](#12-exceções-em-java)
+- [13. Resumo rápido](#13-resumo-rápido)
+
 ---
 
 ## 1. Verificar se uma `String` é blank
@@ -54,6 +70,18 @@ System.out.println(StringUtils.isBlank(texto1)); // true
 System.out.println(StringUtils.isBlank(texto2)); // true
 System.out.println(StringUtils.isBlank(texto3)); // true
 System.out.println(StringUtils.isBlank(texto4)); // false
+```
+
+### Dependência Maven para Apache Commons Lang
+
+Caso queira usar `StringUtils`, adicione a dependência abaixo ao `pom.xml`:
+
+```xml
+<dependency>
+    <groupId>org.apache.commons</groupId>
+    <artifactId>commons-lang3</artifactId>
+    <version>3.17.0</version>
+</dependency>
 ```
 
 ### Quando usar cada um?
@@ -190,6 +218,24 @@ Map<String, Integer> estoque = Map.of(
 System.out.println(estoque);
 ```
 
+### Map imutável com `Map.ofEntries` e `Map.Entry`
+
+Quando você quer montar um `Map` usando entradas explícitas, pode usar `Map.ofEntries(...)` junto com `Map.entry(...)`.
+
+```java
+import java.util.Map;
+
+Map<Integer, String> usuarios = Map.ofEntries(
+    Map.entry(1, "Ana"),
+    Map.entry(2, "Bruno"),
+    Map.entry(3, "Carla")
+);
+
+System.out.println(usuarios);
+```
+
+Isso é especialmente útil quando o mapa tem vários pares e você quer deixar cada entrada visualmente separada.
+
 ### Iterando em coleções
 
 ```java
@@ -209,6 +255,140 @@ for (Map.Entry<String, Integer> entry : notas.entrySet()) {
     System.out.println(entry.getKey() + " -> " + entry.getValue());
 }
 ```
+
+### Removendo itens de um `List` com `Iterator`
+
+Quando você precisa remover elementos enquanto percorre uma lista mutável, o mais seguro é usar `Iterator`.
+
+```java
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
+List<String> nomes = new ArrayList<>(List.of("Ana", "Bruno", "Carlos", "Bianca"));
+
+Iterator<String> iterator = nomes.iterator();
+while (iterator.hasNext()) {
+    String nome = iterator.next();
+    if (nome.startsWith("B")) {
+        iterator.remove();
+    }
+}
+
+System.out.println(nomes); // [Ana, Carlos]
+```
+
+Se você tentar remover diretamente com `list.remove(...)` dentro de um `for-each`, pode ocorrer `ConcurrentModificationException`.
+
+### 3.4 Diagrama de classes Mermaid das coleções Java
+
+O diagrama abaixo mostra a relação entre as interfaces principais e algumas implementações muito comuns da biblioteca padrão.
+
+```mermaid
+classDiagram
+    class Iterable
+    class Collection
+    class List
+    class Set
+    class Map
+    class ArrayList
+    class HashSet
+    class LinkedHashSet
+    class HashMap
+    class LinkedHashMap
+
+    Iterable <|-- Collection
+    Collection <|-- List
+    Collection <|-- Set
+
+    List <|.. ArrayList
+    Set <|.. HashSet
+    Set <|.. LinkedHashSet
+    Map <|.. HashMap
+    Map <|.. LinkedHashMap
+
+    note for Collection "Interface base para grupos de elementos"
+    note for List "Mantém ordem de inserção e aceita repetição"
+    note for Set "Não permite elementos duplicados"
+    note for Map "Estrutura chave/valor; não herda de Collection"
+    note for ArrayList "Lista baseada em array; acesso por índice é eficiente"
+    note for HashSet "Set sem garantia de ordem"
+    note for LinkedHashSet "Set que mantém a ordem de inserção"
+    note for HashMap "Map sem garantia de ordem"
+    note for LinkedHashMap "Map que mantém a ordem de inserção"
+```
+
+#### Observações importantes sobre o diagrama
+
+- `Collection` é a interface base para coleções de elementos.
+- `List` e `Set` herdam de `Collection`.
+- `Map` **não** herda de `Collection`, porque sua estrutura é baseada em pares chave/valor.
+- `ArrayList` é uma implementação muito comum de `List`.
+- `HashSet` e `LinkedHashSet` são implementações comuns de `Set`.
+- `HashMap` e `LinkedHashMap` são implementações comuns de `Map`.
+
+#### Diferença entre `HashSet` e `LinkedHashSet`
+
+Ambos não permitem elementos duplicados, mas:
+
+- `HashSet` não garante ordem de iteração.
+- `LinkedHashSet` mantém a ordem de inserção dos elementos.
+
+Exemplo:
+
+```java
+Set<String> set1 = new HashSet<>();
+set1.add("B");
+set1.add("A");
+set1.add("C");
+System.out.println(set1);
+```
+
+A saída pode variar de acordo com a implementação e o estado interno da estrutura.
+
+```java
+Set<String> set2 = new LinkedHashSet<>();
+set2.add("B");
+set2.add("A");
+set2.add("C");
+System.out.println(set2); // [B, A, C]
+```
+
+#### Diferença entre `HashMap` e `LinkedHashMap`
+
+Ambos armazenam pares chave/valor, mas:
+
+- `HashMap` não garante ordem de iteração das chaves.
+- `LinkedHashMap` mantém a ordem de inserção das entradas.
+
+Exemplo:
+
+```java
+Map<Integer, String> map1 = new HashMap<>();
+map1.put(2, "Bruno");
+map1.put(1, "Ana");
+map1.put(3, "Carla");
+System.out.println(map1);
+```
+
+A ordem de saída não deve ser considerada previsível.
+
+```java
+Map<Integer, String> map2 = new LinkedHashMap<>();
+map2.put(2, "Bruno");
+map2.put(1, "Ana");
+map2.put(3, "Carla");
+System.out.println(map2); // {2=Bruno, 1=Ana, 3=Carla}
+```
+
+#### Quando usar `LinkedHashSet` e `LinkedHashMap`
+
+Essas implementações são úteis quando você precisa:
+- preservar a ordem de inserção
+- manter comportamento previsível na iteração
+- gerar saídas mais legíveis em logs, telas e serializações
+
+O custo costuma ser um pouco maior do que as versões `Hash*`, porque existe uma estrutura adicional para encadear os elementos na ordem em que foram inseridos.
 
 ### Dica prática
 
@@ -469,69 +649,22 @@ try (
 }
 ```
 
----
-
-## 5. Flags de abertura de arquivos (`StandardOpenOption`)
+### 4.14 Tabela de flags de abertura de arquivos (`StandardOpenOption`)
 
 As flags mais comuns para leitura e escrita são:
 
-### `CREATE`
-Cria o arquivo se ele não existir.
+| Flag | Significado | Observação |
+|---|---|---|
+| `CREATE` | Cria o arquivo se ele não existir | útil para escrita inicial |
+| `CREATE_NEW` | Cria o arquivo apenas se ele ainda não existir | lança exceção se o arquivo já existir |
+| `APPEND` | Adiciona conteúdo ao final do arquivo | preserva o conteúdo anterior |
+| `TRUNCATE_EXISTING` | Apaga o conteúdo atual antes de escrever | usado quando se quer sobrescrever |
+| `WRITE` | Abre o arquivo para escrita | comum em gravação |
+| `READ` | Abre o arquivo para leitura | comum em leitura explícita |
+| `SYNC` | Força atualização síncrona de dados e metadados | pode impactar desempenho |
+| `DSYNC` | Força sincronização principalmente dos dados | semelhante ao `SYNC`, com foco nos dados |
 
-```java
-StandardOpenOption.CREATE
-```
-
-### `CREATE_NEW`
-Cria o arquivo apenas se ele ainda não existir. Se já existir, lança exceção.
-
-```java
-StandardOpenOption.CREATE_NEW
-```
-
-### `APPEND`
-Adiciona conteúdo ao final do arquivo, sem apagar o conteúdo anterior.
-
-```java
-StandardOpenOption.APPEND
-```
-
-### `TRUNCATE_EXISTING`
-Apaga o conteúdo atual do arquivo antes de escrever o novo conteúdo.
-
-```java
-StandardOpenOption.TRUNCATE_EXISTING
-```
-
-### `WRITE`
-Abre o arquivo para escrita.
-
-```java
-StandardOpenOption.WRITE
-```
-
-### `READ`
-Abre o arquivo para leitura.
-
-```java
-StandardOpenOption.READ
-```
-
-### `SYNC`
-Força atualização síncrona do conteúdo e dos metadados no armazenamento físico. Pode impactar desempenho.
-
-```java
-StandardOpenOption.SYNC
-```
-
-### `DSYNC`
-Semelhante ao `SYNC`, mas com foco principalmente nos dados do arquivo.
-
-```java
-StandardOpenOption.DSYNC
-```
-
-### Exemplo com múltiplas flags
+#### Exemplo com múltiplas flags
 
 ```java
 import java.nio.file.Files;
@@ -549,7 +682,7 @@ Files.writeString(
 );
 ```
 
-### Observação importante
+#### Observação importante
 
 Nem toda combinação de flags faz sentido. Por exemplo:
 - `APPEND` + `TRUNCATE_EXISTING` normalmente é contraditório
@@ -557,11 +690,11 @@ Nem toda combinação de flags faz sentido. Por exemplo:
 
 ---
 
-## 6. Navegar por arquivos em um diretório
+## 5. Navegar por arquivos em um diretório
 
 A API `Files` também facilita listar, percorrer e filtrar diretórios.
 
-### 6.1 Listar itens de um diretório
+### 5.1 Listar itens de um diretório
 
 ```java
 import java.nio.file.Files;
@@ -575,7 +708,7 @@ try (Stream<Path> stream = Files.list(diretorio)) {
 }
 ```
 
-### 6.2 Percorrer subdiretórios recursivamente
+### 5.2 Percorrer subdiretórios recursivamente
 
 ```java
 import java.nio.file.Files;
@@ -589,7 +722,7 @@ try (Stream<Path> stream = Files.walk(diretorio)) {
 }
 ```
 
-### 6.3 Filtrar apenas arquivos regulares
+### 5.3 Filtrar apenas arquivos regulares
 
 ```java
 import java.nio.file.Files;
@@ -605,7 +738,7 @@ try (Stream<Path> stream = Files.walk(diretorio)) {
 }
 ```
 
-### 6.4 Filtrar por extensão
+### 5.4 Filtrar por extensão
 
 ```java
 import java.nio.file.Files;
@@ -622,7 +755,7 @@ try (Stream<Path> stream = Files.walk(diretorio)) {
 }
 ```
 
-### 6.5 Usar `DirectoryStream`
+### 5.5 Usar `DirectoryStream`
 
 `DirectoryStream` pode ser útil para listagens simples e eficientes.
 
@@ -642,7 +775,7 @@ try (DirectoryStream<Path> stream = Files.newDirectoryStream(diretorio, "*.txt")
 
 ---
 
-## 7. Uso de `Pattern` e `Matcher`
+## 6. Uso de `Pattern` e `Matcher`
 
 As classes `Pattern` e `Matcher` pertencem ao pacote `java.util.regex` e são usadas para trabalhar com expressões regulares.
 
@@ -766,7 +899,7 @@ System.out.println(sb); // Pedido [NUMERO] e pedido [NUMERO]
 
 ---
 
-## 8. Tabela com símbolos mais usados em regex no dia a dia
+### 6.1 Tabela com símbolos mais usados em regex no dia a dia
 
 A tabela abaixo resume vários símbolos e atalhos muito usados com `Pattern` e `Matcher`.
 
@@ -791,13 +924,14 @@ A tabela abaixo resume vários símbolos e atalhos muito usados com `Pattern` e 
 | `{n,}` | no mínimo n ocorrências | `\\d{2,}` | sem limite superior |
 | `{n,m}` | entre n e m ocorrências | `\\d{2,4}` | intervalo fechado |
 | `(...)` | grupo capturante | `(\\d{2})/(\\d{2})` | permite `group(1)`, `group(2)` |
+| `(?<nome>...)` | grupo capturante nomeado | `(?<dia>\\d{2})` | permite acessar com `group("dia")` |
 | `(?:...)` | grupo não capturante | `(?:abc)+` | agrupa sem capturar |
 | `|` | alternativa / ou | `sim|não` | muito usado para opções |
 | `\\` | escape | `\\.` | trata metacaractere literalmente |
 | `\\b` | limite de palavra | `\\bJava\\b` | evita casar dentro de outra palavra |
 | `\\B` | não limite de palavra | `\\Babc\\B` | caso oposto ao `\\b` |
 
-### Exemplos rápidos
+#### Exemplos rápidos
 
 #### Wildcard de “qualquer caractere”
 
@@ -835,24 +969,54 @@ Pattern pattern = Pattern.compile("\\bJava\\b");
 System.out.println(pattern.matcher("Gosto de Java moderno").find()); // true
 ```
 
+#### Grupo nomeado com label
+
+```java
+Pattern pattern = Pattern.compile("(?<dia>\\d{2})/(?<mes>\\d{2})/(?<ano>\\d{4})");
+Matcher matcher = pattern.matcher("Data: 16/03/2026");
+
+if (matcher.find()) {
+    System.out.println(matcher.group("dia")); // 16
+    System.out.println(matcher.group("mes")); // 03
+    System.out.println(matcher.group("ano")); // 2026
+}
+```
+
+#### Substituição usando grupo nomeado
+
+```java
+String data = "16/03/2026";
+String iso = data.replaceAll("(?<dia>\\d{2})/(?<mes>\\d{2})/(?<ano>\\d{4})", "${ano}-${mes}-${dia}");
+
+System.out.println(iso); // 2026-03-16
+```
+
 ---
 
-## 9. Flags de `Pattern`
+### 6.2 Tabela de flags de `Pattern`
 
 Ao compilar uma expressão regular, é possível informar flags que alteram o comportamento do mecanismo.
 
-### `Pattern.CASE_INSENSITIVE`
+| Flag | Efeito | Observação |
+|---|---|---|
+| `Pattern.CASE_INSENSITIVE` | ignora diferença entre maiúsculas e minúsculas | útil para buscas sem distinção de caixa |
+| `Pattern.MULTILINE` | faz `^` e `$` funcionarem por linha | muda o comportamento de início e fim em textos com múltiplas linhas |
+| `Pattern.DOTALL` | faz `.` também casar quebras de linha | sem essa flag, `.` normalmente não captura `\n` |
+| `Pattern.UNICODE_CASE` | melhora o case folding para Unicode | normalmente usado junto com `CASE_INSENSITIVE` |
+| `Pattern.COMMENTS` | permite espaços e comentários na regex | ajuda a escrever regex longas e legíveis |
+| `Pattern.LITERAL` | trata a expressão literalmente | ignora o significado especial dos metacaracteres |
+| `Pattern.UNIX_LINES` | considera apenas `\n` como terminador de linha | afeta certos comportamentos ligados a linhas |
 
-Ignora diferença entre maiúsculas e minúsculas.
+#### Exemplos com flags
+
+##### `Pattern.CASE_INSENSITIVE`
 
 ```java
 Pattern pattern = Pattern.compile("java", Pattern.CASE_INSENSITIVE);
 System.out.println(pattern.matcher("JAVA").find()); // true
 ```
 
-### `Pattern.MULTILINE`
-
-Faz com que `^` e `$` funcionem por linha, e não apenas no início e fim de toda a string.
+##### `Pattern.MULTILINE`
 
 ```java
 Pattern pattern = Pattern.compile("^abc", Pattern.MULTILINE);
@@ -861,11 +1025,7 @@ Matcher matcher = pattern.matcher("xyz\nabc\n123");
 System.out.println(matcher.find()); // true
 ```
 
-### `Pattern.DOTALL`
-
-Faz com que o caractere `.` também corresponda a quebras de linha.
-
-Sem `DOTALL`, o ponto normalmente não captura `\n`.
+##### `Pattern.DOTALL`
 
 ```java
 Pattern pattern = Pattern.compile("inicio.*fim", Pattern.DOTALL);
@@ -874,17 +1034,13 @@ Matcher matcher = pattern.matcher("inicio\nconteudo\nfim");
 System.out.println(matcher.find()); // true
 ```
 
-### `Pattern.UNICODE_CASE`
-
-Melhora o tratamento de case folding para Unicode, geralmente usado junto com `CASE_INSENSITIVE`.
+##### `Pattern.UNICODE_CASE`
 
 ```java
 Pattern pattern = Pattern.compile("ação", Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 ```
 
-### `Pattern.COMMENTS`
-
-Permite escrever regex com espaços e comentários para facilitar leitura.
+##### `Pattern.COMMENTS`
 
 ```java
 Pattern pattern = Pattern.compile(
@@ -893,24 +1049,20 @@ Pattern pattern = Pattern.compile(
 );
 ```
 
-### `Pattern.LITERAL`
-
-Faz a expressão ser tratada literalmente, sem interpretar metacaracteres.
+##### `Pattern.LITERAL`
 
 ```java
 Pattern pattern = Pattern.compile("a.b", Pattern.LITERAL);
 System.out.println(pattern.matcher("a.b").find()); // true
 ```
 
-### `Pattern.UNIX_LINES`
-
-Considera apenas `\n` como terminador de linha em certos contextos.
+##### `Pattern.UNIX_LINES`
 
 ```java
 Pattern pattern = Pattern.compile("^texto$", Pattern.MULTILINE | Pattern.UNIX_LINES);
 ```
 
-### Flags combinadas
+##### Flags combinadas
 
 É possível combinar flags usando o operador `|`.
 
@@ -923,7 +1075,7 @@ Pattern pattern = Pattern.compile(
 
 ---
 
-## 10. Exemplo prático combinando `Pattern` e leitura de arquivo
+### 6.3 Exemplo prático combinando `Pattern` e leitura de arquivo
 
 ```java
 import java.nio.file.Files;
@@ -944,119 +1096,7 @@ while (matcher.find()) {
 
 ---
 
-## 11. Diagrama de classes Mermaid das coleções Java
-
-O diagrama abaixo mostra a relação entre as interfaces principais e algumas implementações muito comuns da biblioteca padrão.
-
-```mermaid
-classDiagram
-    class Iterable
-    class Collection
-    class List
-    class Set
-    class Map
-    class ArrayList
-    class HashSet
-    class LinkedHashSet
-    class HashMap
-    class LinkedHashMap
-
-    Iterable <|-- Collection
-    Collection <|-- List
-    Collection <|-- Set
-
-    List <|.. ArrayList
-    Set <|.. HashSet
-    Set <|.. LinkedHashSet
-    Map <|.. HashMap
-    Map <|.. LinkedHashMap
-
-    note for Collection "Interface base para grupos de elementos"
-    note for List "Mantém ordem de inserção e aceita repetição"
-    note for Set "Não permite elementos duplicados"
-    note for Map "Estrutura chave/valor; não herda de Collection"
-    note for ArrayList "Lista baseada em array; acesso por índice é eficiente"
-    note for HashSet "Set sem garantia de ordem"
-    note for LinkedHashSet "Set que mantém a ordem de inserção"
-    note for HashMap "Map sem garantia de ordem"
-    note for LinkedHashMap "Map que mantém a ordem de inserção"
-```
-
-### Observações importantes sobre o diagrama
-
-- `Collection` é a interface base para coleções de elementos.
-- `List` e `Set` herdam de `Collection`.
-- `Map` **não** herda de `Collection`, porque sua estrutura é baseada em pares chave/valor.
-- `ArrayList` é uma implementação muito comum de `List`.
-- `HashSet` e `LinkedHashSet` são implementações comuns de `Set`.
-- `HashMap` e `LinkedHashMap` são implementações comuns de `Map`.
-
-### Diferença entre `HashSet` e `LinkedHashSet`
-
-Ambos não permitem elementos duplicados, mas:
-
-- `HashSet` não garante ordem de iteração.
-- `LinkedHashSet` mantém a ordem de inserção dos elementos.
-
-Exemplo:
-
-```java
-Set<String> set1 = new HashSet<>();
-set1.add("B");
-set1.add("A");
-set1.add("C");
-System.out.println(set1);
-```
-
-A saída pode variar de acordo com a implementação e o estado interno da estrutura.
-
-```java
-Set<String> set2 = new LinkedHashSet<>();
-set2.add("B");
-set2.add("A");
-set2.add("C");
-System.out.println(set2); // [B, A, C]
-```
-
-### Diferença entre `HashMap` e `LinkedHashMap`
-
-Ambos armazenam pares chave/valor, mas:
-
-- `HashMap` não garante ordem de iteração das chaves.
-- `LinkedHashMap` mantém a ordem de inserção das entradas.
-
-Exemplo:
-
-```java
-Map<Integer, String> map1 = new HashMap<>();
-map1.put(2, "Bruno");
-map1.put(1, "Ana");
-map1.put(3, "Carla");
-System.out.println(map1);
-```
-
-A ordem de saída não deve ser considerada previsível.
-
-```java
-Map<Integer, String> map2 = new LinkedHashMap<>();
-map2.put(2, "Bruno");
-map2.put(1, "Ana");
-map2.put(3, "Carla");
-System.out.println(map2); // {2=Bruno, 1=Ana, 3=Carla}
-```
-
-### Quando usar `LinkedHashSet` e `LinkedHashMap`
-
-Essas implementações são úteis quando você precisa:
-- preservar a ordem de inserção
-- manter comportamento previsível na iteração
-- gerar saídas mais legíveis em logs, telas e serializações
-
-O custo costuma ser um pouco maior do que as versões `Hash*`, porque existe uma estrutura adicional para encadear os elementos na ordem em que foram inseridos.
-
----
-
-## 12. Trabalhando com datas: `Date`, `Calendar` e `java.time`
+## 7. Trabalhando com datas: `Date`, `Calendar` e `java.time`
 
 Java possui mais de uma API para datas. As mais importantes são:
 
@@ -1064,7 +1104,7 @@ Java possui mais de uma API para datas. As mais importantes são:
 - `java.util.Calendar`
 - `java.time` (API moderna introduzida no Java 8)
 
-### 12.1 `Date`
+### `Date`
 
 `Date` é uma API antiga. Ainda aparece bastante em sistemas legados e integrações antigas.
 
@@ -1082,7 +1122,7 @@ System.out.println(agora);
 - muitos métodos antigos foram depreciados
 - não separa bem conceitos como data, hora e fuso
 
-### 12.2 `Calendar`
+### `Calendar`
 
 `Calendar` surgiu para dar mais flexibilidade do que `Date`, mas também é considerado legado em código moderno.
 
@@ -1095,7 +1135,7 @@ cal.set(2026, Calendar.MARCH, 16, 10, 30, 0);
 System.out.println(cal.getTime());
 ```
 
-### Atenção com o mês no `Calendar`
+#### Atenção com o mês no `Calendar`
 
 No `Calendar`, os meses começam em zero:
 
@@ -1105,7 +1145,7 @@ No `Calendar`, os meses começam em zero:
 
 Por isso, usar constantes da classe é melhor do que números soltos.
 
-### 12.3 `java.time`
+### `java.time`
 
 A API `java.time` é a abordagem recomendada em Java moderno.
 
@@ -1117,8 +1157,9 @@ Principais classes:
 - `Instant` → ponto exato na linha do tempo
 - `Period` → diferença entre datas
 - `Duration` → diferença entre instantes/horas
+- `ChronoUnit` → unidade útil para calcular diferenças como dias, meses e anos
 
-### Exemplo com `LocalDate`
+#### Exemplo com `LocalDate`
 
 ```java
 import java.time.LocalDate;
@@ -1127,7 +1168,7 @@ LocalDate hoje = LocalDate.now();
 System.out.println(hoje);
 ```
 
-### Exemplo com `LocalDateTime`
+#### Exemplo com `LocalDateTime`
 
 ```java
 import java.time.LocalDateTime;
@@ -1136,7 +1177,7 @@ LocalDateTime agora = LocalDateTime.now();
 System.out.println(agora);
 ```
 
-### Exemplo com `ZonedDateTime`
+#### Exemplo com `ZonedDateTime`
 
 ```java
 import java.time.ZoneId;
@@ -1146,7 +1187,7 @@ ZonedDateTime agoraSaoPaulo = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo"));
 System.out.println(agoraSaoPaulo);
 ```
 
-### Exemplo com `Instant`
+#### Exemplo com `Instant`
 
 ```java
 import java.time.Instant;
@@ -1155,11 +1196,80 @@ Instant instant = Instant.now();
 System.out.println(instant);
 ```
 
+#### Exemplo com `Duration`
+
+`Duration` é útil para medir intervalos de tempo baseados em horas, minutos e segundos.
+
+```java
+import java.time.Duration;
+import java.time.LocalDateTime;
+
+LocalDateTime inicio = LocalDateTime.of(2026, 3, 16, 8, 0);
+LocalDateTime fim = LocalDateTime.of(2026, 3, 16, 10, 45);
+
+Duration duracao = Duration.between(inicio, fim);
+
+System.out.println(duracao.toHours());   // 2
+System.out.println(duracao.toMinutes()); // 165
+```
+
+#### Exemplo com `ChronoUnit`
+
+`ChronoUnit` ajuda a calcular diferenças em unidades específicas, como dias, meses ou anos.
+
+```java
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+
+LocalDate inicioCurso = LocalDate.of(2026, 3, 1);
+LocalDate hoje = LocalDate.of(2026, 3, 16);
+
+long dias = ChronoUnit.DAYS.between(inicioCurso, hoje);
+System.out.println(dias); // 15
+```
+
+#### Exemplo calculando idade com `ChronoUnit`
+
+Para cálculos simples de idade em anos completos, `ChronoUnit.YEARS` pode ser bastante prático.
+
+```java
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+
+LocalDate nascimento = LocalDate.of(2000, 5, 10);
+LocalDate hoje = LocalDate.now();
+
+long idade = ChronoUnit.YEARS.between(nascimento, hoje);
+System.out.println(idade);
+```
+
+Se você quiser apenas a quantidade de anos completos entre duas datas, essa abordagem funciona bem. Para detalhar anos, meses e dias separadamente, `Period` costuma ser mais apropriado.
+
+#### Exemplo com `Period`
+
+`Period` é útil quando você quer decompor a diferença entre duas datas em anos, meses e dias.
+
+```java
+import java.time.LocalDate;
+import java.time.Period;
+
+LocalDate nascimento = LocalDate.of(2000, 5, 10);
+LocalDate hoje = LocalDate.now();
+
+Period periodo = Period.between(nascimento, hoje);
+
+System.out.println(periodo.getYears());  // anos
+System.out.println(periodo.getMonths()); // meses
+System.out.println(periodo.getDays());   // dias
+```
+
+Esse tipo de abordagem é especialmente útil para exibir idade detalhada ou tempo decorrido em formato mais legível.
+
 ---
 
-## 13. Formatação de datas
+### 7.1 Formatação de datas
 
-### 13.1 Formatar com `SimpleDateFormat` (legado)
+#### 7.1.1 Formatar com `SimpleDateFormat` (legado)
 
 Usado com `Date` e APIs antigas.
 
@@ -1174,13 +1284,13 @@ String formatada = sdf.format(agora);
 System.out.println(formatada);
 ```
 
-### Limitações do `SimpleDateFormat`
+#### Limitações do `SimpleDateFormat`
 
 - API antiga
 - não é thread-safe
 - não é a melhor opção para código moderno
 
-### 13.2 Formatar com `DateTimeFormatter` (moderno)
+#### 7.1.2 Formatar com `DateTimeFormatter` (moderno)
 
 ```java
 import java.time.LocalDateTime;
@@ -1193,7 +1303,7 @@ String formatada = agora.format(formatter);
 System.out.println(formatada);
 ```
 
-### Exemplo com formato ISO
+#### Exemplo com formato ISO
 
 ```java
 import java.time.LocalDateTime;
@@ -1204,7 +1314,7 @@ LocalDateTime agora = LocalDateTime.now();
 System.out.println(agora.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 ```
 
-### Exemplo com `LocalDate`
+#### Exemplo com `LocalDate`
 
 ```java
 import java.time.LocalDate;
@@ -1218,7 +1328,7 @@ System.out.println(texto); // 16/03/2026
 
 ---
 
-## 14. Tabela de padrões de formatação de data e hora
+### 7.2 Tabela de padrões de formatação de data e hora
 
 Os símbolos abaixo são muito usados em `SimpleDateFormat` e `DateTimeFormatter`. Em geral, o uso moderno deve priorizar `DateTimeFormatter`.
 
@@ -1248,7 +1358,7 @@ Os símbolos abaixo são muito usados em `SimpleDateFormat` e `DateTimeFormatter
 | `z` | nome curto do fuso | `BRT` |
 | `XXX` | offset ISO 8601 | `-03:00` |
 
-### Exemplos comuns de padrões
+#### Exemplos comuns de padrões
 
 | Padrão | Resultado de exemplo |
 |---|---|
@@ -1258,13 +1368,72 @@ Os símbolos abaixo são muito usados em `SimpleDateFormat` e `DateTimeFormatter
 | `yyyy-MM-dd HH:mm:ss` | `2026-03-16 10:45:30` |
 | `dd 'de' MMMM 'de' yyyy` | `16 de março de 2026` |
 
+#### 7.2.1 Formato relativo de data e hora
+
+No Java padrão, `DateTimeFormatter` e `SimpleDateFormat` não possuem um padrão nativo equivalente a textos como `há 2 horas`, `há 3 dias` ou `agora mesmo`.
+
+Quando esse tipo de saída for necessário, o mais comum é implementar a lógica manualmente com `Duration`, `ChronoUnit` ou regras próprias de negócio.
+
+Exemplo simples:
+
+```java
+import java.time.Duration;
+import java.time.LocalDateTime;
+
+LocalDateTime dataHora = LocalDateTime.now().minusHours(3).minusMinutes(15);
+LocalDateTime agora = LocalDateTime.now();
+
+Duration duration = Duration.between(dataHora, agora);
+
+String textoRelativo;
+if (duration.toMinutes() < 1) {
+    textoRelativo = "agora mesmo";
+} else if (duration.toHours() < 1) {
+    textoRelativo = "há " + duration.toMinutes() + " minutos";
+} else if (duration.toDays() < 1) {
+    textoRelativo = "há " + duration.toHours() + " horas";
+} else {
+    textoRelativo = "há " + duration.toDays() + " dias";
+}
+
+System.out.println(textoRelativo); // há 3 horas
+```
+
+Exemplo com método utilitário:
+
+```java
+import java.time.Duration;
+import java.time.LocalDateTime;
+
+public static String formatarRelativo(LocalDateTime dataHora) {
+    Duration duration = Duration.between(dataHora, LocalDateTime.now());
+
+    if (duration.toMinutes() < 1) {
+        return "agora mesmo";
+    }
+    if (duration.toHours() < 1) {
+        long minutos = duration.toMinutes();
+        return minutos == 1 ? "há 1 minuto" : "há " + minutos + " minutos";
+    }
+    if (duration.toDays() < 1) {
+        long horas = duration.toHours();
+        return horas == 1 ? "há 1 hora" : "há " + horas + " horas";
+    }
+
+    long dias = duration.toDays();
+    return dias == 1 ? "há 1 dia" : "há " + dias + " dias";
+}
+```
+
+Para casos mais completos, você pode expandir a lógica para semanas, meses, anos e também para textos futuros como `em 2 horas`.
+
 ---
 
-## 15. Formato ISO 8601
+### 7.3 Formato ISO 8601
 
 ISO 8601 é um padrão internacional muito usado em APIs, bancos de dados, logs e integração entre sistemas.
 
-### Exemplos comuns
+#### Exemplos comuns
 
 | Tipo | Exemplo |
 |---|---|
@@ -1273,7 +1442,7 @@ ISO 8601 é um padrão internacional muito usado em APIs, bancos de dados, logs 
 | data e hora com offset | `2026-03-16T10:45:30-03:00` |
 | instante UTC | `2026-03-16T13:45:30Z` |
 
-### Exemplos com `DateTimeFormatter`
+#### Exemplos com `DateTimeFormatter`
 
 ```java
 import java.time.LocalDate;
@@ -1294,11 +1463,11 @@ System.out.println(offsetDateTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
 
 ---
 
-## 16. Converter entre APIs antigas e modernas
+### 7.4 Converter entre APIs antigas e modernas
 
 Em sistemas reais, muitas vezes é necessário converter entre `Date` e `java.time`.
 
-### `Date` para `Instant`
+#### `Date` para `Instant`
 
 ```java
 import java.util.Date;
@@ -1308,7 +1477,7 @@ Date date = new Date();
 Instant instant = date.toInstant();
 ```
 
-### `Instant` para `Date`
+#### `Instant` para `Date`
 
 ```java
 import java.util.Date;
@@ -1318,7 +1487,7 @@ Instant instant = Instant.now();
 Date date = Date.from(instant);
 ```
 
-### `Date` para `LocalDateTime`
+#### `Date` para `LocalDateTime`
 
 ```java
 import java.time.LocalDateTime;
@@ -1334,9 +1503,9 @@ LocalDateTime ldt = date.toInstant()
 
 ---
 
-## 17. Quando usar cada API de datas
+### 7.5 Quando usar cada API de datas
 
-### Use `java.time` em código novo
+#### Use `java.time` em código novo
 
 Prefira:
 - `LocalDate` para datas sem hora
@@ -1344,7 +1513,7 @@ Prefira:
 - `ZonedDateTime` quando o fuso importa
 - `Instant` para timestamps e integração técnica
 
-### Use `Date` e `Calendar` apenas quando necessário
+#### Use `Date` e `Calendar` apenas quando necessário
 
 Casos comuns:
 - sistemas legados
@@ -1353,7 +1522,820 @@ Casos comuns:
 
 ---
 
-## 18. Resumo rápido
+## 8. Uso do `Optional`
+
+`Optional` é um contêiner que pode ou não possuir um valor. Ele ajuda a deixar explícito que determinado resultado pode estar ausente, reduzindo o uso descuidado de `null`.
+
+### 8.1 Criando `Optional`
+
+```java
+import java.util.Optional;
+
+Optional<String> nome1 = Optional.of("Ana");
+Optional<String> nome2 = Optional.ofNullable(null);
+Optional<String> nome3 = Optional.empty();
+```
+
+### 8.2 Obtendo valores com segurança
+
+```java
+import java.util.Optional;
+
+Optional<String> nome = Optional.ofNullable("Bruno");
+
+System.out.println(nome.orElse("Sem nome"));
+System.out.println(nome.orElseGet(() -> "Valor padrão"));
+```
+
+Quando você quer lançar erro se o valor não existir:
+
+```java
+String valor = nome.orElseThrow(() -> new IllegalArgumentException("Nome obrigatório"));
+```
+
+### 8.3 Executando lógica apenas se houver valor
+
+```java
+Optional<String> email = Optional.of("contato@email.com");
+
+email.ifPresent(valor -> System.out.println("Enviando para: " + valor));
+```
+
+### 8.4 Transformando valores com `map` e `filter`
+
+```java
+Optional<String> nome = Optional.of("  carla  ");
+
+String resultado = nome
+    .map(String::trim)
+    .filter(valor -> !valor.isBlank())
+    .map(String::toUpperCase)
+    .orElse("SEM NOME");
+
+System.out.println(resultado); // CARLA
+```
+
+### 8.5 Exemplo prático com busca de usuário
+
+```java
+import java.util.Optional;
+
+public Optional<String> buscarNomePorId(Long id) {
+    if (id == 1L) {
+        return Optional.of("Ana");
+    }
+    return Optional.empty();
+}
+
+String nome = buscarNomePorId(2L)
+    .orElse("Usuário não encontrado");
+
+System.out.println(nome);
+```
+
+### 8.6 Boas práticas
+
+- use `Optional` principalmente em retornos de métodos
+- evite usar `Optional` como atributo de entidade, parâmetro de método ou em serialização simples
+- não use `get()` sem antes ter certeza de que o valor existe
+
+---
+
+## 9. Interface funcional e classes auxiliares
+
+Interfaces funcionais são interfaces com **um único método abstrato**. Elas são muito usadas com lambdas, method references, `Stream API` e programação funcional em Java.
+
+### 9.1 Exemplo de interface funcional
+
+```java
+@FunctionalInterface
+public interface Validador {
+    boolean testar(String valor);
+}
+```
+
+Uso com lambda:
+
+```java
+Validador validador = texto -> texto != null && !texto.isBlank();
+
+System.out.println(validador.testar("Java")); // true
+```
+
+### 9.2 Interfaces funcionais prontas do Java
+
+| Tipo | Entrada | Saída | Uso comum |
+|---|---|---|---|
+| `Predicate<T>` | `T` | `boolean` | testar condição |
+| `BiPredicate<T, U>` | `T`, `U` | `boolean` | testar condição com dois valores |
+| `Function<T, R>` | `T` | `R` | transformar valor |
+| `BiFunction<T, U, R>` | `T`, `U` | `R` | transformar dois valores em um resultado |
+| `Consumer<T>` | `T` | nada | consumir valor, normalmente com efeito colateral |
+| `BiConsumer<T, U>` | `T`, `U` | nada | consumir dois valores |
+| `Supplier<T>` | nada | `T` | fornecer/criar valor |
+| `UnaryOperator<T>` | `T` | `T` | transformar mantendo o mesmo tipo |
+| `BinaryOperator<T>` | `T`, `T` | `T` | combinar dois valores do mesmo tipo |
+
+### 9.3 Exemplos com tipos mais usados
+
+#### `Predicate`
+
+```java
+import java.util.function.Predicate;
+
+Predicate<String> textoValido = texto -> texto != null && !texto.isBlank();
+System.out.println(textoValido.test("Java")); // true
+```
+
+#### `Function`
+
+```java
+import java.util.function.Function;
+
+Function<String, Integer> tamanho = texto -> texto.length();
+System.out.println(tamanho.apply("Java")); // 4
+```
+
+#### `BiFunction`
+
+```java
+import java.util.function.BiFunction;
+
+BiFunction<Integer, Integer, Integer> soma = (a, b) -> a + b;
+System.out.println(soma.apply(10, 20)); // 30
+```
+
+#### `Supplier`
+
+```java
+import java.util.UUID;
+import java.util.function.Supplier;
+
+Supplier<String> geradorId = () -> UUID.randomUUID().toString();
+System.out.println(geradorId.get());
+```
+
+#### `Consumer`
+
+```java
+import java.util.function.Consumer;
+
+Consumer<String> imprimir = valor -> System.out.println("Valor: " + valor);
+imprimir.accept("Java moderno");
+```
+
+#### `UnaryOperator`
+
+```java
+import java.util.function.UnaryOperator;
+
+UnaryOperator<String> maiusculo = texto -> texto.toUpperCase();
+System.out.println(maiusculo.apply("java")); // JAVA
+```
+
+### 9.4 Compondo funções
+
+```java
+import java.util.function.Function;
+
+Function<String, String> trim = String::trim;
+Function<String, String> upper = String::toUpperCase;
+
+Function<String, String> normalizar = trim.andThen(upper);
+
+System.out.println(normalizar.apply("  java  ")); // JAVA
+```
+
+---
+
+## 10. Uso do `Stream API` e `Collectors`
+
+A `Stream API` permite processar coleções e sequências de dados de forma declarativa, encadeando operações como filtro, transformação, ordenação e agrupamento.
+
+### 10.1 Consumindo dados com `Stream`
+
+```java
+import java.util.List;
+
+List<String> nomes = List.of("Ana", "Bruno", "Carla", "Daniel");
+
+nomes.stream()
+    .filter(nome -> nome.length() > 4)
+    .map(String::toUpperCase)
+    .forEach(System.out::println);
+```
+
+### 10.2 Gerando dados com `Stream`
+
+#### Com `Stream.of`
+
+```java
+import java.util.stream.Stream;
+
+Stream.of("Java", "Spring", "JPA")
+    .forEach(System.out::println);
+```
+
+#### Com `Stream.iterate`
+
+```java
+import java.util.stream.Stream;
+
+Stream.iterate(1, n -> n + 1)
+    .limit(5)
+    .forEach(System.out::println);
+```
+
+#### Com `Stream.generate`
+
+```java
+import java.util.UUID;
+import java.util.stream.Stream;
+
+Stream.generate(() -> UUID.randomUUID().toString())
+    .limit(3)
+    .forEach(System.out::println);
+```
+
+### 10.3 Operações intermediárias comuns
+
+- `filter` para filtrar elementos
+- `map` para transformar elementos
+- `flatMap` para achatar estruturas
+- `sorted` para ordenar
+- `distinct` para remover duplicidade
+- `limit` e `skip` para paginação simples
+
+Exemplo com `flatMap`:
+
+```java
+import java.util.List;
+
+List<List<String>> grupos = List.of(
+    List.of("Ana", "Bruno"),
+    List.of("Carla", "Daniel")
+);
+
+grupos.stream()
+    .flatMap(List::stream)
+    .forEach(System.out::println);
+```
+
+### 10.4 Operações terminais
+
+```java
+import java.util.List;
+
+List<Integer> numeros = List.of(1, 2, 3, 4, 5);
+
+long quantidade = numeros.stream().count();
+boolean existePar = numeros.stream().anyMatch(n -> n % 2 == 0);
+int soma = numeros.stream().reduce(0, Integer::sum);
+
+System.out.println(quantidade); // 5
+System.out.println(existePar);  // true
+System.out.println(soma);       // 15
+```
+
+### 10.5 Coletando dados com `Collectors`
+
+#### Gerando lista transformada
+
+```java
+import java.util.List;
+
+List<String> nomes = List.of("ana", "bruno", "carla");
+
+List<String> maiusculos = nomes.stream()
+    .map(String::toUpperCase)
+    .toList();
+
+System.out.println(maiusculos);
+```
+
+#### Usando `Collectors.joining`
+
+```java
+import java.util.List;
+import java.util.stream.Collectors;
+
+String texto = List.of("Java", "Spring", "Hibernate").stream()
+    .collect(Collectors.joining(", "));
+
+System.out.println(texto); // Java, Spring, Hibernate
+```
+
+#### Usando `Collectors.groupingBy`
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+List<String> nomes = List.of("Ana", "Bruno", "Bia", "Carlos");
+
+Map<Integer, List<String>> agrupados = nomes.stream()
+    .collect(Collectors.groupingBy(String::length));
+
+System.out.println(agrupados);
+```
+
+#### Usando `Collectors.partitioningBy`
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+Map<Boolean, List<Integer>> particionado = List.of(1, 2, 3, 4, 5, 6).stream()
+    .collect(Collectors.partitioningBy(n -> n % 2 == 0));
+
+System.out.println(particionado);
+```
+
+#### Usando `Collectors.teeing`
+
+`teeing` permite executar dois coletores ao mesmo tempo sobre o mesmo stream e combinar os resultados no final.
+
+```java
+import java.util.List;
+import java.util.stream.Collectors;
+
+record Resumo(int quantidade, int soma) {}
+
+Resumo resumo = List.of(10, 20, 30, 40).stream()
+    .collect(Collectors.teeing(
+        Collectors.collectingAndThen(Collectors.counting(), Long::intValue),
+        Collectors.summingInt(Integer::intValue),
+        Resumo::new
+    ));
+
+System.out.println(resumo.quantidade()); // 4
+System.out.println(resumo.soma());       // 100
+```
+
+#### Usando `Collectors.counting`
+
+```java
+import java.util.List;
+import java.util.stream.Collectors;
+
+long quantidade = List.of("Ana", "Bruno", "Carla").stream()
+    .collect(Collectors.counting());
+
+System.out.println(quantidade); // 3
+```
+
+#### Usando `Collectors.mapping`
+
+`mapping` é útil quando você quer transformar os elementos durante outra coleta, como um agrupamento.
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+record Pessoa(String nome, String cidade) {}
+
+List<Pessoa> pessoas = List.of(
+    new Pessoa("Ana", "São Paulo"),
+    new Pessoa("Bruno", "Rio"),
+    new Pessoa("Carla", "São Paulo")
+);
+
+Map<String, List<String>> nomesPorCidade = pessoas.stream()
+    .collect(Collectors.groupingBy(
+        Pessoa::cidade,
+        Collectors.mapping(Pessoa::nome, Collectors.toList())
+    ));
+
+System.out.println(nomesPorCidade);
+```
+
+#### Usando `Collectors.summarizingInt`
+
+```java
+import java.util.IntSummaryStatistics;
+import java.util.List;
+import java.util.stream.Collectors;
+
+IntSummaryStatistics estatisticas = List.of("Ana", "Bruno", "Carla").stream()
+    .collect(Collectors.summarizingInt(String::length));
+
+System.out.println(estatisticas.getCount()); // 3
+System.out.println(estatisticas.getMin());   // 3
+System.out.println(estatisticas.getMax());   // 5
+System.out.println(estatisticas.getAverage());
+```
+
+#### Usando `Collectors.toMap`
+
+```java
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+record Produto(Long id, String nome) {}
+
+Map<Long, String> produtosPorId = List.of(
+    new Produto(1L, "Mouse"),
+    new Produto(2L, "Teclado"),
+    new Produto(3L, "Monitor")
+).stream().collect(Collectors.toMap(Produto::id, Produto::nome));
+
+System.out.println(produtosPorId);
+```
+
+#### Convertendo `ArrayList` em `LinkedHashSet`
+
+Esse padrão é útil quando você quer remover duplicidade sem perder a ordem original de inserção.
+
+```java
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.stream.Collectors;
+
+ArrayList<String> nomes = new ArrayList<>(List.of("Ana", "Bruno", "Ana", "Carla"));
+
+LinkedHashSet<String> nomesUnicos = nomes.stream()
+    .collect(Collectors.toCollection(LinkedHashSet::new));
+
+System.out.println(nomesUnicos); // [Ana, Bruno, Carla]
+```
+
+#### Convertendo `ArrayList` de objetos em `LinkedHashMap` e vice-versa
+
+Esse padrão é útil quando você quer indexar objetos por uma chave, como `id`, sem perder a ordem de inserção.
+
+```java
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+record Usuario(Integer id, String nome) {}
+
+ArrayList<Usuario> usuarios = new ArrayList<>(List.of(
+    new Usuario(3, "Carla"),
+    new Usuario(1, "Ana"),
+    new Usuario(2, "Bruno")
+));
+
+LinkedHashMap<Integer, Usuario> usuariosPorId = usuarios.stream()
+    .collect(Collectors.toMap(
+        Usuario::id,
+        usuario -> usuario,
+        (anterior, atual) -> atual,
+        LinkedHashMap::new
+    ));
+
+System.out.println(usuariosPorId);
+```
+
+Para voltar de `Map` para `ArrayList`:
+
+```java
+ArrayList<Usuario> listaNovamente = usuariosPorId.values().stream()
+    .collect(Collectors.toCollection(ArrayList::new));
+
+System.out.println(listaNovamente);
+```
+
+Se você precisar só das chaves ou só dos valores:
+
+```java
+ArrayList<Integer> ids = usuariosPorId.keySet().stream()
+    .collect(Collectors.toCollection(ArrayList::new));
+
+ArrayList<Usuario> valores = usuariosPorId.values().stream()
+    .collect(Collectors.toCollection(ArrayList::new));
+```
+
+#### Usando `Collectors.collectingAndThen`
+
+`collectingAndThen` permite aplicar uma transformação final depois da coleta.
+
+```java
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+Set<String> nomesNormalizados = List.of(" ana ", " bruno ", " ana ").stream()
+    .map(String::trim)
+    .collect(Collectors.collectingAndThen(
+        Collectors.toSet(),
+        Set::copyOf
+    ));
+
+System.out.println(nomesNormalizados);
+```
+
+### 10.6 Observações práticas
+
+- streams não alteram a coleção original por si só
+- operações intermediárias são avaliadas de forma lazy
+- `toList()` é muito útil em código moderno
+- `Collectors` ajudam a transformar o resultado em listas, mapas, agrupamentos e textos
+
+---
+
+## 11. Uso do `CompletableFuture`
+
+`CompletableFuture` é usado para representar tarefas assíncronas e encadear etapas sem bloquear o fluxo principal o tempo todo.
+
+### 11.1 Exemplo básico com `supplyAsync`
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    return "Resultado assíncrono";
+});
+
+System.out.println(future.join());
+```
+
+### 11.2 Encadeando etapas
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> "java")
+    .thenApply(String::toUpperCase)
+    .thenApply(valor -> "Tecnologia: " + valor);
+
+System.out.println(future.join()); // Tecnologia: JAVA
+```
+
+### 11.3 Consumindo resultado
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture.supplyAsync(() -> "Processamento concluído")
+    .thenAccept(System.out::println)
+    .join();
+```
+
+### 11.4 Tratando erros
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
+    if (true) {
+        throw new RuntimeException("Falha no processamento");
+    }
+    return 10;
+}).exceptionally(ex -> {
+    System.out.println("Erro: " + ex.getMessage());
+    return 0;
+});
+
+System.out.println(future.join()); // 0
+```
+
+### 11.5 Combinando tarefas
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<Integer> future1 = CompletableFuture.supplyAsync(() -> 10);
+CompletableFuture<Integer> future2 = CompletableFuture.supplyAsync(() -> 20);
+
+CompletableFuture<Integer> soma = future1.thenCombine(future2, Integer::sum);
+
+System.out.println(soma.join()); // 30
+```
+
+### 11.6 Esperando múltiplas tarefas
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<String> f1 = CompletableFuture.supplyAsync(() -> "A");
+CompletableFuture<String> f2 = CompletableFuture.supplyAsync(() -> "B");
+CompletableFuture<String> f3 = CompletableFuture.supplyAsync(() -> "C");
+
+CompletableFuture.allOf(f1, f2, f3).join();
+
+System.out.println(f1.join());
+System.out.println(f2.join());
+System.out.println(f3.join());
+```
+
+### 11.7 Quando usar com cuidado
+
+- `CompletableFuture` é útil para I/O, integrações e composição assíncrona
+- nem todo código precisa ser assíncrono
+- encadeamentos muito complexos podem ficar difíceis de ler
+- em aplicações maiores, vale considerar o executor usado nas tarefas assíncronas
+
+---
+
+## 12. Exceções em Java
+
+Exceção é um objeto que representa uma condição anormal durante a execução do programa, como erro de leitura de arquivo, acesso inválido a índice ou argumento inconsistente.
+
+Em Java, exceções ajudam a:
+- sinalizar problemas de forma padronizada
+- separar fluxo normal de fluxo de erro
+- permitir tratamento local ou propagação com `throws`
+
+### 12.1 Exemplo básico com `try/catch`
+
+```java
+try {
+    int resultado = 10 / 0;
+    System.out.println(resultado);
+} catch (ArithmeticException ex) {
+    System.out.println("Erro: " + ex.getMessage());
+}
+```
+
+### 12.2 Checked vs unchecked
+
+#### Checked exceptions
+
+São exceções verificadas em tempo de compilação. Normalmente representam situações externas ou recuperáveis, como falha de I/O, acesso a arquivo ou banco.
+
+O compilador exige que você:
+- trate com `try/catch`, ou
+- declare com `throws`
+
+Exemplo:
+
+```java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+public String lerArquivo(Path caminho) throws IOException {
+    return Files.readString(caminho);
+}
+```
+
+#### Unchecked exceptions
+
+São exceções que herdam de `RuntimeException`. O compilador não obriga tratamento explícito.
+
+Elas costumam indicar:
+- erro de programação
+- uso inválido da API
+- estado inconsistente
+
+Exemplo:
+
+```java
+public void definirIdade(int idade) {
+    if (idade < 0) {
+        throw new IllegalArgumentException("Idade não pode ser negativa");
+    }
+}
+```
+
+### 12.3 Quando usar cada tipo
+
+- use checked exception quando o chamador pode reagir de forma útil, como tentar novamente, pedir outro arquivo ou informar o usuário
+- use unchecked exception quando o problema indica erro de uso, argumento inválido ou estado incorreto do sistema
+- prefira mensagens claras e específicas ao lançar exceções
+- evite capturar exceções genéricas demais sem necessidade
+
+### 12.4 Propagando com `throws`
+
+```java
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+public List<String> carregarLinhas(Path caminho) throws IOException {
+    return Files.readAllLines(caminho);
+}
+```
+
+### 12.5 Lançando exceções com `throw`
+
+```java
+public void validarNome(String nome) {
+    if (nome == null || nome.isBlank()) {
+        throw new IllegalArgumentException("Nome obrigatório");
+    }
+}
+```
+
+### 12.6 `try-catch-finally`
+
+O bloco `finally` é executado mesmo quando ocorre exceção, e costuma ser usado para limpeza de recursos quando não se usa `try-with-resources`.
+
+```java
+java.io.BufferedReader reader = null;
+
+try {
+    reader = java.nio.file.Files.newBufferedReader(java.nio.file.Path.of("dados.txt"));
+    System.out.println(reader.readLine());
+} catch (java.io.IOException ex) {
+    System.out.println("Falha ao ler arquivo");
+} finally {
+    if (reader != null) {
+        try {
+            reader.close();
+        } catch (java.io.IOException ex) {
+            System.out.println("Falha ao fechar arquivo");
+        }
+    }
+}
+```
+
+### 12.7 Exemplo de exceção customizada
+
+```java
+public class RegraNegocioException extends RuntimeException {
+    public RegraNegocioException(String mensagem) {
+        super(mensagem);
+    }
+}
+```
+
+Uso:
+
+```java
+public void sacar(double valor) {
+    if (valor <= 0) {
+        throw new RegraNegocioException("Valor de saque inválido");
+    }
+}
+```
+
+### 12.8 Hierarquia simplificada das exceções comuns
+
+```mermaid
+classDiagram
+    class Throwable
+    class Error
+    class Exception
+    class RuntimeException
+    class IOException
+    class SQLException
+    class ParseException
+    class NullPointerException
+    class IllegalArgumentException
+    class IllegalStateException
+    class IndexOutOfBoundsException
+    class NumberFormatException
+    class ArithmeticException
+
+    Throwable <|-- Error
+    Throwable <|-- Exception
+    Exception <|-- RuntimeException
+    Exception <|-- IOException
+    Exception <|-- SQLException
+    Exception <|-- ParseException
+    RuntimeException <|-- NullPointerException
+    RuntimeException <|-- IllegalArgumentException
+    RuntimeException <|-- IllegalStateException
+    RuntimeException <|-- IndexOutOfBoundsException
+    RuntimeException <|-- NumberFormatException
+    RuntimeException <|-- ArithmeticException
+```
+
+Observações:
+- `Error` normalmente representa problemas graves da JVM e não costuma ser tratado no código de negócio
+- `Exception` reúne exceções tratáveis da aplicação
+- `RuntimeException` concentra as unchecked exceptions mais comuns do dia a dia
+
+### 12.9 Tabela de exceções padrão do Java
+
+| Exceção | Tipo | Checked ou unchecked | Situação comum de uso |
+|---|---|---|---|
+| `IOException` | I/O | checked | leitura e escrita de arquivos, streams e sockets |
+| `SQLException` | banco de dados | checked | falhas em acesso JDBC |
+| `ParseException` | parsing | checked | falha ao interpretar texto em APIs antigas |
+| `ClassNotFoundException` | reflexão/carregamento | checked | falha ao carregar classe dinamicamente |
+| `InterruptedException` | concorrência | checked | interrupção de thread em espera |
+| `NullPointerException` | runtime | unchecked | acesso a método ou atributo em referência nula |
+| `IllegalArgumentException` | runtime | unchecked | argumento inválido passado a método |
+| `IllegalStateException` | runtime | unchecked | objeto em estado impróprio para a operação |
+| `IndexOutOfBoundsException` | runtime | unchecked | índice inválido em lista, array ou string |
+| `NumberFormatException` | runtime | unchecked | conversão inválida de texto para número |
+| `ArithmeticException` | runtime | unchecked | erro aritmético, como divisão por zero |
+| `UnsupportedOperationException` | runtime | unchecked | operação não suportada, como alterar coleção imutável |
+| `ConcurrentModificationException` | runtime | unchecked | alteração indevida de coleção durante iteração |
+| `NoSuchElementException` | runtime | unchecked | elemento ausente em iterator, scanner ou optional usado incorretamente |
+
+### 12.10 Boas práticas
+
+- capture a exceção mais específica possível
+- não esconda erro importante com `catch (Exception)` sem necessidade
+- preserve a causa original quando relançar exceções
+- use checked exceptions para cenários recuperáveis e unchecked para erros de uso/regra
+- escreva mensagens que ajudem a diagnosticar o problema
+
+---
+
+## 13. Resumo rápido
 
 ### Strings
 - `isBlank()` verifica se a string está vazia ou só com espaços
@@ -1388,35 +2370,44 @@ Casos comuns:
 - `Date` e `Calendar` são APIs antigas
 - `java.time` é a abordagem moderna recomendada
 - `DateTimeFormatter` é a melhor opção para formatar datas em código novo
+- `Duration` é útil para intervalos de tempo
+- `ChronoUnit` ajuda a calcular diferenças em unidades como dias e anos
+- `Period` é útil para representar diferenças em anos, meses e dias
 - ISO 8601 é o formato mais comum em APIs e integrações
 
----
+### `Optional`
+- deixa explícito quando um valor pode estar ausente
+- `orElse`, `orElseGet`, `orElseThrow` e `ifPresent` são operações comuns
+- `map` e `filter` ajudam a transformar e validar o conteúdo com segurança
 
-## 19. Dependência Maven para Apache Commons Lang
+### Interfaces funcionais
+- lambdas e method references normalmente usam interfaces funcionais
+- `Predicate`, `Function`, `BiFunction`, `Supplier` e `Consumer` estão entre os tipos mais usados
+- composição com `andThen` e operações similares ajuda a montar fluxos reutilizáveis
 
-Caso queira usar `StringUtils`, adicione a dependência abaixo ao `pom.xml`:
+### `Stream API` e `Collectors`
+- streams facilitam filtrar, transformar, ordenar e consumir dados
+- `Stream.of`, `iterate` e `generate` ajudam a gerar sequências
+- `Collectors` permitem agrupar, particionar, juntar textos e combinar resultados com `teeing`
 
-```xml
-<dependency>
-    <groupId>org.apache.commons</groupId>
-    <artifactId>commons-lang3</artifactId>
-    <version>3.17.0</version>
-</dependency>
-```
+### `CompletableFuture`
+- representa tarefas assíncronas e permite encadear etapas
+- `thenApply`, `thenAccept`, `thenCombine` e `allOf` aparecem bastante no uso prático
+- `exceptionally` ajuda a tratar falhas em fluxos assíncronos
 
----
+### Exceções
+- exceções representam problemas durante a execução do programa
+- checked exceptions exigem tratamento ou `throws`
+- unchecked exceptions normalmente indicam erro de programação ou uso incorreto
+- `try/catch`, `throw` e `throws` são mecanismos centrais do tratamento de erros
 
-## 20. Sugestão de estudo complementar
+### 13.1 Sugestão de estudo complementar
 
 Depois destes tópicos, vale estudar também:
-- `Optional`
-- `Stream API`
 - `record`
 - `var`
 - `switch` expressions
 - `try-with-resources`
-- `java.time`
 - `Comparator`
-- `Collectors`
 
 Esses recursos ajudam bastante a escrever código mais moderno, legível e seguro em Java.
