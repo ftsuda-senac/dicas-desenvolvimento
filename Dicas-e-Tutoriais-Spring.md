@@ -1,5 +1,26 @@
 # Spring
 
+## Sumário
+
+* [Arquitetura](#arquitetura)
+* [Core e Configuração](#core-e-configuração)
+* [MVC](#mvc)
+* [Data JPA](#data-jpa)
+* [Security](#security)
+* [Configuração e Properties](#configuração-e-properties)
+* [Referências gerais](#referências-gerais)
+* [Cenários comuns](#cenários-comuns)
+* [Ecossistema, testes e operação](#ecossistema-testes-e-operação)
+* [Java complementar](#java-complementar)
+* [Troubleshooting](#troubleshooting)
+
+## Como ler este documento
+
+* `[Recomendado]` indica prática que costuma ser boa escolha padrão.
+* `[Atenção]` indica armadilha comum, trade-off importante ou ponto que merece validação no projeto.
+* `[Exemplo]` indica snippet mínimo para começar ou lembrar da sintaxe.
+* `[Versão]` indica item que pode variar conforme a versão do Spring Boot, Spring Security, Spring Cloud ou da infraestrutura adotada.
+
 ## Arquitetura
 
 * 3-tier (Domain, Services, Presentation) -> Ver DDD ou Onion Architecture
@@ -31,12 +52,38 @@
         * Precedência das várias formas de configuração em https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.external-config
     * Uso de profiles (ver https://docs.spring.io/spring-boot/docs/current/reference/html/features.html#features.profiles)
 
-## Core
+## Decisões arquiteturais comuns
+
+* DTO vs Entity exposta
+    * [Recomendado] Preferir DTO para entrada e saída de dados em APIs e páginas, evitando acoplamento direto com a modelagem JPA.
+    * Expor Entity diretamente pode parecer mais rápido no começo, mas aumenta risco de vazamento de campos internos, problemas de serialização e acoplamento entre persistência e contrato externo.
+* Flyway vs Liquibase
+    * Flyway costuma ser mais simples de adotar e manter em cenários diretos de versionamento de banco.
+    * Liquibase costuma ser útil quando a equipe precisa de mais recursos de modelagem declarativa, diff e formatos alternativos além de SQL puro.
+* MVC vs WebFlux
+    * [Recomendado] Preferir Spring MVC na maioria dos CRUDs, sistemas corporativos e aplicações bloqueantes tradicionais.
+    * WebFlux tende a fazer mais sentido em cenários reativos, alto volume de I/O assíncrono ou quando o restante da stack já segue esse modelo.
+* JWT vs sessão
+    * Sessão costuma simplificar aplicações server-side tradicionais, especialmente quando autenticação, autorização e estado ficam centralizados no backend.
+    * JWT costuma ser útil em APIs stateless, integrações entre serviços e cenários distribuídos, mas exige mais cuidado com expiração, revogação e escopo.
+
+## Core e Configuração
 
 * Injeção de dependências
     * Processo de component scanning - Por padrão, segue subpackages a partir do package onde a classe principal do projeto se encontra
         * Caso haja classes fora do package principal, configurar o `scanBasePackages` em `@SpringBootApplication`
     * Nas camadas principais (Service e Controller), sempre que possível usar a injeção através de um construtor único e/ou método `set` (caso seja opcional) ao invés de usar o `@Autowired` diretamente no atributo - Facilita a escrita de testes (unitários/integração).
+    * [Exemplo]
+    ```java
+    @Service
+    public class PedidoService {
+        private final PedidoRepository pedidoRepository;
+
+        public PedidoService(PedidoRepository pedidoRepository) {
+            this.pedidoRepository = pedidoRepository;
+        }
+    }
+    ```
     * Criar beans programaticamente através de classes anotadas com `@Configuration` e métodos anotados com `@Bean`
     * Usar valores padrões nas anotações `@Value`
     ```java
@@ -54,7 +101,7 @@
 
 * `@Controller` e `@RestController`
 * Informações do Spring MVC Auto-configuration - https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.auto-configuration
-    * **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que implementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
+    * [Atenção] **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que implementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
         ```java
         @Configuration
         // @WebMvcConfig /* NÃO INCLUIR ESSA ANOTAÇÃO */
@@ -70,6 +117,21 @@
         }
         ```
 * Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
+    * [Exemplo]
+    ```java
+    @RestControllerAdvice
+    public class ApiExceptionHandler {
+
+        @ExceptionHandler(RecursoNaoEncontradoException.class)
+        @ResponseStatus(HttpStatus.NOT_FOUND)
+        ProblemDetail handleNotFound(RecursoNaoEncontradoException ex) {
+            ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
+            problem.setTitle("Recurso não encontrado");
+            problem.setDetail(ex.getMessage());
+            return problem;
+        }
+    }
+    ```
 * Escopo dos beans
     * `@RequestScope`
     * `@SessionScope` (cuidado ao usar em aplicações REST)
@@ -78,6 +140,7 @@
 * i18n para textos estáticos/validações
     * Uso de i18n em dados gerenciados requer atenção na modelagem para suportá-lo
 * OpenAPI/Swagger UI
+    * [Recomendado] Usar para documentação navegável do contrato HTTP, principalmente em APIs REST consumidas por front-end ou integração externa.
 * Upload e mapeamento para acesso via HTTP
     * Integração com serviços externos (ex: AWS S3)
 * Utilitários
@@ -111,6 +174,8 @@
 * HATEOAS
 
 ## Data JPA
+
+### Repositórios e consultas
 
 * Entender a hierarquia das interfaces `Repository` <- `CrudRepository` <- `PagingAndSortingRepository` <- `JpaRepository` e verificar as funcionalidades já fornecidas por padrão https://docs.spring.io/spring-data/jpa/reference/repositories/core-concepts.html
 
@@ -190,19 +255,33 @@ JpaRepository <|-- MeuRepository
         * Desabilitar CSRF e X-Frame-Options no SecurityFilterChain
         * Exemplo de configuração em https://docs.spring.io/spring-boot/reference/data/sql.html#data.sql.h2-web-console.spring-security
 
+### Mapeamento, transações e desempenho
+
 * Outras dicas e pontos de atenção
     * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/ antigo `javax.persistence`) e evitar usar anotações específicas do Hibernate.
-    * Uso da configuração `spring.jpa.open-in-view=false` - recomendado para evitar o padrão Open Session/EntityManager in View e deixar explícitos os pontos de carregamento de dados e relacionamentos.
+    * [Recomendado] Uso da configuração `spring.jpa.open-in-view=false` - recomendado para evitar o padrão Open Session/EntityManager in View e deixar explícitos os pontos de carregamento de dados e relacionamentos.
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
         * Em projetos Spring, preferir `org.springframework.transaction.annotation.Transactional` quando for necessário usar recursos específicos como `propagation`, `isolation`, `readOnly` e `timeout`.
             * https://www.baeldung.com/spring-vs-jta-transactional
             * https://stackoverflow.com/a/62702146
+        * [Exemplo]
+        ```java
+        @Service
+        public class PedidoService {
+
+            @Transactional
+            public Pedido criar(Pedido pedido) {
+                // validacoes e regras de negocio
+                return pedidoRepository.save(pedido);
+            }
+        }
+        ```
     * Mapeamento das entidades com annotations do JPA
         * Fetchs EAGER, LAZY e como configurar fetch nas consultas usando Entity Graph
             * Por padrão, são adotados as seguintes configurações:
                 * `*toOne` - EAGER
                 * `*toMany`- LAZY
-            * Atentar ao uso do "fetch EAGER" nas anotações de relacionamento (`@OneToOne`, `@OneToMany`/`@ManyToOne` e `@ManyToMany`). Se usado incorretamente, pode ocasionar problema sérios de desempenho. Sempre dar preferência ao uso do "fetch LAZY" e quando necessário fazer o fetch manualmente usando JOIN FETCH do JPQL ou usar `@EntityGraph` ou `@NamedEntityGraph`.
+            * [Atenção] Atentar ao uso do "fetch EAGER" nas anotações de relacionamento (`@OneToOne`, `@OneToMany`/`@ManyToOne` e `@ManyToMany`). Se usado incorretamente, pode ocasionar problema sérios de desempenho. Sempre dar preferência ao uso do "fetch LAZY" e quando necessário fazer o fetch manualmente usando JOIN FETCH do JPQL ou usar `@EntityGraph` ou `@NamedEntityGraph`.
             * Nos relacionamentos `*toMany`, o uso de `Set` no lugar de `List` pode ajudar em alguns cenários de `MultipleBagFetchException`, mas não deve ser tratado como regra geral, pois o impacto depende do mapeamento e da estratégia de busca adotada [ref1](https://stackoverflow.com/questions/4334970/hibernate-throws-multiplebagfetchexception-cannot-simultaneously-fetch-multipl), [ref2](https://www.baeldung.com/java-hibernate-multiplebagfetchexception) e [ref3](https://vladmihalcea.com/hibernate-multiplebagfetchexception/)
         * Uso do Cascade e orphanRemoval
         * IDs compostos para relacionamentos many-to-many "manuais" + campos extras na relação
@@ -224,6 +303,13 @@ JpaRepository <|-- MeuRepository
         * Representar os dados para aplicações externas através de DTOs
         * Pode-se usar Records para esse tipo de classe
             * Aproveitar o recurso de Projection do Spring Data para criar DTOs diretamente no Repository (https://docs.spring.io/spring-data/jpa/reference/repositories/projections.html e https://www.baeldung.com/spring-data-jpa-projections)
+        * [Exemplo]
+        ```java
+        public record PersonDto(Long id, String fullName) {}
+
+        @Query("SELECT new com.exemplo.PersonDto(p.id, p.fullName) FROM Person p")
+        List<PersonDto> findAllDto();
+        ```
         * Facilita a inclusão de anotações do Jackson2 para serialização/desserialização (https://www.baeldung.com/jackson-annotations)
         * Ferramentas para mapeamento automático
             * ModelMapper (http://modelmapper.org/)
@@ -231,6 +317,8 @@ JpaRepository <|-- MeuRepository
             * Apache Commons BeanUtils (https://commons.apache.org/proper/commons-beanutils/)
             * OBS: Dependendo da complexidade das Entities e DTOs, uso das ferramentas pode dificultar processo de debug
     * Uso de @QueryHint para melhorar desempenhos das queries JPA - https://medium.com/javaguides/boost-performance-in-spring-data-jpa-with-query-hints-7628b37be857
+
+### Migrações de banco de dados
 
 * Controle de versões do banco de dados
     * Liquibase
@@ -240,6 +328,8 @@ JpaRepository <|-- MeuRepository
         * https://medium.com/@ruxijitianu/database-version-control-liquibase-versus-flyway-9872d43ee5a4
 
 ## Security
+
+### Fundamentos e modelo
 
 * Arquitetura: Ver https://docs.spring.io/spring-security/reference/servlet/architecture.html
 * Modelo genérico de Usuários X Permissões (Roles)
@@ -294,6 +384,8 @@ JpaRepository <|-- MeuRepository
        UsuarioSistema  "0..*" o-- "0..*" Permissao
     ```
 
+### Implementação prática
+
 * Assuntos importantes:
     * Gerenciamento de sessão [ref](https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html)
     * Hash de senhas (ex: bcrypt)
@@ -311,11 +403,44 @@ JpaRepository <|-- MeuRepository
         * https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html
         * https://stackoverflow.com/a/73489680
         * https://stackoverflow.com/a/69290726
+    * [Exemplo]
+    ```java
+    @Bean
+    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        return http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/login", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                .anyRequest().authenticated()
+            )
+            .formLogin(Customizer.withDefaults())
+            .build();
+    }
+    ```
+        
+### OAuth2, OIDC e JWT
+
+* Claim "scope" separada por espaços: https://stackoverflow.com/a/62477585
+* Claims comuns: https://www.iana.org/assignments/jwt/jwt.xhtml e https://datatracker.ietf.org/doc/id/draft-jones-json-web-token-01.html
+* Scopes de requisição padrões: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
+* https://auth0.com/docs/get-started/authentication-and-authorization-flow/which-oauth-2-0-flow-should-i-use
+* https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
+* https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
+* https://medium.com/juliusbaerengineering/implementing-oauth2-oidc-and-its-agents-with-spring-15bfb1d46c76
+* https://betterprogramming.pub/building-secure-login-flow-with-oauth-2-openid-in-react-apps-ce6e8e29630a
+* https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html
+* https://www.oauth.com/oauth2-servers/server-side-apps/possible-errors/
+
+### Plataforma alternativa
+
 * Alternativa para autenticação/autorização: Keycloak https://www.keycloak.org/
 
-## Properties úteis
+## Configuração e Properties
+
+[Versão] Sempre conferir a documentação da versão do Spring Boot usada no projeto antes de copiar propriedades ou defaults.
 
 Ver https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html#appendix.application-properties . Se necessário, trocar "current" pela versão desejada.
+
+### Exemplo de `application.properties`
 
 ```
 #========= GENERAL CONFIG ==========
@@ -354,6 +479,8 @@ app.some-directory=${HOME}/directory
 app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
 ```
 
+### Exemplo de profile no `pom.xml`
+
 ```xml
 <!-- trecho do pom.xml com declaração do profile -->
 <profiles>
@@ -369,9 +496,12 @@ app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
     <!-- DECLARAR OUTROS PROFILES SEGUINDO MODELO ACIMA -->
 </profiles>
 ```
+
+### Conversão de valores
+
 Conversão de valores (duration, period, sizes): https://docs.spring.io/spring-boot/reference/features/external-config.html#features.external-config.typesafe-configuration-properties.conversion
 
-## Links úteis
+## Referências gerais
 
 Versões das dependências usadas nos seguintes links:
 * https://docs.spring.io/spring-boot/docs/current/reference/html/dependency-versions.html#appendix.dependency-versions
@@ -379,7 +509,9 @@ Versões das dependências usadas nos seguintes links:
 
 Se necessário, trocar "current" pela versão desejada
 
-## "Receitas de bolo" para requisitos de alguns microservices
+## Cenários comuns
+
+### Identidade e acesso
 
 * Autenticação/Autorização de acesso
     * Cadastro de novo usuário
@@ -401,11 +533,15 @@ Se necessário, trocar "current" pela versão desejada
         * Permissões de acesso - RBAC - Role Based Access Control (Role/Authority)
     * Notificações de eventos (criação, alteração, troca de senha, etc)
     * Uso de cookies secure + http only
+### Automação e workflow
+
 * Disparo de tarefas automatizadas com Quartz
     * Cadastrar tarefas
     * Ativar/Desativar execução dinamicamente
     * Registrar data/horario e resultados de execução
     * cron expressions
+### Conteúdo e engajamento
+
 * Sistema de comentários
     * Apresentação dos comentários
     * Entrada de comentário
@@ -416,6 +552,8 @@ Se necessário, trocar "current" pela versão desejada
     * Inscrição
     * Cancelamento de inscrição
     * Integração com sistema de notificações
+### CRUD, busca e notificações
+
 * CRUD genérico
     * Listagem das informações
         * Buscas textuais (Solr, ElasticSearch/Opensearch, PostgreSQL full text search)
@@ -434,12 +572,16 @@ Se necessário, trocar "current" pela versão desejada
     * Internas (dentro do próprio sistema - Webhook, Server-sent events)
     * Envio de e-mails
     * Outros (ex: SMS, WhatsApp, etc)
+### Compliance
+
 * LGPD
     * Apresentação dos termos de uso com informações de como os dados serão usados
     * Versionamento dos termos de uso
     * Aceite dos termos pelo usuário
 
-## Outros
+## Ecossistema, testes e operação
+
+### Produtividade e qualidade
 
 * Project Lombok
 * Feature flags
@@ -465,6 +607,8 @@ Se necessário, trocar "current" pela versão desejada
     * LocalStack - https://www.localstack.cloud/
     * Testcontainers - https://testcontainers.com/
     * Wiremock - https://wiremock.org/
+### Aplicações, integração e deploy
+
 * Containers
     * Docker / Docker compose
     * Podman
@@ -480,6 +624,8 @@ Se necessário, trocar "current" pela versão desejada
     * Kafka
     * Pub/Sub com RabbitMQ
     * ActiveMQ (classic / Artemis) - Jakarta Messaging (antigo JMS)
+### Observabilidade e cloud
+
 * Observabilidade
     * Spring Boot Actuator + Micrometer
     * Prometheus TSDB / InfluxDB
@@ -497,28 +643,51 @@ Se necessário, trocar "current" pela versão desejada
         * Rate limiter
         * Retry
     * Zipkin (tracing distribuído / visualização de traces E2E)
+### Boas práticas operacionais
+
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
         * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
         * Em containers, prever uso de volumes persistentes para manter estes arquivos
     * Configuração externa de logs (SLF4J, logback, Log4J2)
 
-## OAuth2 e JWT
+### Stack mínima recomendada para CRUDs modernos
 
-* Claim "scope" separada por espaços: https://stackoverflow.com/a/62477585
-* Claims comuns: https://www.iana.org/assignments/jwt/jwt.xhtml e https://datatracker.ietf.org/doc/id/draft-jones-json-web-token-01.html
-* Scopes de requisição padrões: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
-* https://auth0.com/docs/get-started/authentication-and-authorization-flow/which-oauth-2-0-flow-should-i-use
-* https://www.oauth.com/oauth2-servers/authorization/the-authorization-response/
-* https://www.oauth.com/oauth2-servers/access-tokens/access-token-response/
-* https://medium.com/juliusbaerengineering/implementing-oauth2-oidc-and-its-agents-with-spring-15bfb1d46c76
-* https://betterprogramming.pub/building-secure-login-flow-with-oauth-2-openid-in-react-apps-ce6e8e29630a
-* https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html
-* https://www.oauth.com/oauth2-servers/server-side-apps/possible-errors/
+* [Recomendado] Spring Boot + Spring Web + Spring Data JPA + Bean Validation + banco relacional.
+* [Recomendado] DTOs para entrada/saída da API, evitando expor Entities diretamente.
+* [Recomendado] `spring.jpa.open-in-view=false`, migrations com Flyway ou Liquibase e tratamento centralizado de exceções.
+* [Recomendado] Spring Security desde o início do projeto, mesmo que com regra simples, para evitar retrabalho futuro.
+* [Recomendado] Actuator, logs estruturados, testes unitários e de integração como baseline do projeto.
 
-## Outros
+## Java complementar
 
 * Consumer/Supplier/Predicate/Function: https://medium.com/swlh/understanding-java-8s-consumer-supplier-predicate-and-function-c1889b9423d
+
+## Erros frequentes
+
+### JPA e modelagem
+
+* [Atenção] Usar `fetch = EAGER` sem necessidade em relacionamentos e depois sofrer com consultas pesadas, N+1 ou carregamento excessivo de dados.
+* [Atenção] Expor Entity diretamente em JSON e disparar problemas com relacionamentos bidirecionais, lazy loading ou serialização recursiva.
+* [Atenção] Misturar regra de negócio complexa com callbacks de entidade (`@PrePersist`, `@PostLoad` etc.) e dificultar testes e rastreabilidade.
+* [Atenção] Usar `@Data` ou `@ToString` em Entities sem avaliar impacto em `equals/hashCode`, proxies e loops de relacionamento.
+* [Atenção] Confiar em `ddl-auto=update` como estratégia principal de evolução de banco em ambientes compartilhados ou produtivos.
+
+### Security
+
+* [Atenção] Liberar endpoints demais por conveniência no começo do projeto e depois esquecer de restringi-los.
+* [Atenção] Misturar autenticação via sessão, JWT e regras customizadas sem deixar claro qual fluxo é o oficial da aplicação.
+* [Atenção] Criar filtros customizados sem entender a ordem da `SecurityFilterChain`, causando comportamento inconsistente.
+* [Atenção] Salvar senha sem encoder forte ou tratar hash de senha como detalhe de implementação tardio.
+* [Atenção] Adotar JWT sem pensar em expiração, renovação, revogação e rotação de chaves.
+
+### Configuração e operação
+
+* [Atenção] Copiar propriedades de versões antigas do Spring Boot sem validar nomes e comportamento na versão atual do projeto.
+* [Atenção] Espalhar configuração entre `application.properties`, variáveis de ambiente, banco e arquivos externos sem definir precedência e estratégia operacional.
+* [Atenção] Depender de comportamento implícito da auto-configuration e depois quebrá-lo com `@EnableWebMvc` ou beans sobrescrevendo defaults sem necessidade.
+* [Atenção] Não separar configurações por profile desde o início e acabar acoplando ambiente local, teste e produção.
+* [Atenção] Deixar logs, tracing e métricas para o fim do projeto, reduzindo visibilidade justamente quando os problemas aparecem.
 
 ## Troubleshooting
 
