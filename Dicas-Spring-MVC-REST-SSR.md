@@ -13,19 +13,95 @@
 2. [Configuração Base](#2-configuração-base)
 3. [Controllers REST](#3-controllers-rest)
 4. [Controllers MVC com Thymeleaf (SSR)](#4-controllers-mvc-com-thymeleaf-ssr)
-5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated)
+5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated--valid-vs-validated)
 6. [InitBinder](#6-initbinder)
 7. [Converters e Formatters](#7-converters-e-formatters)
 8. [Tratamento de Erros](#8-tratamento-de-erros)
-9. [Documentação com OpenAPI / SpringDoc](#9-documentação-com-openapi--springdoc)
-10. [Recursos Avançados e Pouco Explorados](#10-recursos-avançados-e-pouco-explorados)
-    - [10.9 Controller Assíncrono — CompletableFuture, Callable e DeferredResult](#109-controller-assíncrono--completablefuture-callable-e-deferredresult)
-    - [10.10 Versionamento de API Nativo — Spring Boot 4 / Spring Framework 7](#1010-api-versioning--spring-boot-4--spring-framework-7)
-    - [10.11 HttpServletRequest, HttpServletResponse e RequestContextHolder](#1011-acesso-a-recursos-do-servlet--httpservletrequest-httpservletresponse-e-requestcontextholder)
-    - [10.12 Integração com Spring Security](#1012-integração-com-spring-security)
-11. [Alternativas ao Thymeleaf](#11-alternativas-ao-thymeleaf)
-12. [Boas Práticas e Checklist](#12-boas-práticas-e-checklist)
-
+9. [Boas Práticas na Camada de Serviço (`@Service`)](#9-boas-práticas-na-camada-de-serviço-service)
+    - [9.1 Responsabilidades e Estrutura](#91-responsabilidades-e-estrutura)
+    - [9.2 @Transactional — Padrões e Armadilhas](#92-transactional--padrões-e-armadilhas)
+    - [9.3 Mapeamento DTO ↔ Entidade](#93-mapeamento-dto--entidade)
+    - [9.4 Validação no Service — Invariantes de Domínio](#94-validação-no-service--invariantes-de-domínio)
+    - [9.5 Tratamento de Exceções no Service](#95-tratamento-de-exceções-no-service)
+    - [9.6 Services Stateless — Evitar Estado em Campos](#96-services-stateless--evitar-estado-em-campos)
+    - [9.7 Checklist — Boas Práticas do @Service](#97-checklist--boas-práticas-do-service)
+10. [Documentação com OpenAPI / SpringDoc](#10-documentação-com-openapi--springdoc)
+    - [10.1 Configuração Principal](#101-configuração-principal)
+    - [10.2 Anotações nos Controllers e DTOs](#102-anotações-nos-controllers-e-dtos)
+    - [10.3 Ocultando Endpoints do Swagger](#103-ocultando-endpoints-do-swagger)
+11. [Recursos Avançados e Pouco Explorados](#11-recursos-avançados-e-pouco-explorados)
+    - [11.1 HandlerInterceptor — Auditoria e Métricas](#111-handlerinterceptor--auditoria-e-métricas)
+    - [11.2 @ModelAttribute Global com @ControllerAdvice](#112-modelattribute-global-com-controlleradvice)
+    - [11.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos](#113-content-negotiation--mesmo-endpoint-múltiplos-formatos)
+    - [11.4 Streaming com SseEmitter e StreamingResponseBody](#114-streaming-com-sseemitter-e-streamingresponsebody)
+    - [11.5 HandlerMethodArgumentResolver — Argumento Customizado](#115-handlermethodargumentresolver--argumento-customizado)
+    - [11.6 @RequestScope e @SessionScope Beans](#116-requestscope-e-sessionscope-beans)
+    - [11.7 Flash Attributes — Dados entre Redirects (PRG Pattern)](#117-flash-attributes--dados-entre-redirects-prg-pattern)
+    - [11.8 ResponseBodyAdvice — Interceptar Respostas Globalmente](#118-responsebodyadvice--interceptar-respostas-globalmente)
+    - [11.9 Controller Assíncrono — CompletableFuture, Callable e DeferredResult](#119-controller-assíncrono--completablefuture-callable-e-deferredresult)
+    - [11.10 Versionamento de API Nativo — Spring Boot 4 / Spring Framework 7](#1110-api-versioning--spring-boot-4--spring-framework-7)
+    - [11.11 HttpServletRequest, HttpServletResponse e RequestContextHolder](#1111-acesso-a-recursos-do-servlet--httpservletrequest-httpservletresponse-e-requestcontextholder)
+    - [11.12 Integração com Spring Security](#1112-integração-com-spring-security)
+12. [Alternativas ao Thymeleaf](#12-alternativas-ao-thymeleaf)
+13. [Boas Práticas e Checklist](#13-boas-práticas-e-checklist)
+14. [CORS — Cross-Origin Resource Sharing](#14-cors--cross-origin-resource-sharing)
+    - [14.1 Como o CORS Funciona](#141-como-o-cors-funciona)
+    - [14.2 Configuração Global — WebMvcConfigurer](#142-configuração-global--webmvcconfigurer)
+    - [14.3 @CrossOrigin por Controller ou Método](#143-crossorigin-por-controller-ou-método)
+    - [14.4 Integração Obrigatória com Spring Security](#144-integração-obrigatória-com-spring-security)
+    - [14.5 CORS Dinâmico — Origens em Banco de Dados](#145-cors-dinâmico--origens-em-banco-de-dados)
+    - [14.6 Diagnóstico de Problemas CORS](#146-diagnóstico-de-problemas-cors)
+15. [ETag e Cache HTTP](#15-etag-e-cache-http)
+    - [15.1 Visão Geral dos Mecanismos de Cache](#151-visão-geral-dos-mecanismos-de-cache)
+    - [15.2 ShallowEtagHeaderFilter — ETag Automático](#152-shallowheaderetagfilter--etag-automático)
+    - [15.3 ResponseEntity com ETag e Last-Modified](#153-responseentity-com-etag-e-last-modified)
+    - [15.4 CacheControl — Políticas Comuns](#154-cachecontrol--políticas-comuns)
+    - [15.5 Cache HTTP em Views SSR](#155-cache-http-em-views-ssr)
+    - [15.6 Resumo: Quando Usar Cada Estratégia](#156-resumo-quando-usar-cada-estratégia)
+16. [Upload de Arquivos](#16-upload-de-arquivos)
+    - [16.1 Configuração](#161-configuração)
+    - [16.2 Controller de Upload](#162-controller-de-upload)
+    - [16.3 Service — Estratégias de Armazenamento](#163-service--estratégias-de-armazenamento)
+    - [16.4 Download de Arquivos](#164-download-de-arquivos)
+    - [16.5 Upload via Fetch API (JavaScript)](#165-upload-via-fetch-api-javascript)
+17. [Internacionalização (i18n)](#17-internacionalização-i18n)
+    - [17.1 Estratégias de Resolução de Locale](#171-estratégias-de-resolução-de-locale)
+    - [17.2 Configuração Completa](#172-configuração-completa)
+    - [17.3 Arquivos de Mensagens](#173-arquivos-de-mensagens)
+    - [17.4 i18n em Controllers REST](#174-i18n-em-controllers-rest)
+    - [17.5 i18n em Templates Thymeleaf](#175-i18n-em-templates-thymeleaf)
+    - [17.6 Controller SSR — enviando chave em vez de texto](#176-controller-ssr--enviando-chave-em-vez-de-texto)
+    - [17.7 i18n em Respostas JSON — MessageSourceAccessor](#177-i18n-em-respostas-json--messagesourceaccessor)
+    - [17.8 Timezone — Integração com i18n](#178-timezone--integração-com-i18n)
+18. [Customização do ErrorController](#18-customização-do-errorcontroller)
+    - [18.1 Como o Fluxo de Erro Funciona](#181-como-o-fluxo-de-erro-funciona)
+    - [18.2 Customizando o BasicErrorController](#182-customizando-o-basicerrorcontroller)
+    - [18.3 Templates de Erro Thymeleaf](#183-templates-de-erro-thymeleaf)
+    - [18.4 Configuração via application.yml](#184-configuração-via-applicationyml)
+19. [`@ResponseStatus` em Classes de Exceção](#19-responsestatus-em-classes-de-exceção)
+    - [19.1 Uso Básico](#191-uso-básico)
+    - [19.2 @ResponseStatus vs @ExceptionHandler — Quando Usar Cada Um](#192-responsestatus-vs-exceptionhandler--quando-usar-cada-um)
+    - [19.3 Precedência com @ControllerAdvice](#193-precedência-com-controlleradvice)
+20. [`MultiValueMap` e Form Data](#20-multivaluemap-e-form-data)
+    - [20.1 MultiValueMap — Múltiplos Valores por Chave](#201-multivaluemap--múltiplos-valores-por-chave)
+    - [20.2 Form Data com Checkboxes e multi-select](#202-form-data-com-checkboxes-multi-select)
+    - [20.3 @RequestBody com MultiValueMap (form-urlencoded)](#203-requestbody-com-multivaluemap-form-urlencoded)
+    - [20.4 LinkedMultiValueMap — Construção Programática](#204-linkedmultivaluemap--construção-programática)
+21. [`RedirectView` e `UrlBasedViewResolver`](#21-redirectview-e-urlbasedviewresolver)
+    - [21.1 RedirectView — Redirect Programático com Controle Total](#211-redirectview--redirect-programático-com-controle-total)
+    - [21.2 UrlBasedViewResolver — Configuração Avançada de View Resolution](#212-urlbasedviewresolver--configuração-avançada-de-view-resolution)
+    - [21.3 Redirect 301 Permanente — SEO e Mudança de URL](#213-redirect-301-permanente--seo-e-mudança-de-url)
+    - [21.4 Forward Interno — Compartilhamento de Handlers](#214-forward-interno--compartilhamento-de-handlers)
+22. [Testes](#22-testes)
+    - [22.1 Visão Geral — Pirâmide de Testes no Spring MVC](#221-visão-geral--pirâmide-de-testes-no-spring-mvc)
+    - [22.2 Teste Unitário — Service sem Spring](#222-teste-unitário--service-sem-spring)
+    - [22.3 @WebMvcTest — Slice Test da Camada Web](#223-webmvctest--slice-test-da-camada-web)
+    - [22.4 @WebMvcTest com Spring Security](#224-webmvctest-com-spring-security)
+    - [22.5 @SpringBootTest — Teste de Integração](#225-springboottest--teste-de-integração)
+    - [22.6 MockMvc vs RestTestClient — Comparativo](#226-mockmvc-vs-resttestclient--comparativo)
+    - [22.7 Configuração de Contexto de Teste](#227-configuração-de-contexto-de-teste)
+    - [22.8 Testando Upload, CORS e SSE](#228-testando-upload-cors-e-sse)
+23. [Tópicos Relevantes Não Cobertos Neste Documento](#23-tópicos-relevantes-não-cobertos-neste-documento)
 ---
 
 ## Java — Recursos da Linguagem Relevantes para o Documento
@@ -240,12 +316,12 @@ RelatorioGenerator<List<Produto>> gen =
 | Interface | Onde aparece | Propósito |
 |---|---|---|
 | `WebMvcConfigurer` | Seção 2.2 | Personalizar o Spring MVC sem substituir a auto-configuração |
-| `HandlerInterceptor` | Seção 10.1 | Interceptar requisições antes/depois do controller |
+| `HandlerInterceptor` | Seção 11.1 | Interceptar requisições antes/depois do controller |
 | `Converter<S,T>` | Seção 7 | Converter tipos no binding de parâmetros |
 | `Formatter<T>` | Seção 7 | Formatar/parsear tipos com locale |
-| `ErrorController` | Seção 17 | Personalizar o endpoint `/error` |
-| `CorsConfigurationSource` | Seção 13 | Prover configuração CORS dinâmica |
-| `UserDetails` | Seção 10.12 | Contrato do usuário autenticado no Spring Security |
+| `ErrorController` | Seção 18 | Personalizar o endpoint `/error` |
+| `CorsConfigurationSource` | Seção 14 | Prover configuração CORS dinâmica |
+| `UserDetails` | Seção 11.12 | Contrato do usuário autenticado no Spring Security |
 
 ---
 
@@ -797,7 +873,7 @@ Runnable tarefa = () -> processarRelatorio(id);
 CompletableFuture.runAsync(tarefa, executor);
 
 // Callable<T> — () throws Exception -> T (com checagem de exceção)
-// Usado em @Async e controllers assíncronos (seção 10.9)
+// Usado em @Async e controllers assíncronos (seção 11.9)
 Callable<RelatorioResponse> callable = () -> relatorioService.gerarCompleto(periodo);
 ```
 
@@ -1176,20 +1252,20 @@ class PedidoServiceTest {
 flowchart LR
     subgraph Container["ApplicationContext (IoC Container)"]
         direction TB
-        BF["BeanFactory\n(criação lazy)"]
-        AC["ApplicationContext\n(criação eager + eventos + i18n)"]
+        BF["BeanFactory<br>(criação lazy)"]
+        AC["ApplicationContext<br>(criação eager + eventos + i18n)"]
         BF --> AC
     end
 
     subgraph Fontes["Fontes de definição de beans"]
-        CF["@Configuration\n@Bean"]
-        CP["@Component\n@Service\n@Repository\n@Controller"]
-        XM["XML / Groovy\n(legado)"]
+        CF["@Configuration<br>@Bean"]
+        CP["@Component<br>@Service<br>@Repository<br>@Controller"]
+        XM["XML / Groovy<br>(legado)"]
     end
 
     Fontes --> Container
-    Container -->|"injeta via construtor\n(recomendado)"| A["@Service\nProdutoService"]
-    Container -->|"injeta via construtor"| B["@Controller\nProdutoController"]
+    Container -->|"injeta via construtor<br>(recomendado)"| A["@Service<br>ProdutoService"]
+    Container -->|"injeta via construtor"| B["@Controller<br>ProdutoController"]
     A --> B
 ```
 
@@ -1337,12 +1413,12 @@ a intenção e habilitam comportamentos adicionais.
 
 ```mermaid
 graph TD
-    C["@Component\nBean genérico detectado\npelo component scan"]
-    C --> CTR["@Controller\nWeb MVC: processa requests\nretorna view name ou ModelAndView"]
-    CTR --> RCT["@RestController\n= @Controller + @ResponseBody\nREST: retorna objeto serializado\ncomo JSON/XML"]
-    C --> SVC["@Service\nCamada de negócio\nHabilita @Transactional por AOP"]
-    C --> REP["@Repository\nCamada de persistência\nTraduz exceções para DataAccessException\nHabilita @Transactional por AOP"]
-    C --> CFG["@Configuration\nFonte de beans @Bean\n(+ proxy CGLIB por padrão)"]
+    C["@Component<br>Bean genérico detectado<br>pelo component scan"]
+    C --> CTR["@Controller<br>Web MVC: processa requests<br>retorna view name ou ModelAndView"]
+    CTR --> RCT["@RestController<br>= @Controller + @ResponseBody<br>REST: retorna objeto serializado<br>como JSON/XML"]
+    C --> SVC["@Service<br>Camada de negócio<br>Habilita @Transactional por AOP"]
+    C --> REP["@Repository<br>Camada de persistência<br>Traduz exceções para DataAccessException<br>Habilita @Transactional por AOP"]
+    C --> CFG["@Configuration<br>Fonte de beans @Bean<br>(+ proxy CGLIB por padrão)"]
 ```
 
 ```java
@@ -2013,6 +2089,38 @@ public class PedidoConfirmadoListener {
 
 ## 1. Arquitetura do Spring MVC
 
+> **Escopo deste documento — Spring MVC (Servlet Stack)**
+>
+> Este documento cobre exclusivamente o **Spring MVC**, o módulo web baseado na
+> Servlet API (`spring-webmvc`). Ele opera sobre um modelo de concorrência
+> **thread-per-request** (bloqueante) e é a stack padrão do
+> `spring-boot-starter-web`.
+>
+> O Spring Framework oferece uma segunda stack web — **Spring WebFlux**
+> (`spring-webflux`, `spring-boot-starter-webflux`) — baseada em programação
+> reativa com Project Reactor (`Mono<T>`, `Flux<T>`). WebFlux opera de forma
+> não-bloqueante sobre Netty (ou Servlet 3.1+ assíncrono) e é adequado para
+> cenários de alta concorrência com I/O intensivo.
+>
+> As duas stacks **não coexistem** na mesma aplicação Spring Boot: a presença de
+> `spring-boot-starter-webflux` no classpath sem `spring-boot-starter-web`
+> ativa o WebFlux; a presença de ambos mantém o MVC como padrão.
+>
+> | | Spring MVC | Spring WebFlux |
+> |---|---|---|
+> | Modelo de execução | Thread-per-request (bloqueante) | Event loop (não-bloqueante) |
+> | API de retorno | `ResponseEntity<T>`, `String`, `ModelAndView` | `Mono<T>`, `Flux<T>` |
+> | Servidor padrão | Tomcat (Servlet) | Netty |
+> | Starter (Boot 3.x) | `spring-boot-starter-web` | `spring-boot-starter-webflux` |
+> | Starter (Boot 4.x) | `spring-boot-starter-webmvc` ¹ | `spring-boot-starter-webflux` |
+> | Java 21+ Virtual Threads | ✅ Recomendado — simplifica throughput | Não necessário |
+> | **Coberto neste doc** | ✅ Sim | ❌ Não |
+>
+> ¹ No Spring Boot 4 o starter foi renomeado de `spring-boot-starter-web` para
+> `spring-boot-starter-webmvc`, tornando explícito que ele ativa a stack MVC
+> (Servlet). O nome antigo ainda funciona como alias para compatibilidade, mas
+> o nome canônico nos novos projetos é `spring-boot-starter-webmvc`.
+
 ### 1.1 Ciclo de Vida de uma Requisição
 
 ```mermaid
@@ -2052,22 +2160,22 @@ sequenceDiagram
 ```mermaid
 graph TB
     subgraph "Camada Web"
-        DS[DispatcherServlet<br/>Front Controller]
-        HM[HandlerMapping<br/>RequestMappingHandlerMapping]
-        HA[HandlerAdapter<br/>RequestMappingHandlerAdapter]
-        VR[ViewResolver<br/>ThymeleafViewResolver]
+        DS["DispatcherServlet<br/>Front Controller"]
+        HM["HandlerMapping<br/>RequestMappingHandlerMapping"]
+        HA["HandlerAdapter<br/>RequestMappingHandlerAdapter"]
+        VR["ViewResolver<br/>ThymeleafViewResolver"]
     end
 
     subgraph "Suporte"
-        HI[HandlerInterceptor]
-        EH[ExceptionHandler<br/>@ControllerAdvice]
-        MC[MessageConverter<br/>JSON/XML/Form]
-        DT[DataBinder<br/>InitBinder + Formatters]
+        HI["HandlerInterceptor"]
+        EH["ExceptionHandler<br/>@ControllerAdvice"]
+        MC["MessageConverter<br/>JSON/XML/Form"]
+        DT["DataBinder<br/>InitBinder + Formatters"]
     end
 
     subgraph "Controllers"
-        RC[@RestController<br/>REST APIs]
-        VC[@Controller<br/>SSR + Thymeleaf]
+        RC["@RestController<br/>REST APIs"]
+        VC["@Controller<br/>SSR + Thymeleaf"]
     end
 
     DS --> HM --> HA
@@ -2086,14 +2194,14 @@ O diagrama abaixo representa o ciclo completo de uma requisição SSR, com cada 
 
 ```mermaid
 flowchart LR
-    Browser(["🌐 Browser\nHTTP client"])
+    Browser(["🌐 Browser<br>HTTP client"])
 
     subgraph SERVLET ["  Servlet container (e.g. Tomcat)  "]
         direction LR
-        DS["DispatcherServlet\nFront controller"]
-        CTRL["@Controller\nHandles request"]
+        DS["DispatcherServlet<br>Front controller"]
+        CTRL["@Controller<br>Handles request"]
         VR["ViewResolver"]
-        VIEW["View template\nThymeleaf / JTE"]
+        VIEW["View template<br>Thymeleaf / JTE"]
 
         DS -- "① delegate request" --> CTRL
         CTRL -. "② model" .-> DS
@@ -2102,7 +2210,7 @@ flowchart LR
         VIEW -. "⑤ HTML renderizado" .-> DS
     end
 
-    MODEL(["Service /\nRepository\nMODEL"])
+    MODEL(["Service /<br>Repository<br>MODEL"])
 
     Browser -- "HTTP request" --> DS
     DS -- "HTML response" --> Browser
@@ -2133,13 +2241,13 @@ Na arquitetura REST **não há ViewResolver nem template engine**. O `@RestContr
 
 ```mermaid
 flowchart LR
-    Client(["📱 API Client\nbrowser / mobile / SPA"])
+    Client(["📱 API Client<br>browser / mobile / SPA"])
 
     subgraph SERVLET ["  Servlet container (e.g. Tomcat)  "]
         direction LR
-        DS["DispatcherServlet\nFront controller"]
-        RC["@RestController\n@ResponseBody"]
-        MC["MessageConverter\nJackson — JSON/XML"]
+        DS["DispatcherServlet<br>Front controller"]
+        RC["@RestController<br>@ResponseBody"]
+        MC["MessageConverter<br>Jackson — JSON/XML"]
 
         DS -- "① delegate" --> RC
         RC -. "② DTO / ResponseEntity" .-> DS
@@ -2147,14 +2255,14 @@ flowchart LR
         MC -. "④ JSON serializado" .-> DS
     end
 
-    MODEL(["Service /\nRepository\nMODEL"])
+    MODEL(["Service /<br>Repository<br>MODEL"])
 
     Client -- "JSON request" --> DS
     DS -- "JSON response" --> Client
     RC -- "call" --> MODEL
     MODEL -. "data" .-> RC
 
-    note["HandlerMapping\nresolve a rota"]
+    note["HandlerMapping<br>resolve a rota"]
     DS -.-> note
 
     style DS fill:#E6F1FB,stroke:#185FA5,color:#0C447C
@@ -2203,7 +2311,7 @@ auto-configuração do Spring Boot — sem nenhuma linha de código adicional:
 </dependency>
 
 <!-- ✅ Auto-configura: LocalValidatorFactoryBean e MethodValidationPostProcessor -->
-<!-- ⚠️  NÃO conecta o validador ao MessageSource do Spring (ver seção 12.6) -->
+<!-- ⚠️  NÃO conecta o validador ao MessageSource do Spring (ver seção 13.6) -->
 <dependency>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-validation</artifactId>
@@ -3107,17 +3215,17 @@ Thymeleaf funcionem normalmente — sem nenhuma alteração nos templates.
 ```mermaid
 flowchart LR
     subgraph Controller["Controller"]
-        C1["@Valid @ModelAttribute\n↓\nBindingResult populado\nautomaticamente pelo MVC"]
-        C2["produtoService.criar(form)\n↓\nConstraintViolationException\nlançada pelo AOP Proxy\ndo @Validated"]
+        C1["@Valid @ModelAttribute<br>↓<br>BindingResult populado<br>automaticamente pelo MVC"]
+        C2["produtoService.criar(form)<br>↓<br>ConstraintViolationException<br>lançada pelo AOP Proxy<br>do @Validated"]
     end
     subgraph Service["Service (@Validated)"]
-        S1["proxy AOP intercepta\nchamada ao método"]
+        S1["proxy AOP intercepta<br>chamada ao método"]
     end
 
-    C1 -->|"erros resolvidos\nautomaticamente"| TH["Thymeleaf\nth:errors funciona ✓"]
+    C1 -->|"erros resolvidos<br>automaticamente"| TH["Thymeleaf<br>th:errors funciona ✓"]
     C2 --> S1
     S1 -->|ConstraintViolationException| C2
-    C2 -->|"sem conversão:\nexceção propaga"| EX["500 / @ControllerAdvice\nth:errors NÃO funciona ✗"]
+    C2 -->|"sem conversão:<br>exceção propaga"| EX["500 / @ControllerAdvice<br>th:errors NÃO funciona ✗"]
 
     style EX fill:#FCEBEB,stroke:#A32D2D,color:#501313
     style TH fill:#EAF3DE,stroke:#3B6D11,color:#27500A
@@ -4762,9 +4870,546 @@ public class MvcExceptionHandler {
 
 ---
 
-## 9. Documentação com OpenAPI / SpringDoc
+## 9. Boas Práticas na Camada de Serviço (`@Service`)
 
-### 9.1 Configuração Principal
+A camada de serviço é o coração da aplicação: concentra as regras de negócio,
+coordena operações entre repositórios e garante a consistência dos dados. Esta
+seção consolida os padrões e armadilhas mais importantes do `@Service` no
+ecossistema Spring Boot.
+
+### 9.1 Responsabilidades e Estrutura
+
+```java
+// ─── Responsabilidades de um @Service bem definido ────────────────────────────
+//
+// ✅ Deve fazer:
+//   - Implementar regras e invariantes de negócio
+//   - Coordenar repositórios e outros serviços
+//   - Converter entidades JPA ↔ DTOs (ou delegar a um Mapper)
+//   - Publicar eventos de domínio via ApplicationEventPublisher
+//   - Gerenciar transações (@Transactional)
+//
+// ❌ Não deve fazer:
+//   - Conhecer HttpServletRequest, HttpSession ou qualquer detalhe HTTP
+//   - Conter lógica de apresentação (formatação, i18n, redirecionamentos)
+//   - Lançar diretamente respostas HTTP (ResponseEntity, ModelAndView)
+//   - Armazenar estado de requisição em campos (services são singletons)
+
+// ─── Interface de serviço: quando vale a pena ─────────────────────────────────
+//
+// Crie uma interface quando:
+//   - Há (ou pode haver) múltiplas implementações (ex.: NotificacaoService
+//     com EmailNotificacaoService e SmsNotificacaoService)
+//   - O serviço precisa ser mockado em muitos testes (a interface facilita)
+//   - Segue arquitetura hexagonal (ports & adapters)
+//
+// Não crie interface quando:
+//   - Existe apenas uma implementação e ela nunca mudará
+//     → IServicoXxx + ServicoXxxImpl é over-engineering na maioria dos projetos
+//   - O serviço é interno / de suporte (ex.: CacheWarmupService)
+
+public interface NotificacaoService {
+    void enviar(String destinatario, String mensagem, TipoNotificacao tipo);
+}
+
+@Service
+@Primary
+public class EmailNotificacaoService implements NotificacaoService {
+    @Override
+    public void enviar(String destinatario, String mensagem, TipoNotificacao tipo) {
+        // implementação via e-mail
+    }
+}
+
+@Service
+@Profile("sms-enabled")
+public class SmsNotificacaoService implements NotificacaoService {
+    @Override
+    public void enviar(String destinatario, String mensagem, TipoNotificacao tipo) {
+        // implementação via SMS
+    }
+}
+```
+
+### 9.2 `@Transactional` — Padrões e Armadilhas
+
+#### 9.2.1 Padrão `readOnly` + escrita explícita
+
+```java
+@Service
+// readOnly=true na classe: otimiza leituras (sem dirty checking, hint para o banco)
+// e serve como documentação — qualquer método de escrita precisa sobrescrever.
+@Transactional(readOnly = true)
+public class ProdutoService {
+
+    private final ProdutoRepository produtoRepository;
+    private final CategoriaService  categoriaService;
+    private final ApplicationEventPublisher eventPublisher;
+
+    public ProdutoService(ProdutoRepository produtoRepository,
+                          CategoriaService categoriaService,
+                          ApplicationEventPublisher eventPublisher) {
+        this.produtoRepository = produtoRepository;
+        this.categoriaService  = categoriaService;
+        this.eventPublisher    = eventPublisher;
+    }
+
+    // ─── Leitura — herda readOnly=true da classe ──────────────────────────────
+    public ProdutoResponse buscarPorId(Long id) {
+        return produtoRepository.findById(id)
+                .map(ProdutoResponse::from)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Produto", id));
+    }
+
+    public Page<ProdutoResponse> listar(ProdutoFiltros filtros, Pageable pageable) {
+        return produtoRepository.findAll(filtros.toSpec(), pageable)
+                .map(ProdutoResponse::from);
+    }
+
+    // ─── Escrita — sobrescreve com readOnly=false (default) ───────────────────
+    @Transactional
+    public ProdutoResponse criar(ProdutoRequest request) {
+        categoriaService.verificarExistencia(request.categoriaId()); // valida antes
+
+        var produto = Produto.from(request);
+        produto = produtoRepository.save(produto);
+
+        // Publica evento APÓS salvar, mas ANTES do commit — @TransactionalEventListener
+        // garante que o listener só executa após o commit ter sucesso
+        eventPublisher.publishEvent(new ProdutoCriadoEvent(produto.getId()));
+
+        return ProdutoResponse.from(produto);
+    }
+
+    @Transactional
+    public ProdutoResponse atualizar(Long id, ProdutoRequest request) {
+        var produto = produtoRepository.findById(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Produto", id));
+
+        produto.atualizar(request); // lógica no próprio domínio
+        // Não é necessário chamar save() — dirty checking do JPA detecta a mudança
+        // e persiste automaticamente no commit da transação
+
+        return ProdutoResponse.from(produto);
+    }
+
+    @Transactional
+    public void remover(Long id) {
+        var produto = produtoRepository.findById(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Produto", id));
+
+        if (produto.temPedidosAtivos()) {
+            throw new NegocioException("Produto com pedidos ativos não pode ser removido");
+        }
+        produtoRepository.delete(produto);
+    }
+}
+```
+
+#### 9.2.2 Propagação — quando usar cada modo
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class PedidoService {
+
+    // ─── REQUIRED (default) — participa da transação existente ou cria nova ────
+    // 99% dos casos: o comportamento correto para operações de negócio.
+    @Transactional
+    public void confirmar(Long id) {
+        // executa dentro da mesma transação se chamado de outro @Transactional
+    }
+
+    // ─── REQUIRES_NEW — sempre cria uma nova transação independente ───────────
+    // Use quando a operação DEVE persistir mesmo se a transação chamadora fizer
+    // rollback. Exemplo clássico: log de auditoria ou registro de tentativa.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registrarTentativaDePagamento(Long pedidoId, String motivo) {
+        // Esta gravação persiste MESMO que o pagamento falhe e a tx principal
+        // seja revertida — é o comportamento desejado para auditoria
+        auditRepository.save(new AuditEntry(pedidoId, motivo, Instant.now()));
+    }
+
+    // ─── SUPPORTS — executa com transação se houver, sem transação se não ──────
+    // Útil para operações de leitura que podem ser chamadas tanto dentro
+    // quanto fora de um contexto transacional.
+    @Transactional(propagation = Propagation.SUPPORTS, readOnly = true)
+    public Optional<PedidoResponse> buscarOpcional(Long id) {
+        return pedidoRepository.findById(id).map(PedidoResponse::from);
+    }
+
+    // ─── NOT_SUPPORTED — suspende a transação existente ──────────────────────
+    // Raramente necessário. Use quando a operação tem efeitos colaterais que
+    // não devem ser revertidos com a transação (ex.: enviar mensagem a broker).
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void publicarEvento(DomainEvent evento) {
+        // executado sem transação — evita o broker ser enrolado no rollback
+        messageBroker.publish(evento);
+    }
+}
+```
+
+#### 9.2.3 `rollbackFor` — checked exceptions não fazem rollback por padrão
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class ImportacaoService {
+
+    // ⚠️ ARMADILHA: por padrão @Transactional só faz rollback em
+    // RuntimeException (unchecked). Se o método lançar uma checked exception,
+    // a transação é COMMITADA mesmo com erro!
+
+    // ❌ Errado: IOException é checked — a transação vai commitar parcialmente
+    @Transactional
+    public void importarArquivo(MultipartFile arquivo) throws IOException {
+        var linha1 = processar(arquivo.getInputStream());  // salva no banco
+        throw new IOException("Erro na linha 2");          // tx COMMITA mesmo assim!
+    }
+
+    // ✅ Correto: rollbackFor inclui checked exceptions explicitamente
+    @Transactional(rollbackFor = Exception.class)
+    public void importarArquivoCorreto(MultipartFile arquivo) throws IOException {
+        var linha1 = processar(arquivo.getInputStream());  // salva no banco
+        throw new IOException("Erro na linha 2");          // tx faz ROLLBACK agora
+    }
+
+    // ✅ Alternativa: envolver em RuntimeException (unchecked)
+    @Transactional
+    public void importarArquivoAlternativo(MultipartFile arquivo) {
+        try {
+            processar(arquivo.getInputStream());
+        } catch (IOException e) {
+            throw new NegocioException("Falha na importação: " + e.getMessage(), e);
+            // NegocioException extends RuntimeException → rollback automático
+        }
+    }
+
+    // noRollbackFor: rollback NÃO ocorre para esta exceção específica
+    // Use quando a exceção é esperada e não indica falha transacional
+    @Transactional(noRollbackFor = RegistroDuplicadoException.class)
+    public void importarComIdempotencia(List<Produto> produtos) {
+        for (var p : produtos) {
+            try {
+                produtoRepository.save(p);
+            } catch (RegistroDuplicadoException e) {
+                // Produto já existe — ignora e continua (sem rollback)
+                log.warn("Produto {} já cadastrado, pulando", p.getSku());
+            }
+        }
+    }
+}
+```
+
+#### 9.2.4 Self-invocation — a armadilha silenciosa
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class RelatorioService {
+
+    // ⚠️ SELF-INVOCATION: quando um método do bean chama outro método do MESMO
+    // bean, a chamada bypassa o proxy AOP do Spring. O @Transactional do método
+    // chamado é completamente IGNORADO — nenhuma nova transação é criada.
+
+    // ❌ Errado: gerarRelatorio() chama gerarPDF() diretamente
+    @Transactional
+    public RelatorioResponse gerarRelatorio(Long id) {
+        var dados = buscarDados(id);
+        // Esta chamada é this.gerarPDF(dados) — bypass do proxy!
+        // O @Transactional(propagation = REQUIRES_NEW) abaixo NÃO é ativado
+        var pdf = gerarPDF(dados);  // ← proxy bypassado!
+        return new RelatorioResponse(dados, pdf);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public byte[] gerarPDF(DadosRelatorio dados) {
+        // Este @Transactional só funciona se chamado de FORA do bean
+        return pdfService.gerar(dados);
+    }
+
+    // ✅ Solução 1: extrair gerarPDF para um serviço separado
+    // PdfService é um @Component diferente — o proxy funciona normalmente
+
+    // ✅ Solução 2: injetar o próprio bean (auto-injeção)
+    // Spring injeta o proxy, não o objeto direto
+    private RelatorioService self;  // inicializado abaixo
+
+    @Autowired
+    public void setSelf(RelatorioService self) { this.self = self; }
+
+    @Transactional
+    public RelatorioResponse gerarRelatorioCorreto(Long id) {
+        var dados = buscarDados(id);
+        // Chama via proxy — @Transactional(REQUIRES_NEW) será respeitado
+        var pdf = self.gerarPDF(dados);  // ← via proxy
+        return new RelatorioResponse(dados, pdf);
+    }
+
+    // ✅ Solução 3 (preferível): ApplicationContext para resolver o proxy
+    // — ver seção B.8 para detalhes
+}
+```
+
+### 9.3 Mapeamento DTO ↔ Entidade
+
+```java
+// ─── Opção 1: método factory estático no Record (simples, sem dependência) ────
+//
+// Vantagem: zero overhead, zero dependência, código próximo do tipo.
+// Limitação: lógica de mapeamento fica no DTO — viola SRP se ficar complexo.
+public record ProdutoResponse(Long id, String nome, BigDecimal preco, String categoria) {
+
+    public static ProdutoResponse from(Produto produto) {
+        return new ProdutoResponse(
+                produto.getId(),
+                produto.getNome(),
+                produto.getPreco(),
+                produto.getCategoria().getNome()
+        );
+    }
+}
+
+// ─── Opção 2: Mapper dedicado — para mapeamentos complexos ────────────────────
+//
+// Usar quando: múltiplos campos calculados, listas aninhadas, lógica condicional.
+// MapStruct gera a implementação em tempo de compilação — zero overhead em runtime.
+@Mapper(componentModel = "spring")  // gera ProdutoMapperImpl como @Component
+public interface ProdutoMapper {
+
+    @Mapping(source = "categoria.nome", target = "categoria")
+    ProdutoResponse toResponse(Produto produto);
+
+    @Mapping(target = "id",         ignore = true)
+    @Mapping(target = "criadoEm",   ignore = true)
+    @Mapping(target = "categoria",  ignore = true)   // definido no service
+    Produto toEntity(ProdutoRequest request);
+
+    List<ProdutoResponse> toResponseList(List<Produto> produtos);
+}
+
+// ─── Onde fazer a conversão: no service (recomendado) ─────────────────────────
+//
+// ✅ Service converte entidade → DTO antes de retornar ao controller
+// ✅ Controller nunca recebe nem retorna entidades JPA diretamente
+// ❌ Não exponha entidades JPA ao controller — lazy loading fora da transação
+//    gera LazyInitializationException (OSIV desabilitado, como recomendado)
+@Service
+@Transactional(readOnly = true)
+public class ProdutoService {
+
+    private final ProdutoRepository produtoRepository;
+    private final ProdutoMapper     produtoMapper;
+
+    public List<ProdutoResponse> listar() {
+        // Entidades são convertidas para DTO DENTRO da transação
+        return produtoMapper.toResponseList(produtoRepository.findAll());
+        // Após o retorno, a transação fecha — sem risco de lazy loading externo
+    }
+}
+```
+
+### 9.4 Validação no Service — Invariantes de Domínio
+
+```java
+// O @Valid no controller valida o formato do input (Bean Validation).
+// O service deve validar as REGRAS DE NEGÓCIO que o Bean Validation não cobre.
+
+@Service
+@Validated   // habilita Bean Validation nos parâmetros do service (via AOP)
+@Transactional(readOnly = true)
+public class PedidoService {
+
+    // ─── @Validated no service: invariantes de domínio via Bean Validation ────
+    // Útil para garantir contratos que valem independentemente de quem chama
+    // (controller, job agendado, outro service, teste)
+    @Transactional
+    public PedidoResponse criar(@Valid @NotNull PedidoRequest request) {
+        // Se request violar constraints, ConstraintViolationException é lançada
+        // pelo proxy AOP antes de entrar neste método
+        return processarPedido(request);
+    }
+
+    // ─── Regras de negócio explícitas (não cobertas pelo Bean Validation) ──────
+    @Transactional
+    public void confirmarPagamento(Long pedidoId, PagamentoRequest pagamento) {
+        var pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Pedido", pedidoId));
+
+        // Regra 1: status
+        if (pedido.getStatus() != StatusPedido.AGUARDANDO_PAGAMENTO) {
+            throw new NegocioException(
+                    "Pedido #" + pedidoId + " não está aguardando pagamento. " +
+                    "Status atual: " + pedido.getStatus());
+        }
+
+        // Regra 2: prazo
+        if (pedido.getCriadoEm().isBefore(Instant.now().minus(24, ChronoUnit.HOURS))) {
+            pedido.cancelar(MotivoCancelamento.PRAZO_EXPIRADO);
+            throw new NegocioException("Prazo para pagamento expirou. Pedido cancelado.");
+        }
+
+        // Regra 3: valor
+        if (pagamento.valor().compareTo(pedido.getTotal()) != 0) {
+            throw new NegocioException(
+                    "Valor do pagamento (R$ " + pagamento.valor() + ") " +
+                    "diverge do total do pedido (R$ " + pedido.getTotal() + ")");
+        }
+
+        pedido.confirmarPagamento(pagamento);
+    }
+}
+```
+
+### 9.5 Tratamento de Exceções no Service
+
+```java
+// ─── Hierarquia de exceções de domínio ────────────────────────────────────────
+//
+// Crie exceções próprias que estendem RuntimeException — serão tratadas
+// centralizadamente no @ControllerAdvice (seção 11).
+// Não capture e relance desnecessariamente.
+
+public abstract class AppException extends RuntimeException {
+    protected AppException(String message)                   { super(message); }
+    protected AppException(String message, Throwable cause)  { super(message, cause); }
+}
+
+@ResponseStatus(HttpStatus.NOT_FOUND)
+public class RecursoNaoEncontradoException extends AppException {
+    public RecursoNaoEncontradoException(String recurso, Object id) {
+        super(recurso + " com id '" + id + "' não encontrado");
+    }
+}
+
+@ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+public class NegocioException extends AppException {
+    public NegocioException(String message) { super(message); }
+}
+
+@ResponseStatus(HttpStatus.CONFLICT)
+public class ConflitoDeDadosException extends AppException {
+    public ConflitoDeDadosException(String message) { super(message); }
+}
+
+// ─── Boas práticas de exceção no service ──────────────────────────────────────
+@Service
+@Transactional(readOnly = true)
+public class ClienteService {
+
+    // ✅ Lança exceção de domínio específica — o @ControllerAdvice trata
+    public ClienteResponse buscarPorCpf(String cpf) {
+        return clienteRepository.findByCpf(cpf)
+                .map(ClienteResponse::from)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Cliente", cpf));
+    }
+
+    // ✅ Wrapping de exceção de infraestrutura em exceção de domínio
+    @Transactional
+    public ClienteResponse criar(ClienteRequest request) {
+        if (clienteRepository.existsByCpf(request.cpf())) {
+            throw new ConflitoDeDadosException(
+                    "CPF " + request.cpf() + " já cadastrado");
+        }
+        try {
+            var cliente = clienteRepository.save(Cliente.from(request));
+            return ClienteResponse.from(cliente);
+        } catch (DataIntegrityViolationException e) {
+            // Converte exceção de infraestrutura (JPA) em exceção de domínio
+            throw new ConflitoDeDadosException("Dados duplicados: " + e.getMessage());
+        }
+    }
+
+    // ❌ Anti-pattern: capturar e relanças sem agregar valor
+    public ClienteResponse buscarRuim(Long id) {
+        try {
+            return clienteRepository.findById(id)
+                    .map(ClienteResponse::from)
+                    .orElseThrow();
+        } catch (Exception e) {
+            throw new RuntimeException(e);  // ← não faça: perde o tipo, perde o contexto
+        }
+    }
+
+    // ❌ Anti-pattern: logar E relançar (o @ControllerAdvice vai logar de novo)
+    public void removerRuim(Long id) {
+        try {
+            clienteRepository.deleteById(id);
+        } catch (Exception e) {
+            log.error("Erro ao remover cliente", e);  // ← vai ser logado duas vezes
+            throw e;
+        }
+    }
+}
+```
+
+### 9.6 Services Stateless — Evitar Estado em Campos
+
+```java
+// @Service é um singleton — a MESMA instância atende TODAS as requisições.
+// Armazenar estado de requisição em campos gera condições de corrida.
+
+// ❌ Errado: campo de instância armazena estado da requisição
+@Service
+public class RelatorioServiceRuim {
+    private Long usuarioAtualId;   // ← PERIGO: compartilhado entre threads!
+    private String filtroAtual;    // ← PERIGO: condição de corrida!
+
+    public void setContexto(Long userId, String filtro) {
+        this.usuarioAtualId = userId;   // Thread A seta userId=1
+        this.filtroAtual    = filtro;   // Thread B seta userId=2 antes de usar
+    }
+
+    public RelatorioResponse gerar() {
+        // usuarioAtualId pode ser de outra thread!
+        return relatorioRepository.buscar(usuarioAtualId, filtroAtual);
+    }
+}
+
+// ✅ Correto: estado passado como parâmetro — stateless por design
+@Service
+@Transactional(readOnly = true)
+public class RelatorioService {
+
+    public RelatorioResponse gerar(Long usuarioId, String filtro) {
+        // Cada chamada tem seu próprio escopo — sem estado compartilhado
+        return relatorioRepository.buscar(usuarioId, filtro);
+    }
+}
+
+// ✅ Alternativa para contexto de requisição: @RequestScope bean (seção 12.6)
+// O Spring gerencia um bean por requisição — sem campos no Service
+@Component
+@RequestScope
+public class RequestContext {
+    private Long usuarioId;
+    private String tenantId;
+    // getters/setters
+}
+```
+
+### 9.7 Checklist — Boas Práticas do `@Service`
+
+| Prática | Justificativa |
+|---|---|
+| `@Transactional(readOnly = true)` na classe | Otimiza leituras; força declaração explícita de métodos de escrita |
+| `@Transactional` sem `readOnly` nos métodos de escrita | Garante persistência; dirty checking ativo |
+| `rollbackFor = Exception.class` quando há checked exceptions | Evita commit parcial silencioso |
+| Retornar DTOs, nunca entidades JPA | Evita `LazyInitializationException` com `open-in-view: false` |
+| Mapeamento DTO↔entidade dentro da transação | Lazy loading seguro dentro da transação aberta |
+| Sem estado em campos — parâmetros para tudo | Singleton thread-safe |
+| Exceções de domínio (`extends RuntimeException`) | Tratamento centralizado no `@ControllerAdvice` |
+| Não logar E relançar | Evita log duplicado; deixa o `@ControllerAdvice` logar |
+| Evitar self-invocation para métodos `@Transactional` | Proxy bypassa `@Transactional` em chamadas internas |
+| `@Validated` para invariantes de domínio | Contratos válidos independente do chamador |
+
+
+
+---
+
+## 10. Documentação com OpenAPI / SpringDoc
+
+### 10.1 Configuração Principal
 
 ```java
 @Configuration
@@ -4818,7 +5463,7 @@ public class OpenApiConfig {
 }
 ```
 
-### 9.2 Anotações nos Controllers e DTOs
+### 10.2 Anotações nos Controllers e DTOs
 
 ```java
 // ─── Controller com documentação completa ─────────────────────────────────────
@@ -4888,7 +5533,7 @@ public record ProdutoCreateRequest(
 ) {}
 ```
 
-### 9.3 Ocultando Endpoints do Swagger
+### 10.3 Ocultando Endpoints do Swagger
 
 ```java
 // Ocultar endpoint específico
@@ -4905,9 +5550,9 @@ public List<ProdutoResponse> listar(
 
 ---
 
-## 10. Recursos Avançados e Pouco Explorados
+## 11. Recursos Avançados e Pouco Explorados
 
-### 10.1 HandlerInterceptor — Auditoria e Métricas
+### 11.1 HandlerInterceptor — Auditoria e Métricas
 
 ```java
 @Component
@@ -4961,7 +5606,7 @@ public class AuditInterceptor implements HandlerInterceptor {
 }
 ```
 
-### 10.2 @ModelAttribute Global com @ControllerAdvice
+### 11.2 @ModelAttribute Global com @ControllerAdvice
 
 ```java
 /**
@@ -4993,7 +5638,7 @@ public class GlobalModelAttributeAdvice {
 }
 ```
 
-### 10.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos
+### 11.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos
 
 ```java
 @RestController
@@ -5035,7 +5680,7 @@ public class RelatorioController {
 }
 ```
 
-### 10.4 Streaming com SseEmitter e StreamingResponseBody
+### 11.4 Streaming com SseEmitter e StreamingResponseBody
 
 ```java
 @RestController
@@ -5085,7 +5730,7 @@ public class EventoController {
 }
 ```
 
-### 10.5 HandlerMethodArgumentResolver — Argumento Customizado
+### 11.5 HandlerMethodArgumentResolver — Argumento Customizado
 
 ```java
 /**
@@ -5128,7 +5773,7 @@ public ResponseEntity<PerfilResponse> meuPerfil(@CurrentUser UsuarioInfo usuario
 }
 ```
 
-### 10.6 @RequestScope e @SessionScope Beans
+### 11.6 @RequestScope e @SessionScope Beans
 
 ```java
 // Bean scoped por request — contexto da requisição corrente
@@ -5168,7 +5813,7 @@ public class CarrinhoController {
 }
 ```
 
-### 10.7 Flash Attributes — Dados entre Redirects (PRG Pattern)
+### 11.7 Flash Attributes — Dados entre Redirects (PRG Pattern)
 
 ```java
 /**
@@ -5191,7 +5836,7 @@ public String processarFormulario(RedirectAttributes redirectAttrs) {
 }
 ```
 
-### 10.8 ResponseBodyAdvice — Interceptar Respostas Globalmente
+### 11.8 ResponseBodyAdvice — Interceptar Respostas Globalmente
 
 ```java
 /**
@@ -5243,7 +5888,7 @@ public record ApiEnvelope<T>(
 
 ---
 
-### 10.9 Controller Assíncrono — `CompletableFuture`, `Callable` e `DeferredResult`
+### 11.9 Controller Assíncrono — `CompletableFuture`, `Callable` e `DeferredResult`
 
 O Spring MVC suporta retornos assíncronos no controller sem bloquear a thread do
 Servlet. O container libera a thread imediatamente e a resposta é enviada quando o
@@ -5593,7 +6238,7 @@ class ProdutoAsyncControllerIT {
 
 ---
 
-### 10.10 API Versioning — Spring Boot 4 / Spring Framework 7
+### 11.10 API Versioning — Spring Boot 4 / Spring Framework 7
 
 O Spring Framework 7 (base do Spring Boot 4) introduziu suporte nativo a
 versionamento de API por meio da classe `ApiVersionRequestMappingHandlerMapping`
@@ -5605,15 +6250,15 @@ explicitamente em cada `@RequestMapping("/api/v1/...")`.
 ```mermaid
 flowchart LR
     subgraph Estratégias["Estratégias de versão (uma por app)"]
-        P["Prefixo no path\n/v1/produtos, /v2/produtos"]
-        H["Header\nX-API-Version: 2"]
-        Q["Query param\n?api-version=2"]
+        P["Prefixo no path<br>/v1/produtos, /v2/produtos"]
+        H["Header<br>X-API-Version: 2"]
+        Q["Query param<br>?api-version=2"]
     end
 
     C["Cliente HTTP"] -- "request com versão" --> DS["DispatcherServlet"]
-    DS --> AVRM["ApiVersionRequestMappingHandlerMapping\n(resolve versão da request)"]
-    AVRM --> CTRL["@Controller\n@ApiVersion(from=1)"]
-    AVRM --> CTRL2["@Controller\n@ApiVersion(from=2)"]
+    DS --> AVRM["ApiVersionRequestMappingHandlerMapping<br>(resolve versão da request)"]
+    AVRM --> CTRL["@Controller<br>@ApiVersion(from=1)"]
+    AVRM --> CTRL2["@Controller<br>@ApiVersion(from=2)"]
 ```
 
 #### Configuração do versionamento
@@ -5756,7 +6401,7 @@ public GroupedOpenApi v2Api() {
 
 ---
 
-### 10.11 Acesso a Recursos do Servlet — `HttpServletRequest`, `HttpServletResponse` e `RequestContextHolder`
+### 11.11 Acesso a Recursos do Servlet — `HttpServletRequest`, `HttpServletResponse` e `RequestContextHolder`
 
 O Spring MVC expõe os objetos do Servlet diretamente como parâmetros de método
 nos controllers. Para camadas mais internas (services, componentes) que não têm
@@ -5974,7 +6619,7 @@ public class RequestContextTaskDecorator implements TaskDecorator {
 
 ---
 
-### 10.12 Integração com Spring Security
+### 11.12 Integração com Spring Security
 
 #### Recuperando o usuário autenticado no Controller
 
@@ -6339,15 +6984,15 @@ public class SecurityModelAdvice {
 
 ```mermaid
 flowchart TD
-    REQ["HTTP Request\n(JWT / Session / Basic)"] --> FILTER["Spring Security FilterChain"]
-    FILTER --> SC["SecurityContextHolder\nThreadLocal&lt;SecurityContext&gt;"]
-    SC --> AUTH["Authentication\n(principal, authorities, credentials)"]
+    REQ["HTTP Request<br>(JWT / Session / Basic)"] --> FILTER["Spring Security FilterChain"]
+    FILTER --> SC["SecurityContextHolder<br>ThreadLocal&lt;SecurityContext&gt;"]
+    SC --> AUTH["Authentication<br>(principal, authorities, credentials)"]
 
     subgraph Controller ["Controller / Service"]
-        AP["@AuthenticationPrincipal\ninjeta o principal diretamente"]
-        APARAM["Authentication param\ninjeta o objeto completo"]
-        SCH["SecurityContextHolder\n.getContext().getAuthentication()"]
-        CSC["@CurrentSecurityContext\ninjeta o SecurityContext"]
+        AP["@AuthenticationPrincipal<br>injeta o principal diretamente"]
+        APARAM["Authentication param<br>injeta o objeto completo"]
+        SCH["SecurityContextHolder<br>.getContext().getAuthentication()"]
+        CSC["@CurrentSecurityContext<br>injeta o SecurityContext"]
     end
 
     AUTH --> AP
@@ -6356,8 +7001,8 @@ flowchart TD
     AUTH --> CSC
 
     subgraph Thymeleaf ["Thymeleaf (SSR)"]
-        SECNS["sec:authentication=&quot;name&quot;\nsec:authorize=&quot;hasRole(...)&quot;"]
-        MODEL["Model attribute\n@ControllerAdvice"]
+        SECNS["sec:authentication=&quot;name&quot;<br>sec:authorize=&quot;hasRole(...)&quot;"]
+        MODEL["Model attribute<br>@ControllerAdvice"]
     end
 
     AUTH --> SECNS
@@ -6375,9 +7020,9 @@ flowchart TD
 
 ---
 
-## 11. Alternativas ao Thymeleaf
+## 12. Alternativas ao Thymeleaf
 
-### 11.1 Comparativo de Engines de Template
+### 12.1 Comparativo de Engines de Template
 
 ```mermaid
 graph TB
@@ -6389,7 +7034,7 @@ graph TB
     end
 ```
 
-### 11.2 FreeMarker
+### 12.2 FreeMarker
 
 ```xml
 <dependency>
@@ -6426,7 +7071,7 @@ spring:
 <@campo label="Nome" nome="nome"/>
 ```
 
-### 11.3 JTE (Java Template Engine) — Recomendado para Performance
+### 12.3 JTE (Java Template Engine) — Recomendado para Performance
 
 JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de compilação e desempenho superior ao Thymeleaf.
 
@@ -6464,7 +7109,7 @@ JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de 
 </html>
 ```
 
-### 11.4 Quando Usar Cada Template Engine
+### 12.4 Quando Usar Cada Template Engine
 
 | Cenário | Recomendação |
 |---|---|
@@ -6477,9 +7122,9 @@ JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de 
 
 ---
 
-## 12. Boas Práticas e Checklist
+## 13. Boas Práticas e Checklist
 
-### 12.1 Diagrama de Fluxo de Decisão
+### 13.1 Diagrama de Fluxo de Decisão
 
 ```mermaid
 flowchart TD
@@ -6510,7 +7155,7 @@ flowchart TD
     N --> O[@WebMvcTest + @SpringBootTest<br/>RestTestClient ou REST Assured]
 ```
 
-### 12.2 Checklist — REST Controllers
+### 13.2 Checklist — REST Controllers
 
 - [ ] Usar `@RestController` (combina `@Controller` + `@ResponseBody`)
 - [ ] Versionamento de API na URL: `/api/v1/...`
@@ -6524,7 +7169,7 @@ flowchart TD
 - [ ] Tratar erros com `@RestControllerAdvice` e `ProblemDetail` (RFC 9457)
 - [ ] CORS configurado explicitamente (nunca `*` em produção)
 
-### 12.3 Checklist — SSR Controllers
+### 13.3 Checklist — SSR Controllers
 
 - [ ] Usar `@Controller` (não `@RestController`)
 - [ ] Criar Form Objects separados das entidades/DTOs
@@ -6535,7 +7180,7 @@ flowchart TD
 - [ ] Aplicar `StringTrimmerEditor` via `@InitBinder`
 - [ ] Definir `setAllowedFields` para prevenir mass assignment
 
-### 12.4 Checklist — Validação
+### 13.4 Checklist — Validação
 
 - [ ] Bean Validation nas camadas Controller E Service (`@Validated`)
 - [ ] Usar grupos de validação para criar/atualizar com regras diferentes
@@ -6544,7 +7189,7 @@ flowchart TD
 - [ ] Mensagens de erro externalizadas em `messages.properties`
 - [ ] `@EmailUnico`, `@CpfUnico` com acesso ao repositório via Spring
 
-### 12.5 Anti-patterns a Evitar
+### 13.5 Anti-patterns a Evitar
 
 ```java
 // ❌ Expondo entidade JPA diretamente
@@ -6609,7 +7254,7 @@ public void init(WebDataBinder binder) {
 }
 ```
 
-### 12.6 Mensagens de Validação i18n — Integração com messages.properties
+### 13.6 Mensagens de Validação i18n — Integração com messages.properties
 
 Por padrão o Bean Validation resolve mensagens no arquivo
 `ValidationMessages.properties` (padrão Jakarta) ou dentro das próprias
@@ -6735,12 +7380,9 @@ spring:
 
 ---
 
-*Documento gerado para Spring Boot 3.5 / 4.0 com Java 21+*
----
+## 14. CORS — Cross-Origin Resource Sharing
 
-## 13. CORS — Cross-Origin Resource Sharing
-
-### 13.1 Como o CORS Funciona
+### 14.1 Como o CORS Funciona
 
 ```mermaid
 sequenceDiagram
@@ -6759,7 +7401,7 @@ sequenceDiagram
 **Requisições "simples"** (sem preflight): `GET`, `HEAD`, `POST` com `Content-Type: application/x-www-form-urlencoded`, `multipart/form-data` ou `text/plain`.
 Qualquer outro método ou Content-Type (incluindo `application/json`) dispara o preflight.
 
-### 13.2 Configuração Global — `WebMvcConfigurer`
+### 14.2 Configuração Global — `WebMvcConfigurer`
 
 ```java
 @Configuration
@@ -6810,7 +7452,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 }
 ```
 
-### 13.3 `@CrossOrigin` por Controller ou Método
+### 14.3 `@CrossOrigin` por Controller ou Método
 
 ```java
 // ─── Nível de classe: aplica a TODOS os métodos do controller ─────────────────
@@ -6850,7 +7492,7 @@ public class RelatorioController {
 > divergências entre controllers. `@CrossOrigin` é útil quando um endpoint
 > específico precisa de política diferente da global.
 
-### 13.4 Integração Obrigatória com Spring Security
+### 14.4 Integração Obrigatória com Spring Security
 
 > ⚠️ **Armadilha comum:** configurar CORS no `WebMvcConfigurer` **não é suficiente**
 > quando Spring Security está presente. O `SecurityFilterChain` intercepta a
@@ -6903,7 +7545,7 @@ public class SecurityConfig {
 }
 ```
 
-### 13.5 CORS Dinâmico — Origens em Banco de Dados
+### 14.5 CORS Dinâmico — Origens em Banco de Dados
 
 ```java
 /**
@@ -6939,7 +7581,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
 }
 ```
 
-### 13.6 Diagnóstico de Problemas CORS
+### 14.6 Diagnóstico de Problemas CORS
 
 ```yaml
 # application-dev-local.yml — habilitar log do CorsFilter para diagnóstico
@@ -6959,30 +7601,30 @@ logging:
 
 ---
 
-## 14. ETag e Cache HTTP
+## 15. ETag e Cache HTTP
 
-### 14.1 Visão Geral dos Mecanismos de Cache
+### 15.1 Visão Geral dos Mecanismos de Cache
 
 ```mermaid
 flowchart LR
     subgraph CacheHeaders["Headers de controle de cache"]
-        CC["Cache-Control\nmax-age, no-cache, no-store\nprivate, public, must-revalidate"]
-        ET["ETag\nHash do conteúdo da resposta\nidentifica versão do recurso"]
-        LM["Last-Modified\nData da última modificação\nalternativa ao ETag"]
+        CC["Cache-Control<br>max-age, no-cache, no-store<br>private, public, must-revalidate"]
+        ET["ETag<br>Hash do conteúdo da resposta<br>identifica versão do recurso"]
+        LM["Last-Modified<br>Data da última modificação<br>alternativa ao ETag"]
     end
 
     subgraph Revalidation["Revalidação condicional"]
-        INM["If-None-Match\nCliente envia ETag guardada\n→ 304 se não mudou"]
-        IMS["If-Modified-Since\nCliente envia data guardada\n→ 304 se não modificado"]
+        INM["If-None-Match<br>Cliente envia ETag guardada<br>→ 304 se não mudou"]
+        IMS["If-Modified-Since<br>Cliente envia data guardada<br>→ 304 se não modificado"]
     end
 
     ET --> INM
     LM --> IMS
     CC -->|"no-cache: força revalidação"| INM
-    CC -->|"max-age: skip revalidação"| SKIP["Resposta do cache local\nsem ir ao servidor"]
+    CC -->|"max-age: skip revalidação"| SKIP["Resposta do cache local<br>sem ir ao servidor"]
 ```
 
-### 14.2 `ShallowEtagHeaderFilter` — ETag Automático
+### 15.2 `ShallowEtagHeaderFilter` — ETag Automático
 
 O `ShallowEtagHeaderFilter` calcula o hash MD5 do body da resposta e adiciona o
 header `ETag` automaticamente. Nas requisições seguintes com `If-None-Match`,
@@ -6998,7 +7640,7 @@ public class CacheConfig {
      * "Shallow" = baseado apenas no conteúdo da resposta, não em dados do domínio.
      *
      * O controller AINDA é executado — o 304 é decidido pelo filtro após a execução.
-     * Para evitar a execução do controller, use ETag baseada em versão (seção 14.3).
+     * Para evitar a execução do controller, use ETag baseada em versão (seção 16.3).
      */
     @Bean
     public FilterRegistrationBean<ShallowEtagHeaderFilter> etagFilter() {
@@ -7015,7 +7657,7 @@ public class CacheConfig {
 # O filtro deve ser registrado explicitamente como acima.
 ```
 
-### 14.3 `ResponseEntity` com ETag e Last-Modified
+### 15.3 `ResponseEntity` com ETag e Last-Modified
 
 Para evitar execução desnecessária do controller, use `WebRequest.checkNotModified()`
 — retorna `true` e define o status 304 antes de qualquer processamento:
@@ -7098,7 +7740,7 @@ public class ProdutoController {
 }
 ```
 
-### 14.4 `CacheControl` — Políticas Comuns
+### 15.4 `CacheControl` — Políticas Comuns
 
 ```java
 @RestController
@@ -7165,7 +7807,7 @@ public class CatalogoController {
 }
 ```
 
-### 14.5 Cache HTTP em Views SSR
+### 15.5 Cache HTTP em Views SSR
 
 ```java
 // Para páginas Thymeleaf com dados relativamente estáveis
@@ -7198,7 +7840,7 @@ spring:
           must-revalidate: true
 ```
 
-### 14.6 Resumo: Quando Usar Cada Estratégia
+### 15.6 Resumo: Quando Usar Cada Estratégia
 
 | Recurso | Estratégia recomendada | Headers |
 |---|---|---|
@@ -7211,9 +7853,9 @@ spring:
 
 ---
 
-## 15. Upload de Arquivos
+## 16. Upload de Arquivos
 
-### 15.1 Configuração
+### 16.1 Configuração
 
 ```yaml
 # application.yml — MultipartAutoConfiguration (✅ auto-configurado pelo Boot)
@@ -7227,7 +7869,7 @@ spring:
       location: /tmp/uploads    # ✅ Default: diretório temporário do SO
 ```
 
-### 15.2 Controller de Upload
+### 16.2 Controller de Upload
 
 ```java
 @RestController
@@ -7306,7 +7948,7 @@ public class ArquivoController {
 }
 ```
 
-### 15.3 Service — Estratégias de Armazenamento
+### 16.3 Service — Estratégias de Armazenamento
 
 ```java
 @Service
@@ -7371,7 +8013,7 @@ public class ArquivoService {
 }
 ```
 
-### 15.4 Download de Arquivos
+### 16.4 Download de Arquivos
 
 ```java
 @GetMapping("/{nomeArquivo:.+}")
@@ -7406,7 +8048,7 @@ public ResponseEntity<Resource> download(@PathVariable String nomeArquivo) {
 }
 ```
 
-### 15.5 Upload via Fetch API (JavaScript)
+### 16.5 Upload via Fetch API (JavaScript)
 
 #### Upload simples com arquivo único
 
@@ -7608,25 +8250,25 @@ public class GlobalExceptionHandler {
 
 ---
 
-## 16. Internacionalização (i18n)
+## 17. Internacionalização (i18n)
 
-### 16.1 Estratégias de Resolução de Locale
+### 17.1 Estratégias de Resolução de Locale
 
 ```mermaid
 flowchart TD
     REQ["HTTP Request"] --> LR
 
     subgraph LR["LocaleResolver (escolha uma)"]
-        AH["AcceptHeaderLocaleResolver\nLê Accept-Language: pt-BR, en\nSem estado — não persiste\nDefault do Spring Boot"]
-        CK["CookieLocaleResolver\nArmazena locale em cookie\nPersiste entre sessões\nIdeal para SPAs e SSR"]
-        SS["SessionLocaleResolver\nArmazena locale na HttpSession\nPersiste na sessão\nIdeal para SSR autenticado"]
-        FX["FixedLocaleResolver\nLocale fixo — nunca muda\nútil em APIs internas"]
+        AH["AcceptHeaderLocaleResolver<br>Lê Accept-Language: pt-BR, en<br>Sem estado — não persiste<br>Default do Spring Boot"]
+        CK["CookieLocaleResolver<br>Armazena locale em cookie<br>Persiste entre sessões<br>Ideal para SPAs e SSR"]
+        SS["SessionLocaleResolver<br>Armazena locale na HttpSession<br>Persiste na sessão<br>Ideal para SSR autenticado"]
+        FX["FixedLocaleResolver<br>Locale fixo — nunca muda<br>útil em APIs internas"]
     end
 
     LR -->|LocaleChangeInterceptor| CTRL["Controller / Template"]
 ```
 
-### 16.2 Configuração Completa
+### 17.2 Configuração Completa
 
 ```java
 @Configuration
@@ -7712,7 +8354,7 @@ spring:
     fallback-to-system-locale: true  # tenta locale do SO se não encontrar o arquivo
 ```
 
-### 16.3 Arquivos de Mensagens
+### 17.3 Arquivos de Mensagens
 
 ```
 src/main/resources/
@@ -7796,7 +8438,7 @@ br.com.app.validation.cpf.invalido=CPF inválido
 br.com.app.validation.email.unico=E-mail já cadastrado
 ```
 
-### 16.4 i18n em Controllers REST
+### 17.4 i18n em Controllers REST
 
 ```java
 @RestController
@@ -7855,7 +8497,7 @@ public class GlobalExceptionHandler {
 }
 ```
 
-### 16.5 i18n em Templates Thymeleaf
+### 17.5 i18n em Templates Thymeleaf
 
 ```html
 <!DOCTYPE html>
@@ -7920,7 +8562,7 @@ public class GlobalExceptionHandler {
 </html>
 ```
 
-### 16.6 Controller SSR — enviando chave em vez de texto
+### 17.6 Controller SSR — enviando chave em vez de texto
 
 ```java
 // Padrão recomendado para SSR: o controller envia CHAVES, o template resolve
@@ -7946,7 +8588,7 @@ public class ProdutoMvcController {
 }
 ```
 
-### 16.7 i18n em Respostas JSON — `MessageSourceAccessor`
+### 17.7 i18n em Respostas JSON — `MessageSourceAccessor`
 
 ```java
 /**
@@ -7984,7 +8626,7 @@ public class NotificacaoService {
 }
 ```
 
-### 16.8 Timezone — Integração com i18n
+### 17.8 Timezone — Integração com i18n
 
 ```java
 // LocaleContextHolder carrega Locale E TimeZone — útil para formatação
@@ -8009,35 +8651,32 @@ public class DateTimeFormatter {
 
 ---
 
-
----
-
-## 17. Customização do `ErrorController`
+## 18. Customização do `ErrorController`
 
 O Spring Boot registra automaticamente um `BasicErrorController` que serve o
 endpoint `/error` — ponto de chegada de todos os erros não tratados por um
 `@ControllerAdvice` (ex.: 404 gerado antes do `DispatcherServlet`, exceções em
 filtros, erros de Tomcat). Esta seção cobre como personalizar esse comportamento.
 
-### 17.1 Como o Fluxo de Erro Funciona
+### 18.1 Como o Fluxo de Erro Funciona
 
 ```mermaid
 flowchart LR
     REQ["Request"] --> F["Filters / Security"]
-    F -->|exceção no filtro| EC["/error\nBasicErrorController"]
+    F -->|exceção no filtro| EC["/error<br>BasicErrorController"]
     F --> DS["DispatcherServlet"]
     DS -->|404 — handler não encontrado| EC
     DS --> CTRL["@Controller / @RestController"]
-    CTRL -->|exceção não mapeada| CA["@ControllerAdvice\nGlobalExceptionHandler"]
+    CTRL -->|exceção não mapeada| CA["@ControllerAdvice<br>GlobalExceptionHandler"]
     CA -->|exceção não mapeada| EC
-    EC -->|browser| VIEW["Whitelabel Error Page\nou template error/*.html"]
+    EC -->|browser| VIEW["Whitelabel Error Page<br>ou template error/*.html"]
     EC -->|cliente REST| JSON["JSON ProblemDetail"]
 ```
 
 > A regra prática é: `@ControllerAdvice` para a esmagadora maioria dos casos;
 > `ErrorController` apenas para erros que **escapam** do `DispatcherServlet`.
 
-### 17.2 Customizando o `BasicErrorController`
+### 18.2 Customizando o `BasicErrorController`
 
 #### Abordagem 1 — `ErrorAttributes` customizado
 
@@ -8154,7 +8793,7 @@ public class AppErrorController implements ErrorController {
 }
 ```
 
-### 17.3 Templates de Erro Thymeleaf
+### 18.3 Templates de Erro Thymeleaf
 
 O Spring Boot resolve automaticamente templates em `templates/error/` pelo
 código de status — sem nenhuma configuração adicional.
@@ -8188,7 +8827,7 @@ src/main/resources/templates/
 </html>
 ```
 
-### 17.4 Configuração via `application.yml`
+### 18.4 Configuração via `application.yml`
 
 ```yaml
 server:
@@ -8206,13 +8845,13 @@ server:
 
 ---
 
-## 18. `@ResponseStatus` em Classes de Exceção
+## 19. `@ResponseStatus` em Classes de Exceção
 
 `@ResponseStatus` aplicado diretamente a uma classe de exceção instrui o Spring
 MVC a retornar um HTTP status específico sempre que essa exceção for lançada —
 sem necessidade de um `@ExceptionHandler` dedicado.
 
-### 18.1 Uso Básico
+### 19.1 Uso Básico
 
 ```java
 // ─── Exceção com status fixo ──────────────────────────────────────────────────
@@ -8256,7 +8895,7 @@ public ResponseEntity<ProdutoResponse> criar(@RequestBody @Valid ProdutoRequest 
 }
 ```
 
-### 18.2 `@ResponseStatus` vs `@ExceptionHandler` — Quando Usar Cada Um
+### 19.2 `@ResponseStatus` vs `@ExceptionHandler` — Quando Usar Cada Um
 
 ```java
 // ─── @ResponseStatus: adequado para exceções simples ─────────────────────────
@@ -8288,7 +8927,7 @@ public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) 
 }
 ```
 
-### 18.3 Precedência com `@ControllerAdvice`
+### 19.3 Precedência com `@ControllerAdvice`
 
 Quando uma exceção tem `@ResponseStatus` **e** existe um `@ExceptionHandler`
 compatível no `@ControllerAdvice`, o **`@ExceptionHandler` vence** — a anotação
@@ -8318,9 +8957,9 @@ public ProblemDetail handle(RecursoNaoEncontradoException ex, HttpServletRequest
 
 ---
 
-## 19. `MultiValueMap` e Form Data
+## 20. `MultiValueMap` e Form Data
 
-### 19.1 `MultiValueMap` — Múltiplos Valores por Chave
+### 20.1 `MultiValueMap` — Múltiplos Valores por Chave
 
 `MultiValueMap<K, V>` é uma extensão de `Map` do Spring que associa **uma ou mais
 valores** a cada chave. É o tipo usado internamente pelo MVC para representar
@@ -8361,7 +9000,7 @@ public class MultiValueMapController {
 }
 ```
 
-### 19.2 Form Data com Checkboxes (`multi-select`)
+### 20.2 Form Data com Checkboxes (`multi-select`)
 
 O caso de uso mais comum de `MultiValueMap` em SSR é o binding de checkboxes e
 selects múltiplos em um form HTML — onde cada checkbox marcado envia o mesmo
@@ -8471,7 +9110,7 @@ public class ProdutoMvcController {
 </form>
 ```
 
-### 19.3 `@RequestBody` com `MultiValueMap` (form-urlencoded)
+### 20.3 `@RequestBody` com `MultiValueMap` (form-urlencoded)
 
 ```java
 // Para receber form data (application/x-www-form-urlencoded) via REST
@@ -8487,7 +9126,7 @@ public ResponseEntity<String> receberFormData(
 }
 ```
 
-### 19.4 `LinkedMultiValueMap` — Construção Programática
+### 20.4 `LinkedMultiValueMap` — Construção Programática
 
 ```java
 // Construção manual de MultiValueMap — útil em testes ou ao montar requests
@@ -8509,9 +9148,9 @@ restClient.get()
 
 ---
 
-## 20. `RedirectView` e `UrlBasedViewResolver`
+## 21. `RedirectView` e `UrlBasedViewResolver`
 
-### 20.1 `RedirectView` — Redirect Programático com Controle Total
+### 21.1 `RedirectView` — Redirect Programático com Controle Total
 
 ```java
 @Controller
@@ -8568,7 +9207,7 @@ public class LegacyRedirectController {
 }
 ```
 
-### 20.2 `UrlBasedViewResolver` — Configuração Avançada de View Resolution
+### 21.2 `UrlBasedViewResolver` — Configuração Avançada de View Resolution
 
 O Spring Boot auto-configura o `ThymeleafViewResolver`, que tem precedência sobre
 o `UrlBasedViewResolver`. Este é relevante quando se usa FreeMarker, Mustache,
@@ -8617,7 +9256,7 @@ public class ViewResolverConfig {
 }
 ```
 
-### 20.3 Redirect 301 Permanente — SEO e Mudança de URL
+### 21.3 Redirect 301 Permanente — SEO e Mudança de URL
 
 ```java
 @Controller
@@ -8643,7 +9282,7 @@ public class SeoRedirectController {
 }
 ```
 
-### 20.4 Forward Interno — Compartilhamento de Handlers
+### 21.4 Forward Interno — Compartilhamento de Handlers
 
 ```java
 @Controller
@@ -8668,15 +9307,963 @@ public class ForwardController {
     }
 }
 ```
+---
 
-## 21. Tópicos Relevantes Não Cobertos Neste Documento
+## 22. Testes
+
+### 22.1 Visão Geral — Pirâmide de Testes no Spring MVC
+
+```mermaid
+graph TB
+    A["@SpringBootTest<br/>Integração completa<br/>contexto real + banco (Testcontainers)<br/>Mais lento / mais fidelidade"]
+    B["@WebMvcTest<br/>Slice test — só a camada web<br/>MockMvc / RestTestClient<br/>Rápido / sem banco"]
+    C["@DataJpaTest / @JdbcTest<br/>Slice test — só a camada de dados<br/>Banco em memória ou Testcontainers"]
+    D["Unitário puro<br/>new Service(mockRepo)<br/>Sem Spring / instantâneo"]
+    D --> C --> B --> A
+```
+
+**Dependências de teste — Spring Boot 3.x vs Spring Boot 4.x:**
+
+> **Spring Boot 4 / Spring Framework 7 — mudanças importantes nas dependências de teste:**
+>
+> - **JUnit 6 (Jupiter 6):** o Spring Boot 4 usa JUnit 6 (`org.junit.api.*`).
+>   O pacote mudou de `org.junit.jupiter.api` para `org.junit.api` — todos os
+>   imports precisam ser atualizados.
+> - **`spring-boot-starter-webmvc` explícito:** no Spring Boot 4, o starter web
+>   foi renomeado. Para testes que precisam da stack MVC completa, declare
+>   `spring-boot-starter-webmvc` explicitamente (ver seção 1).
+> - **`RestTestClient` nativo:** o `RestTestClient` passou a ser incluído
+>   automaticamente pelo `spring-boot-starter-test` no Boot 4 — sem dependência
+>   adicional.
+
+```xml
+<!-- ─── Spring Boot 3.x ──────────────────────────────────────────────────── -->
+
+<!-- Inclui: JUnit 5 (org.junit.jupiter.api.*), Mockito, AssertJ,
+             Hamcrest, JsonPath, Spring Test, Spring Boot Test, MockMvc -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-test</artifactId>
+    <scope>test</scope>
+</dependency>
+
+<!-- ─── Spring Boot 4.x — diferenças relevantes ─────────────────────────── -->
+
+<!-- Inclui: JUnit 6 (org.junit.api.*), Mockito, AssertJ,
+             Spring Test, Spring Boot Test, RestTestClient (nativo)  -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-test</artifactId>
+    <scope>test</scope>
+</dependency>
+
+<!-- Boot 4: declarar explicitamente para testes @WebMvcTest e @SpringBootTest
+     que precisam da stack MVC (DispatcherServlet, MessageConverters, etc.) -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-webmvc</artifactId>
+    <scope>test</scope>
+</dependency>
+
+<!-- ─── Comuns a Boot 3 e Boot 4 ─────────────────────────────────────────── -->
+
+<!-- Spring Security Test — @WithMockUser, @WithUserDetails, SecurityMockMvcRequestPostProcessors -->
+<dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-test</artifactId>
+    <scope>test</scope>
+</dependency>
+
+<!-- Testcontainers — banco real em container para testes de integração -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-testcontainers</artifactId>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+**JUnit 5 vs JUnit 6 — mudança de pacote:**
+
+```java
+// ─── JUnit 5 (Spring Boot 3.x) ────────────────────────────────────────────────
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+// ─── JUnit 6 (Spring Boot 4.x) — pacote raiz mudou de jupiter para api ────────
+import org.junit.api.Test;
+import org.junit.api.BeforeEach;
+import org.junit.api.DisplayName;
+import org.junit.api.extension.ExtendWith;
+import org.junit.api.params.ParameterizedTest;
+import org.junit.api.params.provider.ValueSource;
+
+// As anotações e comportamentos são os mesmos — apenas o pacote mudou.
+// No IntelliJ IDEA: use "Migrate Packages" ou busca/substituição global:
+//   org.junit.jupiter.api  →  org.junit.api
+```
+
+---
+
+### 22.2 Teste Unitário — Service sem Spring
+
+O teste mais rápido: instancia a classe diretamente, injeta mocks via construtor.
+Não carrega nenhum contexto Spring.
+
+#### Ciclo de vida dos métodos de setup e teardown
+
+```java
+// JUnit 6 (Boot 4) — pacote org.junit.api.*
+// JUnit 5 (Boot 3) — pacote org.junit.jupiter.api.*
+//
+// As anotações abaixo funcionam igualmente em ambas as versões;
+// apenas o pacote de import muda.
+//
+// ─── Ordem de execução por teste ──────────────────────────────────────────────
+//
+//  @BeforeAll   → uma vez antes de TODOS os testes da classe
+//  @BeforeEach  → antes de CADA teste
+//     @Test     → o próprio teste
+//  @AfterEach   → após CADA teste
+//  @AfterAll    → uma vez após TODOS os testes da classe
+//
+// @BeforeAll e @AfterAll precisam ser static (por padrão) porque são chamados
+// antes de qualquer instância ser criada. Podem ser não-static com
+// @TestInstance(Lifecycle.PER_CLASS) — uma única instância para toda a classe.
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("ProdutoService — ciclo de vida completo")
+class ProdutoServiceLifecycleTest {
+
+    // ─── @BeforeAll — executado UMA VEZ antes de todos os testes ─────────────
+    // Usado para recursos caros de inicializar que podem ser compartilhados:
+    // conexões, servidores externos, dados de referência read-only.
+    // Deve ser static (a menos que @TestInstance(PER_CLASS) seja usado).
+    @BeforeAll
+    static void configurarAmbiente() {
+        // Exemplos de uso real:
+        //   - Iniciar um servidor mock de e-mail (GreenMail)
+        //   - Carregar fixtures de dados estáticos de arquivos
+        //   - Configurar propriedades de sistema necessárias ao teste
+        System.setProperty("app.test.modo", "unitario");
+    }
+
+    // ─── @BeforeEach — executado antes de CADA teste ──────────────────────────
+    // Reinicia o estado que pode ser "poluído" por um teste anterior.
+    // Cada teste parte de um estado limpo e previsível.
+    @Mock private ProdutoRepository produtoRepository;
+    @Mock private CategoriaService  categoriaService;
+    @InjectMocks private ProdutoService produtoService;
+
+    @BeforeEach
+    void prepararCenario() {
+        // Com @ExtendWith(MockitoExtension) os mocks já são reiniciados automaticamente
+        // a cada teste — @BeforeEach é útil para preparar dados de teste reutilizáveis
+        // ou configurar comportamentos padrão comuns a vários testes.
+        when(categoriaService.buscarPorId(1L))
+                .thenReturn(new Categoria(1L, "Informática"));
+    }
+
+    // ─── @AfterEach — executado após CADA teste ───────────────────────────────
+    // Limpa recursos alocados no @BeforeEach ou durante o próprio teste:
+    // arquivos temporários, conexões abertas, estados estáticos modificados.
+    @AfterEach
+    void limparCenario() {
+        // Exemplos de uso real:
+        //   - Deletar arquivos temporários criados pelo teste
+        //   - Resetar contadores estáticos
+        //   - Fechar streams ou conexões abertas no @BeforeEach
+        // Com Mockito puro (@ExtendWith) os mocks já são resetados automaticamente —
+        // @AfterEach só é necessário para recursos externos.
+    }
+
+    // ─── @AfterAll — executado UMA VEZ após todos os testes ──────────────────
+    // Libera recursos inicializados no @BeforeAll.
+    // Deve ser static (mesma restrição do @BeforeAll).
+    @AfterAll
+    static void liberarAmbiente() {
+        // Exemplos de uso real:
+        //   - Parar um servidor mock de e-mail iniciado no @BeforeAll
+        //   - Remover propriedades de sistema configuradas no @BeforeAll
+        //   - Liberar conexões de banco compartilhadas (em testes que não usam Testcontainers)
+        System.clearProperty("app.test.modo");
+    }
+
+    // ─── Testes que usam o estado preparado no @BeforeEach ────────────────────
+    @Test
+    @DisplayName("buscarPorId retorna response quando produto existe")
+    void buscarPorId_WhenExists_ReturnsResponse() {
+        var produto = new Produto(1L, "Notebook", new BigDecimal("3499.99"));
+        when(produtoRepository.findById(1L)).thenReturn(Optional.of(produto));
+
+        var result = produtoService.buscarPorId(1L);
+
+        assertThat(result.id()).isEqualTo(1L);
+        assertThat(result.nome()).isEqualTo("Notebook");
+        verify(produtoRepository).findById(1L);
+        verifyNoMoreInteractions(produtoRepository, categoriaService);
+    }
+
+    @Test
+    @DisplayName("buscarPorId lança exceção quando produto não existe")
+    void buscarPorId_WhenNotFound_ThrowsException() {
+        when(produtoRepository.findById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> produtoService.buscarPorId(99L))
+                .isInstanceOf(RecursoNaoEncontradoException.class)
+                .hasMessageContaining("99");
+    }
+
+    // ─── ArgumentCaptor — inspecionar o objeto passado ao mock ───────────────
+    @Test
+    @DisplayName("criar persiste produto com dados corretos")
+    void criar_ValidRequest_PersistsCorrectly() {
+        var request = new ProdutoRequest("Notebook", new BigDecimal("3499.99"), 1L);
+        var saved   = new Produto(42L, "Notebook", new BigDecimal("3499.99"));
+        when(produtoRepository.save(any(Produto.class))).thenReturn(saved);
+
+        var result = produtoService.criar(request);
+
+        var captor = ArgumentCaptor.forClass(Produto.class);
+        verify(produtoRepository).save(captor.capture());
+        assertThat(captor.getValue().getNome()).isEqualTo("Notebook");
+        assertThat(result.id()).isEqualTo(42L);
+    }
+}
+```
+
+#### `@TestInstance(Lifecycle.PER_CLASS)` — `@BeforeAll` não-estático
+
+```java
+// Por padrão o JUnit cria uma nova instância da classe para cada @Test
+// (PER_METHOD), tornando @BeforeAll/@AfterAll obrigatoriamente static.
+//
+// Com @TestInstance(PER_CLASS), uma única instância é usada para todos os testes:
+//   - @BeforeAll e @AfterAll podem ser métodos de instância (não-static)
+//   - Permite compartilhar estado entre testes (use com cuidado — pode gerar
+//     dependência entre testes se o estado for modificado)
+//   - Útil quando @BeforeAll precisa acessar campos de instância (ex.: mocks)
+@ExtendWith(MockitoExtension.class)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DisplayName("ProdutoService — PER_CLASS lifecycle")
+class ProdutoServicePerClassTest {
+
+    @Mock private ProdutoRepository produtoRepository;
+    @InjectMocks private ProdutoService produtoService;
+
+    // Sem static — acessa this.produtoRepository normalmente
+    @BeforeAll
+    void carregarDadosCompartilhados() {
+        // Configura stub permanente que vale para todos os testes da classe
+        when(produtoRepository.count()).thenReturn(100L);
+    }
+
+    @AfterAll
+    void gerarRelatorioDeCobertura() {
+        // Executado após o último teste — pode acessar campos de instância
+        System.out.println("Testes concluídos. Total de produtos no mock: "
+                + produtoRepository.count());
+    }
+
+    @Test
+    void contagem_RetornaValorConfigurado() {
+        assertThat(produtoService.contarTodos()).isEqualTo(100L);
+    }
+}
+```
+
+**Ciclo de vida dos testes — `@BeforeAll`, `@BeforeEach`, `@AfterEach`, `@AfterAll`:**
+
+```java
+// ─── JUnit 5 (Boot 3.x) ───────────────────────────────────────────────────────
+import org.junit.jupiter.api.*;
+
+// ─── JUnit 6 (Boot 4.x) ───────────────────────────────────────────────────────
+import org.junit.api.*;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("PedidoService — ciclo de vida de testes")
+class PedidoServiceLifecycleTest {
+
+    // ─── @BeforeAll ────────────────────────────────────────────────────────────
+    // Executado UMA VEZ antes de todos os testes da classe.
+    // DEVE ser static (a menos que a classe use @TestInstance(PER_CLASS)).
+    // Uso típico: inicializar recursos caros compartilhados entre testes
+    // (ex: conexão de banco, servidor embarcado, dados de fixtures fixos).
+    @BeforeAll
+    static void configurarAmbiente() {
+        // Exemplo: criar diretório temporário, carregar arquivo de configuração
+        System.setProperty("app.test.mode", "true");
+    }
+
+    // ─── @BeforeEach ───────────────────────────────────────────────────────────
+    // Executado antes de CADA teste.
+    // Uso típico: estado inicial limpo por teste (mocks resetados, dados frescos).
+    // O Mockito já reseta os mocks automaticamente com MockitoExtension —
+    // use @BeforeEach para inicializar outros objetos ou estado adicional.
+    @BeforeEach
+    void prepararCadaTeste() {
+        // Reset de estado que não é gerenciado pelo Mockito
+        CarrinhoContexto.limpar();
+    }
+
+    @Test
+    @DisplayName("confirmar pedido dispara email de confirmação")
+    void confirmar_PedidoValido_EnviaEmail() {
+        // ...
+    }
+
+    @Test
+    @DisplayName("confirmar pedido lança exceção se estoque insuficiente")
+    void confirmar_SemEstoque_LancaExcecao() {
+        // ...
+    }
+
+    // ─── @AfterEach ────────────────────────────────────────────────────────────
+    // Executado após CADA teste, mesmo que o teste tenha falhado.
+    // Uso típico: limpar recursos criados pelo teste, fechar conexões temporárias,
+    // verificar ausência de interações inesperadas (verifyNoMoreInteractions).
+    @AfterEach
+    void limparAposCadaTeste() {
+        // Garante que nenhum mock foi chamado de forma não verificada
+        // (substitui Mockito.validateMockitoUsage() que é mais verboso)
+        CarrinhoContexto.limpar();
+    }
+
+    // ─── @AfterAll ─────────────────────────────────────────────────────────────
+    // Executado UMA VEZ após todos os testes da classe, mesmo após falhas.
+    // DEVE ser static (a menos que use @TestInstance(PER_CLASS)).
+    // Uso típico: liberar recursos globais abertos no @BeforeAll.
+    @AfterAll
+    static void tearDown() {
+        System.clearProperty("app.test.mode");
+    }
+}
+
+// ─── @TestInstance(PER_CLASS) — permite @BeforeAll/@AfterAll não-static ────────
+//
+// Por padrão o JUnit cria uma nova instância da classe para CADA teste.
+// Com PER_CLASS, uma única instância é usada em todos os testes da classe.
+// Vantagem: @BeforeAll e @AfterAll podem ser de instância (não precisam ser static),
+//            o que permite injetar dependências normalmente nesses métodos.
+// Atenção: o estado da instância persiste entre testes — mocks e campos podem
+//          ser "contaminados" por testes anteriores; use @BeforeEach para resetar.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers
+@DisplayName("PedidoController — integração (PER_CLASS)")
+class PedidoControllerIT {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:18")
+            .withReuse(true);
+
+    @Autowired
+    private PedidoRepository pedidoRepository;
+
+    @Autowired
+    private RestTestClient restTestClient;
+
+    // ─── Não-static: possível apenas com PER_CLASS ─────────────────────────────
+    @BeforeAll
+    void carregarDadosBase() {
+        // Inserção de dados de referência usados por todos os testes da classe.
+        // Como é PER_CLASS, este método roda uma única vez — mais eficiente.
+        pedidoRepository.saveAll(DadosBase.pedidosPadrao());
+    }
+
+    @BeforeEach
+    void limparPedidosVariaveis() {
+        // Remove apenas pedidos criados nos testes individuais;
+        // os dados base do @BeforeAll são preservados.
+        pedidoRepository.deleteByOrigemTeste(true);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/pedidos → retorna lista paginada")
+    void listar_RetornaPaginaComPedidosBase() {
+        restTestClient.get()
+                .uri("/api/v1/pedidos?page=0&size=10")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.content").isNotEmpty();
+    }
+
+    // ─── @AfterAll não-static — possível com PER_CLASS ────────────────────────
+    @AfterAll
+    void limparDadosBase() {
+        pedidoRepository.deleteAll();
+    }
+}
+```
+
+**Resumo do ciclo de vida:**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  @BeforeAll (static)  ─── uma vez por CLASSE (antes de tudo)        │
+│                                                                       │
+│   ┌──────────────────────────────────────────────────────────────┐   │
+│   │  @BeforeEach  ─── antes de CADA @Test                        │   │
+│   │  @Test        ─── execução do teste                          │   │
+│   │  @AfterEach   ─── após CADA @Test (mesmo se falhou)          │   │
+│   └──────────────────────────────────────────────────────────────┘   │
+│   (repetido para cada método @Test da classe)                         │
+│                                                                       │
+│  @AfterAll (static)   ─── uma vez por CLASSE (após tudo)             │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 22.3 `@WebMvcTest` — Slice Test da Camada Web
+
+Carrega apenas o slice MVC (controllers, filters, converters, security web).
+**Não carrega** services, repositories nem o banco — estes devem ser mockados.
+
+#### 22.3.1 REST Controller com `RestTestClient`
+
+```java
+@WebMvcTest(ProdutoController.class)
+@DisplayName("ProdutoController — slice REST")
+class ProdutoControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean                   // Spring Boot 3.4+: substitui @MockBean
+    private ProdutoService produtoService;
+
+    private RestTestClient restTestClient;
+
+    @BeforeEach
+    void setUp() {
+        // Bind RestTestClient ao MockMvc para testes de slice
+        restTestClient = RestTestClient.bindToMockMvc(mockMvc).build();
+    }
+
+    @Test
+    @DisplayName("GET /{id} → 200 quando produto existe")
+    void buscar_WhenExists_Returns200() {
+        var response = new ProdutoResponse(1L, "Notebook",
+                new BigDecimal("3499.99"), "TI",
+                LocalDateTime.now(), LocalDateTime.now());
+        when(produtoService.buscarPorId(1L)).thenReturn(response);
+
+        restTestClient.get()
+                .uri("/api/v1/produtos/1")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(ProdutoResponse.class)
+                .value(p -> {
+                    assertThat(p.id()).isEqualTo(1L);
+                    assertThat(p.nome()).isEqualTo("Notebook");
+                });
+    }
+
+    @Test
+    @DisplayName("GET /{id} → 404 quando produto não existe")
+    void buscar_WhenNotFound_Returns404() {
+        when(produtoService.buscarPorId(99L))
+                .thenThrow(new RecursoNaoEncontradoException("Produto", 99L));
+
+        restTestClient.get()
+                .uri("/api/v1/produtos/99")
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.status").isEqualTo(404)
+                .jsonPath("$.detail").isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("POST / → 201 com Location quando request válido")
+    void criar_ValidRequest_Returns201() {
+        var created = new ProdutoResponse(42L, "Notebook",
+                new BigDecimal("3499.99"), "TI",
+                LocalDateTime.now(), LocalDateTime.now());
+        when(produtoService.criar(any())).thenReturn(created);
+
+        restTestClient.post()
+                .uri("/api/v1/produtos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("""
+                        {
+                          "nome": "Notebook",
+                          "preco": 3499.99,
+                          "categoriaId": 1
+                        }
+                        """)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectHeader().valueMatches("Location", ".*/api/v1/produtos/42")
+                .expectBody(ProdutoResponse.class)
+                .value(p -> assertThat(p.id()).isEqualTo(42L));
+    }
+
+    @Test
+    @DisplayName("POST / → 400 quando nome em branco")
+    void criar_WhenNomeBlank_Returns400() {
+        restTestClient.post()
+                .uri("/api/v1/produtos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("""
+                        {"nome": "", "preco": 99.90, "categoriaId": 1}
+                        """)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.errors.nome").isNotEmpty();
+    }
+}
+```
+
+#### 22.3.2 Controller MVC SSR com Thymeleaf
+
+```java
+@WebMvcTest(ProdutoMvcController.class)
+@DisplayName("ProdutoMvcController — slice SSR")
+class ProdutoMvcControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean private ProdutoService   produtoService;
+    @MockitoBean private CategoriaService categoriaService;
+
+    @BeforeEach
+    void setUp() {
+        when(categoriaService.listarTodas()).thenReturn(List.of(
+                new CategoriaResponse(1L, "TI"),
+                new CategoriaResponse(2L, "Eletrônicos")
+        ));
+    }
+
+    @Test
+    @DisplayName("GET /produtos → view lista com atributos corretos")
+    void listar_ReturnsListViewWithModel() throws Exception {
+        var page = new PageImpl<>(List.of(
+                new ProdutoResponse(1L, "Notebook", new BigDecimal("3499.99"),
+                        "TI", LocalDateTime.now(), LocalDateTime.now())
+        ));
+        when(produtoService.listar(any(), any())).thenReturn(page);
+
+        mockMvc.perform(get("/produtos"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("produtos/lista"))        // verifica a view
+                .andExpect(model().attributeExists("produtos"))  // verifica o model
+                .andExpect(model().attribute("produtos", page))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                .andExpect(xpath("//table").exists());           // verifica o HTML
+    }
+
+    @Test
+    @DisplayName("GET /produtos/novo → view formulário com form vazio")
+    void exibirFormulario_ReturnsFormView() throws Exception {
+        mockMvc.perform(get("/produtos/novo"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("produtos/formulario"))
+                .andExpect(model().attributeExists("produtoForm"))
+                .andExpect(model().attributeExists("categorias"));
+    }
+
+    @Test
+    @DisplayName("POST /produtos → redireciona após criação válida (PRG)")
+    void salvar_ValidForm_RedirectsWithFlash() throws Exception {
+        var produto = new Produto(1L, "Notebook", new BigDecimal("3499.99"));
+        when(produtoService.criar(any())).thenReturn(produto);
+        when(produtoService.nomeJaExiste(any())).thenReturn(false);
+
+        mockMvc.perform(post("/produtos")
+                        .with(csrf())                          // CSRF obrigatório com Spring Security
+                        .param("nome",        "Notebook")
+                        .param("preco",       "3499.99")
+                        .param("categoriaId", "1"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrlPattern("/produtos/*"))
+                .andExpect(flash().attributeExists("mensagem")); // verifica flash attribute
+    }
+
+    @Test
+    @DisplayName("POST /produtos → retorna form com erros quando inválido")
+    void salvar_InvalidForm_ReturnsFormWithErrors() throws Exception {
+        mockMvc.perform(post("/produtos")
+                        .with(csrf())
+                        .param("nome", "")      // nome vazio — viola @NotBlank
+                        .param("preco", "")
+                        .param("categoriaId", "1"))
+                .andExpect(status().isOk())
+                .andExpect(view().name("produtos/formulario"))
+                .andExpect(model().hasErrors())
+                .andExpect(model().attributeHasFieldErrors("produtoForm", "nome", "preco"));
+    }
+}
+```
+
+---
+
+### 22.4 `@WebMvcTest` com Spring Security
+
+```java
+// Por padrão, @WebMvcTest aplica a configuração de Security do projeto.
+// Use as anotações do spring-security-test para simular autenticação.
+
+@WebMvcTest(PedidoController.class)
+@DisplayName("PedidoController — autenticação e autorização")
+class PedidoControllerSecurityTest {
+
+    @Autowired private MockMvc       mockMvc;
+    @MockitoBean private PedidoService pedidoService;
+
+    // ─── @WithMockUser — simula usuário autenticado com roles ────────────────
+    @Test
+    @WithMockUser(username = "joao@empresa.com", roles = {"USER"})
+    @DisplayName("GET /api/v1/pedidos → 200 para usuário autenticado")
+    void listar_AuthenticatedUser_Returns200() throws Exception {
+        when(pedidoService.listar(any())).thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/v1/pedidos"))
+                .andExpect(status().isOk());
+    }
+
+    // ─── Sem autenticação → 401 ───────────────────────────────────────────────
+    @Test
+    @DisplayName("GET /api/v1/pedidos → 401 sem autenticação")
+    void listar_Unauthenticated_Returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/pedidos"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ─── Papel insuficiente → 403 ────────────────────────────────────────────
+    @Test
+    @WithMockUser(roles = {"USER"})
+    @DisplayName("DELETE /api/v1/pedidos/{id} → 403 para role USER")
+    void excluir_InsufficientRole_Returns403() throws Exception {
+        mockMvc.perform(delete("/api/v1/pedidos/1").with(csrf()))
+                .andExpect(status().isForbidden());
+    }
+
+    // ─── @WithUserDetails — carrega o UserDetails real do UserDetailsService ─
+    @Test
+    @WithUserDetails(value = "admin@empresa.com",
+                     userDetailsServiceBeanName = "usuarioDetailsService")
+    @DisplayName("DELETE → 204 para usuário ADMIN real")
+    void excluir_AdminUser_Returns204() throws Exception {
+        doNothing().when(pedidoService).excluir(1L);
+
+        mockMvc.perform(delete("/api/v1/pedidos/1").with(csrf()))
+                .andExpect(status().isNoContent());
+    }
+
+    // ─── Simular principal customizado (UsuarioDetails) ──────────────────────
+    @Test
+    @DisplayName("GET /meus-pedidos → usa o ID do usuário autenticado")
+    void meusPedidos_UsesAuthenticatedUserId() throws Exception {
+        var principal = new UsuarioDetails(42L, "João", "joao@email.com",
+                "tenant-01", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        mockMvc.perform(get("/api/v1/pedidos/meus")
+                        .with(user(principal)))           // SecurityMockMvcRequestPostProcessors
+                .andExpect(status().isOk());
+
+        verify(pedidoService).listarPorCliente(eq(42L), any());
+    }
+}
+```
+
+---
+
+### 22.5 `@SpringBootTest` — Teste de Integração
+
+Carrega o contexto Spring completo. Use com `Testcontainers` para banco real.
+
+```java
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers
+@DisplayName("ProdutoController — integração")
+class ProdutoControllerIT {
+
+    // Testcontainers: sobe PostgreSQL real em Docker
+    @Container
+    static PostgreSQLContainer<?> postgres =
+            new PostgreSQLContainer<>("postgres:17")
+                    .withReuse(true);
+
+    // Conecta o contexto Spring ao container PostgreSQL
+    @DynamicPropertySource
+    static void configureProperties(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url",      postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+    }
+
+    // RestTestClient com RANDOM_PORT — injeta o cliente HTTP real
+    @Autowired
+    private RestTestClient restTestClient;
+
+    @Autowired
+    private ProdutoRepository produtoRepository;
+
+    @BeforeEach
+    void setUp() {
+        produtoRepository.deleteAll();
+    }
+
+    @Test
+    @DisplayName("CRUD completo: criar → buscar → atualizar → deletar")
+    void crudCompleto() {
+        // CREATE
+        var created = restTestClient.post()
+                .uri("/api/v1/produtos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("""
+                        {"nome": "Notebook Dell", "preco": 3499.99, "categoriaId": 1}
+                        """)
+                .exchange()
+                .expectStatus().isCreated()
+                .expectBody(ProdutoResponse.class)
+                .returnResult()
+                .getResponseBody();
+
+        assertThat(created).isNotNull();
+        Long id = created.id();
+
+        // READ
+        restTestClient.get()
+                .uri("/api/v1/produtos/{id}", id)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.nome").isEqualTo("Notebook Dell");
+
+        // UPDATE
+        restTestClient.put()
+                .uri("/api/v1/produtos/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("""
+                        {"nome": "Notebook Dell Atualizado", "preco": 3299.99, "categoriaId": 1}
+                        """)
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.nome").isEqualTo("Notebook Dell Atualizado");
+
+        // DELETE
+        restTestClient.delete()
+                .uri("/api/v1/produtos/{id}", id)
+                .exchange()
+                .expectStatus().isNoContent();
+
+        // VERIFY DELETED
+        restTestClient.get()
+                .uri("/api/v1/produtos/{id}", id)
+                .exchange()
+                .expectStatus().isNotFound();
+    }
+
+    // ─── Teste de validação end-to-end ────────────────────────────────────────
+    @Test
+    @DisplayName("POST com dados inválidos → 400 com erros por campo")
+    void criar_InvalidData_Returns400WithFieldErrors() {
+        restTestClient.post()
+                .uri("/api/v1/produtos")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("""
+                        {"nome": "", "preco": -1, "categoriaId": null}
+                        """)
+                .exchange()
+                .expectStatus().isBadRequest()
+                .expectBody()
+                .jsonPath("$.errors.nome").isNotEmpty()
+                .jsonPath("$.errors.preco").isNotEmpty()
+                .jsonPath("$.errors.categoriaId").isNotEmpty();
+    }
+}
+```
+
+---
+
+### 22.6 `MockMvc` vs `RestTestClient` — Comparativo
+
+```java
+// ─── MockMvc — API imperativa tradicional ─────────────────────────────────────
+// Verboso mas flexível; suporte nativo ao Thymeleaf (view(), model(), xpath())
+mockMvc.perform(
+        get("/api/v1/produtos/1")
+                .accept(MediaType.APPLICATION_JSON)
+                .header("X-API-Version", "1.0"))
+        .andExpect(status().isOk())
+        .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+        .andExpect(jsonPath("$.nome").value("Notebook"))
+        .andExpect(jsonPath("$.preco").value(3499.99))
+        .andDo(print());  // imprime request/response no console
+
+// ─── RestTestClient — API fluente (Spring Boot 4 nativo) ─────────────────────
+// Mais legível; AssertJ; funciona igual para MockMvc (slice) e RANDOM_PORT (IT)
+restTestClient.get()
+        .uri("/api/v1/produtos/1")
+        .accept(MediaType.APPLICATION_JSON)
+        .header("X-API-Version", "1.0")
+        .exchange()
+        .expectStatus().isOk()
+        .expectHeader().contentType(MediaType.APPLICATION_JSON)
+        .expectBody()
+        .jsonPath("$.nome").isEqualTo("Notebook")
+        .jsonPath("$.preco").isEqualTo(3499.99);
+```
+
+| | `MockMvc` | `RestTestClient` |
+|---|---|---|
+| API | Imperativa — `andExpect()` | Fluente — `expectStatus()` |
+| Assertions | Hamcrest / MockMvc matchers | AssertJ + JsonPath |
+| Suporte a Thymeleaf (`view()`, `model()`) | ✅ Nativo | ❌ Não |
+| Funciona com `@WebMvcTest` | ✅ | ✅ via `bindToMockMvc(mockMvc)` |
+| Funciona com `@SpringBootTest RANDOM_PORT` | ❌ | ✅ injetado automaticamente |
+| Disponível sem dependência extra | ✅ | ✅ (Boot 4 — `spring-boot-starter-test`) |
+| **Recomendação** | Testes SSR com view/model | REST — slice e integração |
+
+---
+
+### 22.7 Configuração de Contexto de Teste
+
+```java
+// ─── @TestConfiguration — beans extras apenas nos testes ─────────────────────
+@TestConfiguration
+public class TestSecurityConfig {
+
+    // Substitui a SecurityFilterChain de produção durante os testes
+    @Bean
+    @Primary
+    public SecurityFilterChain testSecurityFilterChain(HttpSecurity http)
+            throws Exception {
+        http.csrf(AbstractHttpConfigurer::disable)
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
+        return http.build();
+    }
+}
+
+// Uso: importar apenas onde necessário
+@WebMvcTest(ProdutoController.class)
+@Import(TestSecurityConfig.class)
+class ProdutoControllerTest { /* ... */ }
+
+// ─── @ActiveProfiles — ativar perfil de teste ─────────────────────────────────
+@SpringBootTest
+@ActiveProfiles("test")   // carrega application-test.yml
+class ProdutoServiceIT { /* ... */ }
+
+// ─── @Sql — executar scripts SQL antes/depois dos testes ──────────────────────
+@SpringBootTest
+@Sql(scripts = "/sql/setup-produtos.sql",
+     executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
+@Sql(scripts = "/sql/cleanup.sql",
+     executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
+class RelatorioServiceIT { /* ... */ }
+
+// ─── @Transactional em testes — rollback automático ──────────────────────────
+@SpringBootTest
+@Transactional   // cada teste é executado em transação que faz rollback no final
+class ProdutoRepositoryTest {
+
+    @Autowired private ProdutoRepository repository;
+
+    @Test
+    void salvar_PersisteProduto() {
+        repository.save(new Produto("Notebook", new BigDecimal("3499.99")));
+        // rollback automático ao final do teste — banco fica limpo
+        assertThat(repository.count()).isEqualTo(1);
+    }
+}
+
+// ─── @DirtiesContext — reinicia contexto após teste que modifica estado global ─
+@SpringBootTest
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
+class IntegracaoComEfeitos { /* ... */ }
+```
+
+---
+
+### 22.8 Testando Upload, CORS e SSE
+
+```java
+@WebMvcTest(ArquivoController.class)
+class ArquivoControllerTest {
+
+    @Autowired  private MockMvc       mockMvc;
+    @MockitoBean private ArquivoService arquivoService;
+
+    // ─── Upload de arquivo ────────────────────────────────────────────────────
+    @Test
+    @WithMockUser
+    void upload_ArquivoValido_Returns201() throws Exception {
+        var arquivo = new MockMultipartFile(
+                "arquivo",                         // nome do parâmetro (@RequestParam)
+                "foto.jpg",                        // nome original do arquivo
+                MediaType.IMAGE_JPEG_VALUE,        // content type
+                "conteudo-binario".getBytes());    // bytes do arquivo
+
+        when(arquivoService.salvar(any()))
+                .thenReturn(new ArquivoResponse("id-1", "foto.jpg", 100L,
+                        "image/jpeg", "/api/v1/arquivos/id-1"));
+
+        mockMvc.perform(multipart("/api/v1/arquivos").file(arquivo)
+                        .with(csrf()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.nome").value("foto.jpg"));
+    }
+
+    // ─── CORS — verifica headers na resposta ──────────────────────────────────
+    @Test
+    void cors_AllowedOrigin_RetornaHeaders() throws Exception {
+        mockMvc.perform(options("/api/v1/arquivos")
+                        .header("Origin",                        "https://app.empresa.com.br")
+                        .header("Access-Control-Request-Method", "POST"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Origin",
+                        "https://app.empresa.com.br"))
+                .andExpect(header().exists("Access-Control-Allow-Methods"));
+    }
+}
+
+// ─── SSE — Server-Sent Events ─────────────────────────────────────────────────
+@WebMvcTest(EventoController.class)
+class EventoControllerTest {
+
+    @Autowired  private MockMvc         mockMvc;
+    @MockitoBean private EventoBroadcaster broadcaster;
+
+    @Test
+    @WithMockUser
+    void stream_RetornaTextEventStream() throws Exception {
+        var emitter = new SseEmitter();
+        when(broadcaster.subscribe(any(), any())).thenReturn(emitter);
+
+        mockMvc.perform(get("/api/v1/eventos/stream")
+                        .param("usuarioId", "1")
+                        .accept(MediaType.TEXT_EVENT_STREAM_VALUE))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(
+                        MediaType.TEXT_EVENT_STREAM_VALUE));
+    }
+}
+```
+
+---
+
+## 23. Tópicos Relevantes Não Cobertos Neste Documento
 
 Assuntos relacionados ao Spring MVC ainda ausentes neste documento, ordenados por relevância prática.
 
-### 21.1 Tópicos Ausentes — Alta Relevância
-
-**1. Testes — seção dedicada**
-O documento menciona `@WebMvcTest` e `RestTestClient` em exemplos pontuais, mas não tem uma seção consolidada com: `MockMvc` vs `RestTestClient`, teste de views SSR com Thymeleaf (`andExpect(view().name(...))`, `andExpect(model().attribute(...))`), teste de CSRF em formulários, `@WebMvcTest` com Spring Security (`@WithMockUser`, `@WithUserDetails`), e slice tests vs `@SpringBootTest`.
+### 23.1 Tópicos Ausentes — Alta Relevância
 
 **2. HTTP Interface — `@HttpExchange`**
 Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao Feign) usando interfaces anotadas com `@GetExchange`, `@PostExchange` etc., resolvidos por `HttpServiceProxyFactory`. Direto ao território do Spring MVC e completamente ausente.
@@ -8684,22 +10271,74 @@ Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao
 **3. HATEOAS**
 `spring-hateoas`, `EntityModel<T>`, `CollectionModel<T>`, `WebMvcLinkBuilder`, representação HAL. Ausente por completo, apesar de ser parte oficial do ecossistema Spring MVC para APIs hipermídia.
 
-### 21.2 Tópicos Ausentes — Relevância Moderada
+### 23.2 Tópicos Ausentes — Relevância Moderada
 
 **4. Endpoints funcionais — `RouterFunction` / WebMvc.fn**
 Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `WebMvcConfigurer.addRouterFunctions()`. Não substitui `@Controller` no dia a dia mas é relevante para cenários de roteamento dinâmico ou bibliotecas internas.
 
-### 21.3 Tópicos Ausentes — Relevância Menor mas Notáveis
+### 23.3 Tópicos Ausentes — Relevância Menor mas Notáveis
 
 **5. `WebMvcTest` + `MockMvcRestDocumentation`** — geração de documentação a partir dos testes (Spring REST Docs)
 
 **6. Virtual Threads — seção dedicada** — mencionado em vários lugares, mas sem consolidar os impactos no MVC (thread locals, `@Async`, `SecurityContextHolder`, `TransactionSynchronizationManager`)
 
-### 21.4 Resumo por Prioridade
+### 23.4 Resumo por Prioridade
 
 | Prioridade | Tópico | Justificativa |
 |---|---|---|
-| 🔴 Alta | Testes dedicados | Sem testes, nenhum dos exemplos do doc é verificável |
 | 🔴 Alta | `@HttpExchange` | Substitui Feign no ecossistema Spring — muito usado em microserviços |
 | 🟡 Média | HATEOAS | Relevante para APIs que seguem nível 3 do Richardson Maturity Model |
 | 🟢 Baixa | WebMvc.fn | Nicho, mas parte oficial da spec |
+
+---
+
+## Referências e Créditos
+
+### Documentação Oficial
+
+| Recurso | URL |
+|---|---|
+| Spring MVC Reference | https://docs.spring.io/spring-framework/reference/web/webmvc.html |
+| Spring Boot Web Reference | https://docs.spring.io/spring-boot/reference/web/servlet.html |
+| Spring Framework 7 — API Versioning | https://docs.spring.io/spring-framework/reference/web/webmvc-versioning.html |
+| Spring Security Reference | https://docs.spring.io/spring-security/reference/ |
+| Thymeleaf Documentation | https://www.thymeleaf.org/documentation.html |
+| Thymeleaf Layout Dialect | https://ultraq.github.io/thymeleaf-layout-dialect/ |
+| Thymeleaf + Spring Security | https://github.com/thymeleaf/thymeleaf-extras-springsecurity |
+| SpringDoc OpenAPI | https://springdoc.org/ |
+| Jakarta Bean Validation 3.0 | https://beanvalidation.org/3.0/ |
+| JTE — Java Template Engine | https://jte.gg/ |
+| JUnit 5 User Guide | https://junit.org/junit5/docs/current/user-guide/ |
+| Mockito Documentation | https://site.mockito.org/ |
+| Testcontainers for Java | https://java.testcontainers.org/ |
+
+### Especificações e RFCs
+
+| Especificação | URL |
+|---|---|
+| RFC 9457 — Problem Details for HTTP APIs | https://www.rfc-editor.org/rfc/rfc9457 |
+| RFC 8594 — Sunset HTTP Header | https://www.rfc-editor.org/rfc/rfc8594 |
+| Jakarta EE 10 Platform | https://jakarta.ee/specifications/platform/10/ |
+| WHATWG HTML — `data-*` attributes | https://html.spec.whatwg.org/multipage/dom.html#embedding-custom-non-visible-data-with-the-data-*-attributes |
+
+### Referências Complementares
+
+| Recurso | URL |
+|---|---|
+| Baeldung — Spring MVC | https://www.baeldung.com/spring-mvc |
+| Baeldung — Spring Security | https://www.baeldung.com/security-spring |
+| Spring Boot API Versioning (Baeldung) | https://www.baeldung.com/spring-api-versioning |
+| Validation Groups — Stack Overflow | https://stackoverflow.com/a/35359965 |
+| Spring Blog — API Versioning in Spring | https://spring.io/blog/2025/09/16/api-versioning-in-spring/ |
+
+---
+
+### Créditos
+
+Este documento foi elaborado de forma colaborativa entre:
+
+- **[@ftsuda-senac](https://github.com/ftsuda-senac)** — autor das perguntas, revisões e direcionamentos que moldaram o conteúdo e a estrutura do documento.
+
+- **[Claude Sonnet 4.6](https://www.anthropic.com/claude)** (Anthropic) — modelo de linguagem utilizado para geração, estruturação e revisão do conteúdo técnico ao longo de toda a conversa.
+
+> *Documento gerado para Spring Boot 3.5 / 4.0 com Java 21+ · Spring Framework 6.x / 7.x · Thymeleaf 3.x · SpringDoc OpenAPI 2.x / 3.x*
