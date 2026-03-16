@@ -37,14 +37,14 @@
     * Processo de component scanning - Por padrão, segue subpackages a partir do package onde a classe principal do projeto se encontra
         * Caso haja classes fora do package principal, configurar o `scanBasePackages` em `@SpringBootApplication`
     * Nas camadas principais (Service e Controller), sempre que possível usar a injeção através de um construtor único e/ou método `set` (caso seja opcional) ao invés de usar o `@Autowired` diretamente no atributo - Facilita a escrita de testes (unitários/integração).
-    * Criar beans programaticamente através de classes anotadas com `@Configuration`e métodos anotados com `@Bean`
+    * Criar beans programaticamente através de classes anotadas com `@Configuration` e métodos anotados com `@Bean`
     * Usar valores padrões nas anotações `@Value`
     ```java
     @Value("${valor-booolean-properties:true}")
     boolean valorBooleanoInjetado;
     ```
 
-* Spring Boot/Spring Initialzr
+* Spring Boot/Spring Initializr
     * Cuidado ao configurar Beans que sobrescrevem o comportamento padrão
     * Dependências úteis: devtools, actuator, configuration-processor
 * EventListeners
@@ -77,7 +77,7 @@
     * https://www.baeldung.com/spring-bean-scopes
 * i18n para textos estáticos/validações
     * Uso de i18n em dados gerenciados requer atenção na modelagem para suportá-lo
-* OpenAPI/Swagger2
+* OpenAPI/Swagger UI
 * Upload e mapeamento para acesso via HTTP
     * Integração com serviços externos (ex: AWS S3)
 * Utilitários
@@ -192,9 +192,9 @@ JpaRepository <|-- MeuRepository
 
 * Outras dicas e pontos de atenção
     * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/ antigo `javax.persistence`) e evitar usar anotações específicas do Hibernate.
-    * Uso da configuração `spring.jpa.open-in-view=false` - considerada má-prática, pois mantém uma conexão aberta com o banco de dados para cada acesso realizado à aplicação. Alternativas indicadas abaixo
+    * Uso da configuração `spring.jpa.open-in-view=false` - recomendado para evitar o padrão Open Session/EntityManager in View e deixar explícitos os pontos de carregamento de dados e relacionamentos.
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
-        * TODO: Ver diferenças de comportamento com `jakarta.transaction.Transactional` do JEE
+        * Em projetos Spring, preferir `org.springframework.transaction.annotation.Transactional` quando for necessário usar recursos específicos como `propagation`, `isolation`, `readOnly` e `timeout`.
             * https://www.baeldung.com/spring-vs-jta-transactional
             * https://stackoverflow.com/a/62702146
     * Mapeamento das entidades com annotations do JPA
@@ -203,7 +203,7 @@ JpaRepository <|-- MeuRepository
                 * `*toOne` - EAGER
                 * `*toMany`- LAZY
             * Atentar ao uso do "fetch EAGER" nas anotações de relacionamento (`@OneToOne`, `@OneToMany`/`@ManyToOne` e `@ManyToMany`). Se usado incorretamente, pode ocasionar problema sérios de desempenho. Sempre dar preferência ao uso do "fetch LAZY" e quando necessário fazer o fetch manualmente usando JOIN FETCH do JPQL ou usar `@EntityGraph` ou `@NamedEntityGraph`.
-            * Nos relacionamentos `*toMany`, normalmente usar coleção do tipo `Set` ao invés do `List` para evitar erros to tipo `MultipleBagFetchException` - porém causa problema do produto cartesiano e precisa analisar caso a caso [ref1](https://stackoverflow.com/questions/4334970/hibernate-throws-multiplebagfetchexception-cannot-simultaneously-fetch-multipl), [ref2](https://www.baeldung.com/java-hibernate-multiplebagfetchexception) e [ref3](https://vladmihalcea.com/hibernate-multiplebagfetchexception/)
+            * Nos relacionamentos `*toMany`, o uso de `Set` no lugar de `List` pode ajudar em alguns cenários de `MultipleBagFetchException`, mas não deve ser tratado como regra geral, pois o impacto depende do mapeamento e da estratégia de busca adotada [ref1](https://stackoverflow.com/questions/4334970/hibernate-throws-multiplebagfetchexception-cannot-simultaneously-fetch-multipl), [ref2](https://www.baeldung.com/java-hibernate-multiplebagfetchexception) e [ref3](https://vladmihalcea.com/hibernate-multiplebagfetchexception/)
         * Uso do Cascade e orphanRemoval
         * IDs compostos para relacionamentos many-to-many "manuais" + campos extras na relação
         * Uso dos Listeners de eventos (ex: `@PostLoad`, `@PrePersist`, `@PostPersist`, etc)
@@ -215,7 +215,7 @@ JpaRepository <|-- MeuRepository
         * Caso seja necessário abrir uma associação many-to-many em `@OneToMany`/`@ManyToOne` para adicionar campos extras, usar o `@EmbeddedId` para evitar gerar IDs adicionais. Lembrar que a classe `@Embedded` representa o ID composto da tabela de associação e deve ser `Serializable` e implementar os métodos `hashCode()` e `equals()`.
         * Identificadores internos e externos (UUID).
     * Integração com Project Lombok
-        * Evitar usar `@Data`, pois ele transforma a classe em `Serializable` e reimplementa o `equals`, podendo ocasionar incompatibilidades com o modelo de funcionamento do JPA
+        * Evitar usar `@Data`, pois ele gera `equals`, `hashCode` e `toString` automaticamente, o que pode ocasionar incompatibilidades com o modelo de funcionamento do JPA e com relacionamentos bidirecionais
         * Cuidado ao usar `@ToString`, pois se estiver mal configurado pode gerar loops infinitos.
     * Records (Java 14+)
         * Records **NÃO** podem ser usados para representar uma Entidade JPA, pois são imutáveis.
@@ -233,7 +233,7 @@ JpaRepository <|-- MeuRepository
     * Uso de @QueryHint para melhorar desempenhos das queries JPA - https://medium.com/javaguides/boost-performance-in-spring-data-jpa-with-query-hints-7628b37be857
 
 * Controle de versões do banco de dados
-    * Liquidbase
+    * Liquibase
     * Flyway
     * Referências:
         * https://dzone.com/articles/flyway-vs-liquibase
@@ -328,7 +328,7 @@ spring.profiles.include=@build.profile.id@
 
 #========= WEB ==========
 server.port=8080
-server.context-path=/
+server.servlet.context-path=/
 server.compression.enabled=true
 server.compression.min-response-size=50KB
 spring.servlet.multipart.max-file-size=5MB
@@ -338,7 +338,7 @@ spring.servlet.multipart.max-request-size=10MB
 spring.jpa.open-in-view=false
 spring.jpa.show-sql=true
 # Pode ser none/validate/create/create-drop/update https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html#settings-hibernate.hbm2ddl.auto
-spring.jpa.properties.hibernate.ddl-auto=update
+spring.jpa.hibernate.ddl-auto=update
 
 #========== JSON ==========
 spring.jackson.serialization.INDENT_OUTPUT=true
@@ -356,7 +356,7 @@ app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
 
 ```xml
 <!-- trecho do pom.xml com declaração do profile -->
-<profles>
+<profiles>
     <profile>
         <id>dev</id>
         <activation>
@@ -491,12 +491,12 @@ Se necessário, trocar "current" pela versão desejada
     * Eureka (Service discovery)
     * Open Feign
     * Load balancer
-    * Zuul (API Gateway)
+    * Spring Cloud Gateway (API Gateway)
     * Resilience4J
         * Circuit breaker
         * Rate limiter
         * Retry
-    * Zipkin (Coletor de logs E2E)
+    * Zipkin (tracing distribuído / visualização de traces E2E)
 * Boas práticas
     * Configurações estáticas X configurações dinâmicas
         * Arquivo properties externo (fora do diretório de deploy) X configurações gerenciadas no BD X environment variables -> Confirmar se "hot-reload" funciona nestes casos
@@ -505,7 +505,7 @@ Se necessário, trocar "current" pela versão desejada
 
 ## OAuth2 e JWT
 
-* Claim "scope" separara com espaços: https://stackoverflow.com/a/62477585
+* Claim "scope" separada por espaços: https://stackoverflow.com/a/62477585
 * Claims comuns: https://www.iana.org/assignments/jwt/jwt.xhtml e https://datatracker.ietf.org/doc/id/draft-jones-json-web-token-01.html
 * Scopes de requisição padrões: https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
 * https://auth0.com/docs/get-started/authentication-and-authorization-flow/which-oauth-2-0-flow-should-i-use
