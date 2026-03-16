@@ -32,7 +32,8 @@
 24. [ACL Module — Permissões por Instância de Objeto](#24-acl-module--permissões-por-instância-de-objeto)
 25. [Hierarquia de Roles (RoleHierarchy)](#25-hierarquia-de-roles-rolehierarchy)
 26. [Segurança do Spring Boot Actuator](#26-segurança-do-spring-boot-actuator)
-27. [Testes de Segurança](#27-testes-de-segurança)
+27. [Autenticação Mútua com Certificados (mTLS / X.509)](#27-autenticação-mútua-com-certificados-mtls--x509)
+28. [Testes de Segurança](#28-testes-de-segurança)
 
 ---
 
@@ -2699,22 +2700,29 @@ sequenceDiagram
     participant JS as JwtService
 
     Note over C,S: Login
-    C->>S: POST /api/v1/auth/login<br/>{username, password}
+    C->>S: POST /api/v1/auth/login
+    Note over C,S: Body: username + password
     S->>JS: generateAccessToken + generateRefreshToken
-    S-->>C: 200 OK<br/>Body: {accessToken, expiresIn}<br/>Set-Cookie: refresh_token=...; HttpOnly; Secure; SameSite=Strict
+    S-->>C: 200 OK
+    Note over S,C: Body: accessToken + expiresIn<br>Set-Cookie: refresh_token (HttpOnly Secure SameSite=Strict)
 
     Note over C,S: Chamada autenticada
-    C->>S: GET /api/v1/resource<br/>Authorization: Bearer <accessToken>
-    S-->>C: 200 OK {data}
+    C->>S: GET /api/v1/resource
+    Note over C,S: Header: Authorization Bearer accessToken
+    S-->>C: 200 OK
 
     Note over C,S: Renovação (access token expirado)
-    C->>S: POST /api/v1/auth/refresh<br/>Cookie: refresh_token=... (automático)<br/>X-CSRF-Token: <csrfToken>
-    S->>JS: validateRefreshToken → generateAccessToken
-    S-->>C: 200 OK<br/>Body: {accessToken, expiresIn}<br/>Set-Cookie: refresh_token=... (renovado)
+    C->>S: POST /api/v1/auth/refresh
+    Note over C,S: Cookie refresh_token enviado automaticamente pelo browser
+    S->>JS: validateRefreshToken + generateAccessToken
+    S-->>C: 200 OK
+    Note over S,C: Body: novo accessToken<br>Set-Cookie: refresh_token renovado
 
     Note over C,S: Logout
-    C->>S: POST /api/v1/auth/logout<br/>Cookie: refresh_token=... (automático)
-    S-->>C: 200 OK<br/>Set-Cookie: refresh_token=; Max-Age=0 (apaga o cookie)
+    C->>S: POST /api/v1/auth/logout
+    Note over C,S: Cookie refresh_token enviado automaticamente
+    S-->>C: 200 OK
+    Note over S,C: Set-Cookie: refresh_token vazio com Max-Age=0
 ```
 
 #### CookieTokenService — criação e leitura do cookie
@@ -3860,6 +3868,255 @@ public JwtDecoder jwtDecoder(
     return decoder;
 }
 ```
+
+
+### 12.3 OpenID Connect (OIDC)
+
+OAuth2 resolve **autorização** — define quem pode fazer o quê. **OpenID Connect (OIDC)** é uma camada de **identidade** construída sobre OAuth2: acrescenta um mecanismo padronizado para que o cliente descubra *quem é o usuário autenticado*, não apenas o que ele pode acessar.
+
+#### 12.3.1 A Diferença Fundamental
+
+```
+OAuth2 puro:
+  Access Token → "este cliente tem permissão para SCOPE_read"
+  Pergunta respondida: O QUE o cliente pode fazer?
+  Pergunta NÃO respondida: QUEM é o usuário?
+
+OAuth2 + OIDC:
+  Access Token  → "este cliente tem permissão para SCOPE_read"
+  ID Token      → "o usuário autenticado é alice@example.com, nome: Alice Silva"
+  Pergunta respondida: O QUE o cliente pode fazer? E QUEM é o usuário?
+```
+
+#### 12.3.2 Fluxo OIDC — Authorization Code
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente (SPA / Web App)
+    participant AS as Authorization Server (IdP)
+    participant RS as Resource Server (API)
+
+    C->>AS: GET /authorize?scope=openid+profile+email<br>&response_type=code&client_id=...
+    AS-->>C: Redirect → Login page
+    C->>AS: POST /login {username, password}
+    AS-->>C: Redirect → /callback?code=AUTH_CODE
+
+    C->>AS: POST /token {code, client_id, client_secret}
+    AS-->>C: {access_token, id_token, refresh_token}
+
+    Note over C: Decodifica id_token (JWT)<br>extrai sub, email, name, etc.
+
+    C->>RS: GET /api/v1/profile<br>Authorization: Bearer access_token
+    RS-->>C: 200 OK {dados protegidos}
+
+    C->>AS: GET /userinfo<br>Authorization: Bearer access_token
+    AS-->>C: {sub, name, email, picture, ...}
+```
+
+#### 12.3.3 ID Token — Estrutura e Claims
+
+O ID Token é um **JWT** emitido exclusivamente pelo Authorization Server, destinado ao **cliente** (não ao Resource Server). Ele nunca deve ser enviado como Bearer Token para APIs.
+
+```json
+// Header
+{
+  "alg": "RS256",
+  "kid": "key-id-abc123",
+  "typ": "JWT"
+}
+
+// Payload — claims padrão do ID Token (OIDC Core 1.0)
+{
+  "iss": "https://auth.example.com",        // Issuer — quem emitiu
+  "sub": "user-uuid-abc123",                // Subject — identificador único do usuário no IdP
+  "aud": "myapp-client",                    // Audience — client_id (não a API!)
+  "exp": 1735689600,                        // Expiração
+  "iat": 1735686000,                        // Issued At
+  "auth_time": 1735685900,                  // Momento da autenticação real
+  "nonce": "abc123",                        // Proteção contra replay (se enviado no request)
+  "acr": "urn:mace:incommon:iap:bronze",   // Authentication Context Class Reference
+  "amr": ["pwd", "otp"],                   // Authentication Methods References
+
+  // Claims de perfil (escopo "profile")
+  "name": "Alice Silva",
+  "given_name": "Alice",
+  "family_name": "Silva",
+  "preferred_username": "alice",
+  "picture": "https://example.com/alice.jpg",
+  "locale": "pt-BR",
+
+  // Claims de email (escopo "email")
+  "email": "alice@example.com",
+  "email_verified": true
+}
+```
+
+**Diferença entre `sub` e `preferred_username`:**
+
+| Campo | Tipo | Estabilidade | Uso |
+|-------|------|-------------|-----|
+| `sub` | UUID opaco | **Imutável** — nunca muda | Chave estrangeira no banco |
+| `preferred_username` | String legível | Pode ser alterado | Exibição na UI |
+| `email` | String | Pode mudar | Comunicação, não como PK |
+
+> Sempre use `sub` como identificador primário do usuário no banco de dados. `preferred_username` e `email` podem ser alterados pelo usuário ou pelo administrador do IdP.
+
+#### 12.3.4 Escopos OIDC e seus Claims
+
+| Escopo | Claims Incluídos |
+|--------|-----------------|
+| `openid` | `sub` — **obrigatório** para emitir ID Token |
+| `profile` | `name`, `family_name`, `given_name`, `middle_name`, `nickname`, `preferred_username`, `profile`, `picture`, `website`, `gender`, `birthdate`, `zoneinfo`, `locale`, `updated_at` |
+| `email` | `email`, `email_verified` |
+| `address` | `address` (objeto com `street_address`, `locality`, `region`, `postal_code`, `country`) |
+| `phone` | `phone_number`, `phone_number_verified` |
+| `offline_access` | Emite `refresh_token` (não adiciona claims ao ID Token) |
+
+#### 12.3.5 ID Token vs Access Token — Quando Usar Cada Um
+
+```
+ID Token:
+  ✓ Lido pelo cliente (SPA, Web App) para saber quem é o usuário
+  ✓ Exibir nome, email e foto na interface
+  ✓ Verificar o método de autenticação (amr) ou nível de segurança (acr)
+  ✗ NUNCA enviar como Bearer Token para APIs
+
+Access Token:
+  ✓ Enviado nas requisições à API: Authorization: Bearer <access_token>
+  ✓ Contém escopos (scope) e roles para autorização no Resource Server
+  ✗ O Resource Server NÃO deve ler dados de identidade do Access Token
+    (o formato não é garantido — pode ser opaco, não necessariamente JWT)
+
+UserInfo Endpoint (/userinfo):
+  ✓ Fonte canônica de atributos do usuário para o cliente
+  ✓ Retorna claims completos mesmo que não estejam no ID Token
+  ✓ Acessível com o Access Token
+  ✓ Dados sempre atualizados (sem cache de token)
+```
+
+#### 12.3.6 Resource Server com OIDC — Validação do ID Token
+
+O Resource Server valida o **Access Token** (não o ID Token). Porém, em alguns fluxos (ex.: SPA com BFF), o backend pode também processar o ID Token para obter claims do usuário:
+
+```java
+/**
+ * OidcUserService carrega o usuário a partir do ID Token e do /userinfo endpoint.
+ * Utilizado pela chain OAuth2 Client (login web), não pelo Resource Server.
+ */
+@Bean
+public OidcUserService oidcUserService() {
+    DefaultOidcUserService delegate = new DefaultOidcUserService();
+
+    return new OidcUserService() {
+        @Override
+        public OidcUser loadUser(OidcUserRequest request)
+                throws OAuth2AuthenticationException {
+
+            OidcUser oidcUser = delegate.loadUser(request);
+
+            // sub — identificador permanente do usuário no IdP
+            String sub   = oidcUser.getSubject();
+            // claims do ID Token
+            String email = oidcUser.getEmail();
+            String name  = oidcUser.getFullName();
+            boolean emailVerified = Boolean.TRUE.equals(oidcUser.getEmailVerified());
+
+            // Sincroniza com banco local usando sub como chave
+            userSyncService.upsert(sub, email, name, emailVerified);
+
+            // Constrói authorities combinando escopos OIDC e roles do banco local
+            Set<GrantedAuthority> authorities = new HashSet<>(oidcUser.getAuthorities());
+            authorities.addAll(userSyncService.loadRoles(sub));
+
+            return new DefaultOidcUser(
+                authorities,
+                oidcUser.getIdToken(),
+                oidcUser.getUserInfo(),
+                "preferred_username");  // atributo usado como getName()
+        }
+    };
+}
+```
+
+#### 12.3.7 Validação do Nonce (proteção contra replay de ID Token)
+
+O `nonce` é um valor aleatório gerado pelo cliente, enviado no Authorization Request e
+incluído pelo IdP no ID Token. Valida que o ID Token foi emitido em resposta a um
+request específico — prevenindo ataques de replay:
+
+```java
+@Component
+public class OidcNonceValidator {
+
+    /**
+     * O Spring Security valida o nonce automaticamente quando presente.
+     * Este exemplo mostra como verificar manualmente se necessário.
+     */
+    public void validateNonce(OidcIdToken idToken, String expectedNonce) {
+        String tokenNonce = idToken.getNonce();
+
+        if (expectedNonce != null && !expectedNonce.equals(tokenNonce)) {
+            throw new OAuth2AuthenticationException(
+                new OAuth2Error("invalid_nonce"),
+                "Nonce inválido no ID Token — possível ataque de replay.");
+        }
+    }
+}
+```
+
+#### 12.3.8 Discovery Document — OpenID Connect Configuration
+
+Todo IdP compatível com OIDC expõe um documento de descoberta em:
+
+```
+GET {issuer-uri}/.well-known/openid-configuration
+```
+
+O Spring Security usa esse endpoint para auto-configurar `JwtDecoder`, `JwkSetUri`,
+`UserInfoEndpoint` e outros parâmetros quando `issuer-uri` é definido:
+
+```yaml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri habilita discovery automático:
+          # Spring busca {issuer-uri}/.well-known/openid-configuration
+          # e extrai jwk-set-uri, issuer e outros parâmetros automaticamente
+          issuer-uri: https://auth.example.com/realms/myrealm
+          # NÃO é necessário declarar jwk-set-uri separadamente quando
+          # issuer-uri está configurado — discovery cuida disso
+```
+
+```json
+// Resposta de /.well-known/openid-configuration (campos principais)
+{
+  "issuer": "https://auth.example.com/realms/myrealm",
+  "authorization_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/auth",
+  "token_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/token",
+  "userinfo_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/userinfo",
+  "jwks_uri": "https://auth.example.com/realms/myrealm/protocol/openid-connect/certs",
+  "end_session_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/logout",
+  "scopes_supported": ["openid", "profile", "email", "roles", "offline_access"],
+  "response_types_supported": ["code"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "subject_types_supported": ["public"],
+  "claims_supported": ["sub", "iss", "name", "email", "preferred_username", "roles"]
+}
+```
+
+#### 12.3.9 Resumo: OAuth2 vs OIDC vs JWT
+
+| | OAuth2 | OIDC | JWT |
+|---|---|---|---|
+| **É um** | Framework de autorização | Protocolo de identidade (sobre OAuth2) | Formato de token |
+| **Responde** | O que o cliente pode fazer | Quem é o usuário | (apenas formato) |
+| **Token emitido** | Access Token (qualquer formato) | Access Token + **ID Token** | Pode ser usado por ambos |
+| **Escopo obrigatório** | Qualquer | **`openid`** | Não se aplica |
+| **Endpoint adicional** | — | `/userinfo`, `/.well-known/openid-configuration` | — |
+| **Uso no Spring** | `oauth2-resource-server`, `oauth2-client` | `OidcUserService`, `OidcUser` | `JwtDecoder`, `JwtAuthenticationConverter` |
+
 
 ---
 
@@ -9847,9 +10104,576 @@ Produção — verificações obrigatórias:
 
 ---
 
-## 27. Testes de Segurança
+## 27. Autenticação Mútua com Certificados (mTLS / X.509)
 
-### 27.1 Dependência
+Na autenticação TLS padrão, apenas o servidor apresenta um certificado ao cliente.
+Na **autenticação mútua** (mTLS — Mutual TLS), **ambos os lados apresentam certificados**:
+o servidor autentica o cliente e o cliente autentica o servidor. O Spring Security suporta
+mTLS nativamente via `X509AuthenticationFilter`, mapeando o certificado do cliente para
+um `UserDetails` local.
+
+### 27.1 Como Funciona o Handshake mTLS
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente
+    participant S as Servidor (Spring Boot)
+    participant CA as CA (Certificate Authority)
+
+    Note over C,S: TLS Handshake mTLS
+    C->>S: ClientHello
+    S-->>C: ServerHello + Certificado do Servidor + CertificateRequest
+    C->>C: Valida certificado do servidor contra CA confiável
+    C-->>S: Certificado do Cliente + CertificateVerify (assinatura)
+    S->>S: Valida certificado do cliente contra CA confiável
+    S->>S: Extrai CN/SAN do certificado
+    S-->>C: Finished — canal seguro estabelecido
+
+    Note over C,S: Spring Security
+    S->>S: X509AuthenticationFilter extrai o certificado
+    S->>S: SubjectDnX509PrincipalExtractor extrai CN
+    S->>S: UserDetailsService.loadUserByUsername(CN)
+    S->>S: Popula SecurityContext com UserDetails
+    C->>S: GET /api/v1/resource (já autenticado pelo certificado)
+    S-->>C: 200 OK
+```
+
+### 27.2 Conceitos e Terminologia
+
+| Termo | Descrição |
+|---|---|
+| **CA** | Certificate Authority — entidade que emite e assina certificados |
+| **Keystore** | Arquivo que contém a chave privada e o certificado do próprio lado |
+| **Truststore** | Arquivo que contém os certificados das CAs em que se confia |
+| **CN** | Common Name — campo do Subject do certificado usado como identificador |
+| **SAN** | Subject Alternative Name — alternativa moderna ao CN |
+| **mTLS** | Mutual TLS — TLS com autenticação de ambos os lados |
+| **PKCS#12 (.p12/.pfx)** | Formato de keystore que agrupa chave + certificado em um arquivo |
+| **JKS** | Java KeyStore — formato legado do Java (prefira PKCS#12) |
+| **PEM** | Base64 de DER — formato de texto para certificados e chaves |
+
+---
+
+### 27.3 Geração de Certificados com OpenSSL
+
+Em produção, os certificados devem ser emitidos por uma CA corporativa ou pública. Para
+desenvolvimento e testes, crie uma CA local:
+
+```bash
+# ── Passo 1: Criar a CA raiz ─────────────────────────────────────────────────
+
+# Chave privada da CA
+openssl genrsa -out ca.key 4096
+
+# Certificado auto-assinado da CA (válido 10 anos)
+openssl req -new -x509 -days 3650 -key ca.key -out ca.crt \
+  -subj "/CN=MyApp CA/O=MyOrg/C=BR"
+
+
+# ── Passo 2: Certificado do Servidor ─────────────────────────────────────────
+
+# Chave privada do servidor
+openssl genrsa -out server.key 2048
+
+# CSR do servidor
+openssl req -new -key server.key -out server.csr \
+  -subj "/CN=localhost/O=MyOrg/C=BR"
+
+# Arquivo de extensões para o certificado do servidor (SAN obrigatório em browsers modernos)
+cat > server.ext << EOF
+[req_ext]
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = localhost
+DNS.2 = myapp.example.com
+IP.1  = 127.0.0.1
+EOF
+
+# Assinar com a CA
+openssl x509 -req -days 825 -in server.csr -CA ca.crt -CAkey ca.key \
+  -CAcreateserial -out server.crt -extfile server.ext -extensions req_ext
+
+
+# ── Passo 3: Certificado do Cliente ──────────────────────────────────────────
+
+# Chave privada do cliente
+openssl genrsa -out client.key 2048
+
+# CSR do cliente — CN será usado como username no Spring Security
+openssl req -new -key client.key -out client.csr \
+  -subj "/CN=alice/O=MyOrg/OU=Engineering/C=BR"
+
+# Assinar com a CA
+openssl x509 -req -days 365 -in client.csr -CA ca.crt -CAkey ca.key \
+  -CAcreateserial -out client.crt
+
+
+# ── Passo 4: Converter para formatos usados pelo Java ────────────────────────
+
+# Keystore do servidor (PKCS#12) — contém chave + certificado do servidor
+openssl pkcs12 -export \
+  -in server.crt -inkey server.key -certfile ca.crt \
+  -out server.p12 -name server \
+  -passout pass:${SERVER_KS_PASSWORD}
+
+# Truststore do servidor (PKCS#12) — contém o certificado da CA
+keytool -importcert -trustcacerts \
+  -alias ca -file ca.crt \
+  -keystore server-truststore.p12 -storetype PKCS12 \
+  -storepass ${SERVER_TS_PASSWORD} -noprompt
+
+# Keystore do cliente (PKCS#12) — para uso em ferramentas como curl, Postman ou outro serviço
+openssl pkcs12 -export \
+  -in client.crt -inkey client.key -certfile ca.crt \
+  -out client.p12 -name client \
+  -passout pass:${CLIENT_KS_PASSWORD}
+```
+
+---
+
+### 27.4 Configuração do Servidor Tomcat (SSL/TLS Mútuo)
+
+O mTLS é configurado no nível do conector Tomcat, **antes** do Spring Security processar
+a requisição. O Tomcat extrai o certificado do cliente e o disponibiliza como atributo
+da requisição (`javax.servlet.request.X509Certificate`).
+
+```yaml
+# application.yml
+server:
+  port: 8443
+  ssl:
+    enabled: true
+    # Keystore do servidor — chave privada + certificado do servidor
+    key-store:          classpath:certs/server.p12
+    key-store-type:     PKCS12
+    key-store-password: ${SERVER_KS_PASSWORD}
+    key-alias:          server
+
+    # Truststore do servidor — CA(s) cujos clientes são aceitos
+    trust-store:          classpath:certs/server-truststore.p12
+    trust-store-type:     PKCS12
+    trust-store-password: ${SERVER_TS_PASSWORD}
+
+    # NEED: exige certificado do cliente (mTLS obrigatório)
+    # WANT: solicita mas não obriga (permite clientes sem certificado)
+    # NONE: não solicita certificado do cliente (TLS simples)
+    client-auth: need
+
+    # Protocolos e cifras recomendados (TLS 1.3 + 1.2)
+    protocol:             TLS
+    enabled-protocols:    TLSv1.3,TLSv1.2
+    ciphers: >-
+      TLS_AES_256_GCM_SHA384,
+      TLS_AES_128_GCM_SHA256,
+      TLS_CHACHA20_POLY1305_SHA256,
+      TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+      TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+```
+
+---
+
+### 27.5 SecurityFilterChain com X.509
+
+```java
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+public class MtlsSecurityConfig {
+
+    @Bean
+    public SecurityFilterChain mtlsSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http
+            // Habilita autenticação X.509 via certificado do cliente
+            .x509(x509 -> x509
+                // Extrai o username do campo CN (Common Name) do Subject
+                // Ex: "CN=alice, OU=Engineering, O=MyOrg, C=BR" → "alice"
+                .subjectPrincipalRegex("CN=(.*?)(?:,|$)")
+                // UserDetailsService que recebe o CN extraído como username
+                .userDetailsService(x509UserDetailsService()))
+            // APIs com mTLS são stateless — sem sessão HTTP
+            .sessionManagement(s ->
+                s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // CSRF desnecessário: mTLS autentica o cliente no nível TLS
+            .csrf(csrf -> csrf.disable())
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/v1/public/**").permitAll()
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated())
+            .build();
+    }
+
+    /**
+     * UserDetailsService que mapeia o CN do certificado para um UserDetails local.
+     * O CN funciona como username — deve ser único e corresponder a um registro
+     * no banco de dados ou diretório.
+     */
+    @Bean
+    public UserDetailsService x509UserDetailsService() {
+        return new X509UserDetailsService();
+    }
+}
+```
+
+---
+
+### 27.6 `X509UserDetailsService` — Mapeamento CN → Usuário
+
+```java
+/**
+ * Carrega o UserDetails a partir do CN extraído do certificado do cliente.
+ *
+ * O CN deve ser único por usuário/sistema e corresponder a um registro
+ * ativo no banco de dados.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class X509UserDetailsService implements UserDetailsService {
+
+    private final UserRepository userRepository;
+
+    /**
+     * @param username — CN extraído do Subject do certificado
+     *                   Ex: "alice", "service-payment-gateway", "host.example.com"
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String username)
+            throws UsernameNotFoundException {
+
+        log.debug("Autenticando via certificado: CN={}", username);
+
+        return userRepository.findByCertificateCn(username)
+            .map(user -> {
+                if (!user.isCertificateEnabled()) {
+                    throw new DisabledException(
+                        "Certificado desabilitado para: " + username);
+                }
+                return buildUserDetails(user);
+            })
+            .orElseThrow(() -> {
+                log.warn("Certificado não autorizado: CN={}", username);
+                return new UsernameNotFoundException(
+                    "Certificado não mapeado para nenhum usuário: " + username);
+            });
+    }
+
+    private UserDetails buildUserDetails(UserEntity user) {
+        return User.builder()
+            .username(user.getCertificateCn())
+            .password("")                           // sem senha — autenticação é o certificado
+            .authorities(buildAuthorities(user))
+            .accountExpired(!user.isAccountNonExpired())
+            .accountLocked(!user.isAccountNonLocked())
+            .disabled(!user.isEnabled())
+            .build();
+    }
+
+    private List<GrantedAuthority> buildAuthorities(UserEntity user) {
+        return user.getRoles().stream()
+            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
+            .toList();
+    }
+}
+```
+
+```java
+// Entidade com o campo CN do certificado
+@Entity
+@Table(name = "users")
+public class UserEntity {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    // CN do Subject do certificado — ex: "alice", "svc-payment"
+    @Column(name = "certificate_cn", unique = true)
+    private String certificateCn;
+
+    @Column(name = "certificate_enabled")
+    private boolean certificateEnabled = true;
+
+    // ... demais campos
+}
+```
+
+---
+
+### 27.7 Extração Customizada do Principal
+
+Por padrão, `SubjectDnX509PrincipalExtractor` extrai o CN com a regex `CN=(.*?)(?:,|$)`.
+Para extrair outros campos do Subject ou usar o SAN:
+
+```java
+/**
+ * Extrator customizado que suporta:
+ * - CN padrão:        "CN=alice"
+ * - CN com espaços:   "CN=Alice Silva"
+ * - Email no SAN:     extrai o email do Subject Alternative Name
+ * - OID customizado:  ex: UID no Subject
+ */
+@Component
+public class CustomX509PrincipalExtractor implements X509PrincipalExtractor {
+
+    // Regex para extrair CN do Distinguished Name
+    private static final Pattern CN_PATTERN =
+        Pattern.compile("(?:^|,\s*)CN=([^,]+)");
+
+    // Regex para extrair UID (identificador numérico, comum em federações)
+    private static final Pattern UID_PATTERN =
+        Pattern.compile("(?:^|,\s*)UID=([^,]+)");
+
+    @Override
+    public Object extractPrincipal(X509Certificate certificate) {
+        String subjectDn = certificate.getSubjectX500Principal().getName();
+
+        // Tenta UID primeiro (ex: federações acadêmicas CAFe/RNP)
+        Matcher uidMatcher = UID_PATTERN.matcher(subjectDn);
+        if (uidMatcher.find()) {
+            return uidMatcher.group(1).trim();
+        }
+
+        // Fallback para CN
+        Matcher cnMatcher = CN_PATTERN.matcher(subjectDn);
+        if (cnMatcher.find()) {
+            return cnMatcher.group(1).trim();
+        }
+
+        throw new IllegalArgumentException(
+            "Não foi possível extrair principal do certificado: " + subjectDn);
+    }
+}
+```
+
+```java
+// Registrar o extrator customizado na configuração
+.x509(x509 -> x509
+    .x509PrincipalExtractor(customX509PrincipalExtractor)
+    .userDetailsService(x509UserDetailsService()))
+```
+
+---
+
+### 27.8 mTLS Misto — Certificado Opcional
+
+Quando a aplicação aceita tanto autenticação por certificado quanto por JWT, use
+`client-auth: want` no Tomcat e duas `SecurityFilterChain`:
+
+```yaml
+server:
+  ssl:
+    client-auth: want   # solicita, mas não obriga o certificado
+```
+
+```java
+@Configuration
+@EnableWebSecurity
+public class MixedAuthConfig {
+
+    // Chain 1 — endpoints que exigem mTLS (machine-to-machine)
+    @Bean @Order(1)
+    public SecurityFilterChain mtlsChain(HttpSecurity http,
+            CustomX509PrincipalExtractor extractor,
+            X509UserDetailsService uds) throws Exception {
+        return http
+            .securityMatcher("/api/v1/m2m/**")
+            .x509(x509 -> x509
+                .x509PrincipalExtractor(extractor)
+                .userDetailsService(uds))
+            .sessionManagement(s ->
+                s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(csrf -> csrf.disable())
+            .authorizeHttpRequests(auth -> auth
+                .anyRequest().authenticated())
+            .build();
+    }
+
+    // Chain 2 — endpoints que aceitam JWT Bearer (usuários humanos)
+    @Bean @Order(2)
+    public SecurityFilterChain jwtChain(HttpSecurity http,
+            JwtAuthenticationFilter jwtFilter) throws Exception {
+        return http
+            .securityMatcher("/api/v1/**")
+            .sessionManagement(s ->
+                s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(csrf -> csrf.disable())
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+            .authorizeHttpRequests(auth -> auth
+                .anyRequest().authenticated())
+            .build();
+    }
+}
+```
+
+---
+
+### 27.9 Acesso ao Certificado no Controller
+
+Quando necessário inspecionar o certificado em tempo de execução (ex.: verificar validade,
+extrair campos adicionais):
+
+```java
+@RestController
+@RequestMapping("/api/v1/m2m")
+public class M2MController {
+
+    /**
+     * O certificado do cliente é injetável diretamente como parâmetro
+     * quando o Tomcat está configurado com client-auth: need ou want.
+     */
+    @GetMapping("/cert-info")
+    public ResponseEntity<CertInfoDto> certInfo(
+            HttpServletRequest request) {
+
+        X509Certificate[] certs = (X509Certificate[])
+            request.getAttribute("javax.servlet.request.X509Certificate");
+
+        if (certs == null || certs.length == 0) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        X509Certificate clientCert = certs[0];
+
+        return ResponseEntity.ok(new CertInfoDto(
+            clientCert.getSubjectX500Principal().getName(),
+            clientCert.getIssuerX500Principal().getName(),
+            clientCert.getSerialNumber().toString(16).toUpperCase(),
+            clientCert.getNotBefore().toInstant(),
+            clientCert.getNotAfter().toInstant(),
+            isValid(clientCert)
+        ));
+    }
+
+    private boolean isValid(X509Certificate cert) {
+        try {
+            cert.checkValidity();   // lança exceção se expirado ou ainda não válido
+            return true;
+        } catch (CertificateExpiredException | CertificateNotYetValidException e) {
+            return false;
+        }
+    }
+
+    public record CertInfoDto(
+        String subjectDn,
+        String issuerDn,
+        String serialNumber,
+        Instant validFrom,
+        Instant validUntil,
+        boolean valid
+    ) {}
+}
+```
+
+---
+
+### 27.10 Testando com curl e Postman
+
+```bash
+# ── curl — requisição com certificado do cliente ──────────────────────────────
+
+# Usando PEM (chave + certificado separados)
+curl --cert client.crt --key client.key \
+     --cacert ca.crt \
+     https://localhost:8443/api/v1/resource
+
+# Usando PKCS#12
+curl --cert-type P12 --cert client.p12:${CLIENT_KS_PASSWORD} \
+     --cacert ca.crt \
+     https://localhost:8443/api/v1/resource
+
+# Inspecionar o certificado do servidor
+curl -v --cacert ca.crt https://localhost:8443/actuator/health 2>&1 | grep -E "subject|issuer|SSL"
+```
+
+```bash
+# ── Postman ───────────────────────────────────────────────────────────────────
+# Settings → Certificates → Add Certificate:
+#   Host: localhost:8443
+#   CRT file: client.crt
+#   KEY file: client.key
+#   PFX file: (alternativa ao CRT+KEY — usar client.p12)
+#   Passphrase: <senha do P12>
+```
+
+```bash
+# ── HTTPie ───────────────────────────────────────────────────────────────────
+https --cert=client.crt --cert-key=client.key \
+      --verify=ca.crt \
+      GET https://localhost:8443/api/v1/resource
+```
+
+---
+
+### 27.11 Gerenciamento de Certificados de Cliente
+
+Em produção, o ciclo de vida dos certificados (emissão, revogação, renovação) deve ser
+gerenciado ativamente:
+
+```java
+/**
+ * Serviço para gerenciar o mapeamento de CNs autorizados.
+ * Permite habilitar, desabilitar e auditar certificados sem revogar no CA.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class CertificateManagementService {
+
+    private final UserRepository userRepository;
+    private final AuditLogService auditLog;
+
+    /**
+     * Registra um novo CN como autorizado para autenticação mTLS.
+     * Deve ser chamado após a emissão do certificado pela CA.
+     */
+    @Transactional
+    public void registerCertificate(String cn, Long userId, String issuedBy) {
+        userRepository.findById(userId).ifPresent(user -> {
+            user.setCertificateCn(cn);
+            user.setCertificateEnabled(true);
+            userRepository.save(user);
+            auditLog.record("CERT_REGISTERED", cn, issuedBy);
+            log.info("Certificado registrado: CN={} userId={}", cn, userId);
+        });
+    }
+
+    /**
+     * Desabilita um CN — equivale a revogar o acesso sem esperar pela CRL/OCSP.
+     * Use imediatamente ao detectar comprometimento ou desligamento de funcionário.
+     */
+    @Transactional
+    public void revokeCertificateAccess(String cn, String revokedBy, String reason) {
+        userRepository.findByCertificateCn(cn).ifPresent(user -> {
+            user.setCertificateEnabled(false);
+            userRepository.save(user);
+            auditLog.record("CERT_REVOKED",
+                cn + " reason=" + reason, revokedBy);
+            log.warn("Acesso por certificado revogado: CN={} reason={}", cn, reason);
+        });
+    }
+}
+```
+
+---
+
+### 27.12 Comparativo: mTLS vs Outros Mecanismos
+
+| Aspecto | mTLS / X.509 | JWT Bearer | API Key |
+|---|---|---|---|
+| **Autenticação** | Criptográfica (chave privada) | Assinatura HMAC/RSA | Segredo compartilhado |
+| **Revogação** | CRL / OCSP + controle local | Denylist (Redis) | Desabilitar no banco |
+| **Adequado para** | M2M, microsserviços, IoT | APIs REST, SPAs | Integrações simples |
+| **Complexidade op.** | Alta (gestão de certificados) | Média | Baixa |
+| **Sem senha** | Sim — chave privada protege | Não | Não |
+| **Auditável** | Sim — serial do certificado | Sim — jti do token | Limitado |
+| **Padrão de mercado** | Zero Trust / mTLS mesh | OAuth2 / OIDC | Legado |
+
+
+---
+
+## 28. Testes de Segurança
+
+### 28.1 Dependência
 
 ```xml
 <dependency>
@@ -9859,7 +10683,7 @@ Produção — verificações obrigatórias:
 </dependency>
 ```
 
-### 27.2 Testes com @WithMockUser
+### 28.2 Testes com @WithMockUser
 
 ```java
 @WebMvcTest(UserController.class)
@@ -9918,7 +10742,7 @@ class UserControllerSecurityTest {
 }
 ```
 
-### 27.3 Testes com JWT Real
+### 28.3 Testes com JWT Real
 
 ```java
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -9990,7 +10814,7 @@ class ApiSecurityIT {
 }
 ```
 
-### 27.4 Testes de Method Security
+### 28.4 Testes de Method Security
 
 ```java
 @SpringBootTest
