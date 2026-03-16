@@ -33,6 +33,7 @@
 23. [Configuração do Spring Boot para Banco de Dados](#23-configuração-do-spring-boot-para-banco-de-dados)
 24. [JPQL Avançado — Funções, Subconsultas e Recursos Pouco Explorados](#24-jpql-avançado--funções-subconsultas-e-recursos-pouco-explorados)
 25. [Transações — Jakarta EE e Spring Data JPA](#25-transações--jakarta-ee-e-spring-data-jpa)
+26. [Integração Spring Data com Spring Security](#26-integração-spring-data-com-spring-security)
 
 ---
 
@@ -6144,10 +6145,527 @@ flowchart TD
 
 ---
 
+## 26. Integração Spring Data com Spring Security
+
+O Spring Data oferece integração nativa com Spring Security, permitindo referenciar o usuário autenticado diretamente dentro de queries `@Query` via SpEL. Isso é particularmente útil para multi-tenancy, filtragem por proprietário e auditoria.
+
+### Configuração
+
+Adicione o bean `SecurityEvaluationContextExtension` para habilitar expressões Spring Security dentro de queries:
+
+```java
+@Configuration
+@EnableJpaRepositories
+public class JpaSecurityConfig {
+
+    @Bean
+    public SecurityEvaluationContextExtension securityEvaluationContextExtension() {
+        return new SecurityEvaluationContextExtension();
+    }
+}
+```
+
+Esse bean registra o `SecurityContext` como extensão do SpEL evaluation context, tornando `principal`, `authentication` e funções como `hasRole()` disponíveis em `@Query`.
+
+### SpEL com `principal` — acessar o usuário logado nas queries
+
+#### Filtrar por usuário autenticado
+
+```java
+public interface DocumentoRepository extends JpaRepository<Documento, Long> {
+
+    // Busca documentos do usuário logado pelo username
+    @Query("SELECT d FROM Documento d WHERE d.proprietario.username = ?#{principal.username}")
+    List<Documento> findDoUsuarioLogado();
+
+    // Busca documentos do usuário logado pelo email
+    @Query("SELECT d FROM Documento d WHERE d.proprietario.email = ?#{principal.email}")
+    List<Documento> findDoUsuarioLogadoPorEmail();
+
+    // Com paginação
+    @Query("SELECT d FROM Documento d WHERE d.proprietario.username = ?#{principal.username}")
+    Page<Documento> findDoUsuarioLogado(Pageable pageable);
+}
+```
+
+O `?#{principal.username}` é uma expressão SpEL que o Spring Data resolve em runtime, extraindo o `username` do `Principal` autenticado no `SecurityContext`.
+
+#### Entidade de exemplo
+
+```java
+@Entity
+public class Documento extends BaseEntity {
+
+    @Column(nullable = false)
+    private String titulo;
+
+    @Column(columnDefinition = "TEXT")
+    private String conteudo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "proprietario_id", nullable = false,
+        foreignKey = @ForeignKey(name = "fk_documento_usuario"))
+    private Usuario proprietario;
+
+    @Column(nullable = false)
+    private boolean publico = false;
+}
+```
+
+```java
+@Entity
+@Table(name = "usuario")
+public class Usuario extends BaseEntity implements UserDetails {
+
+    @Column(nullable = false, unique = true, length = 100)
+    private String username;
+
+    @Column(nullable = false, length = 255)
+    private String email;
+
+    @Column(nullable = false)
+    private String senha;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "usuario_role", joinColumns = @JoinColumn(name = "usuario_id"))
+    @Column(name = "role")
+    @Enumerated(EnumType.STRING)
+    private Set<Role> roles = new HashSet<>();
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return roles.stream()
+            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
+            .toList();
+    }
+
+    @Override
+    public String getPassword() { return senha; }
+
+    @Override
+    public String getUsername() { return username; }
+}
+
+public enum Role {
+    ADMIN, PROFESSOR, ALUNO
+}
+```
+
+### SpEL com `hasRole()` — queries condicionais por perfil
+
+Admins veem tudo, usuários normais veem apenas seus próprios registros:
+
+```java
+public interface DocumentoRepository extends JpaRepository<Documento, Long> {
+
+    // Admin vê tudo; outros veem só seus documentos
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE d.proprietario.username = ?#{hasRole('ROLE_ADMIN') ? '%' : principal.username}
+        """)
+    List<Documento> findAcessiveis();
+
+    // Admin vê tudo; professor vê públicos + seus; aluno vê só públicos + seus
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE ?#{hasRole('ROLE_ADMIN')} = true
+           OR d.proprietario.username = ?#{principal.username}
+           OR d.publico = true
+        """)
+    List<Documento> findVisiveis();
+}
+```
+
+```mermaid
+flowchart TD
+    A["@Query com SpEL"] --> B{"hasRole('ADMIN')?"}
+    B -->|Sim| C["WHERE proprietario LIKE '%'\n(retorna TODOS)"]
+    B -->|Não| D["WHERE proprietario = principal.username\n(retorna só do usuário)"]
+
+    style C fill:#fc9,stroke:#333
+    style D fill:#9f9,stroke:#333
+```
+
+### SpEL com `authentication` — acessar dados completos da autenticação
+
+```java
+public interface DocumentoRepository extends JpaRepository<Documento, Long> {
+
+    // Acessar propriedades do Authentication
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE d.proprietario.username = ?#{authentication.name}
+        """)
+    List<Documento> findPorAuthenticationName();
+
+    // Verificar se está autenticado (não anônimo)
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE d.publico = true
+           OR (?#{authentication.authenticated} = true
+               AND d.proprietario.username = ?#{authentication.name})
+        """)
+    List<Documento> findPublicosOuProprios();
+}
+```
+
+### Propriedades disponíveis no SpEL
+
+| Expressão | Retorno | Descrição |
+|---|---|---|
+| `principal` | `UserDetails` (ou o principal configurado) | Objeto principal da autenticação |
+| `principal.username` | `String` | Username do usuário autenticado |
+| `principal.email` | `String` | Email (se o `UserDetails` tiver) |
+| `authentication` | `Authentication` | Objeto de autenticação completo |
+| `authentication.name` | `String` | Nome do principal (`getName()`) |
+| `authentication.authenticated` | `boolean` | Se está autenticado |
+| `authentication.authorities` | `Collection<GrantedAuthority>` | Roles/authorities do usuário |
+| `hasRole('ROLE_X')` | `boolean` | Verifica se tem a role |
+| `hasAuthority('X')` | `boolean` | Verifica se tem a authority |
+| `hasAnyRole('A','B')` | `boolean` | Verifica se tem alguma das roles |
+| `isAuthenticated()` | `boolean` | Se não é anônimo |
+| `isAnonymous()` | `boolean` | Se é anônimo |
+| `permitAll` | `boolean` | Sempre `true` |
+
+### @PreAuthorize e @PostAuthorize — segurança no nível do método
+
+Complementar às queries com SpEL, o Spring Security Method Security permite proteger métodos do service/repository:
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class DocumentoService {
+
+    private final DocumentoRepository repository;
+
+    // Só ADMIN e PROFESSOR podem listar todos
+    @PreAuthorize("hasAnyRole('ADMIN', 'PROFESSOR')")
+    public Page<Documento> listarTodos(Pageable pageable) {
+        return repository.findAll(pageable);
+    }
+
+    // Qualquer autenticado pode buscar por ID, mas só o proprietário ou ADMIN pode ver
+    @PostAuthorize("returnObject.proprietario.username == authentication.name or hasRole('ADMIN')")
+    public Documento buscarPorId(Long id) {
+        return repository.findById(id)
+            .orElseThrow(() -> new DocumentoNotFoundException(id));
+    }
+
+    // Validação do parâmetro — só pode criar documento em nome do próprio usuário
+    @PreAuthorize("#request.proprietarioUsername == authentication.name or hasRole('ADMIN')")
+    @Transactional
+    public Documento criar(CriarDocumentoRequest request) {
+        var doc = new Documento();
+        doc.setTitulo(request.titulo());
+        doc.setConteudo(request.conteudo());
+        doc.setProprietario(usuarioRepository.findByUsername(request.proprietarioUsername()).orElseThrow());
+        return repository.save(doc);
+    }
+
+    // Só o proprietário pode atualizar (ou ADMIN)
+    @PreAuthorize("@documentoSecurity.isProprietario(#id, authentication.name) or hasRole('ADMIN')")
+    @Transactional
+    public Documento atualizar(Long id, AtualizarDocumentoRequest request) {
+        Documento doc = repository.findById(id).orElseThrow();
+        doc.setTitulo(request.titulo());
+        doc.setConteudo(request.conteudo());
+        return doc;
+    }
+
+    // Só ADMIN pode deletar
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional
+    public void deletar(Long id) {
+        repository.deleteById(id);
+    }
+}
+```
+
+#### Bean de segurança customizado referenciado via SpEL
+
+```java
+@Component("documentoSecurity")
+public class DocumentoSecurityEvaluator {
+
+    private final DocumentoRepository repository;
+
+    public DocumentoSecurityEvaluator(DocumentoRepository repository) {
+        this.repository = repository;
+    }
+
+    public boolean isProprietario(Long documentoId, String username) {
+        return repository.findById(documentoId)
+            .map(doc -> doc.getProprietario().getUsername().equals(username))
+            .orElse(false);
+    }
+
+    public boolean podeEditar(Long documentoId, String username) {
+        return repository.findById(documentoId)
+            .map(doc -> doc.getProprietario().getUsername().equals(username) || !doc.isPublico())
+            .orElse(false);
+    }
+}
+```
+
+A expressão `@documentoSecurity.isProprietario(#id, authentication.name)` no `@PreAuthorize` chama o bean Spring via `@` + nome do bean.
+
+Requer habilitação do method security:
+
+```java
+@Configuration
+@EnableMethodSecurity // habilita @PreAuthorize, @PostAuthorize, @Secured
+public class SecurityConfig { }
+```
+
+### @PreAuthorize no Repository — proteger queries diretamente
+
+```java
+public interface DocumentoRepository extends JpaRepository<Documento, Long> {
+
+    // Só ADMIN pode executar esta query
+    @PreAuthorize("hasRole('ADMIN')")
+    @Query("SELECT d FROM Documento d WHERE d.proprietario.id = :userId")
+    List<Documento> findByProprietarioId(@Param("userId") Long userId);
+
+    // Qualquer autenticado pode buscar seus próprios documentos
+    @PreAuthorize("isAuthenticated()")
+    @Query("SELECT d FROM Documento d WHERE d.proprietario.username = ?#{principal.username}")
+    List<Documento> findMeusDocumentos();
+
+    // Só PROFESSOR e ADMIN podem buscar por aluno
+    @PreAuthorize("hasAnyRole('ADMIN', 'PROFESSOR')")
+    List<Documento> findByProprietarioUsername(String username);
+}
+```
+
+### @PostFilter — filtrar resultados após a query
+
+```java
+@Service
+public class CursoSecurityService {
+
+    private final CursoRepository repository;
+
+    // Retorna todos os cursos, mas filtra mantendo só os do professor logado (ou todos para ADMIN)
+    @PostFilter("hasRole('ADMIN') or filterObject.professor.username == authentication.name")
+    @Transactional(readOnly = true)
+    public List<Curso> listarCursos() {
+        return repository.findAll();
+    }
+}
+```
+
+**Cuidado:** `@PostFilter` carrega **todos** os registros e filtra em memória. Para tabelas grandes, prefira filtrar na query com SpEL (`?#{principal.username}`).
+
+### Multi-tenancy via Spring Security + Spring Data
+
+#### Hibernate @Filter ativado pelo tenant do SecurityContext
+
+```java
+@Entity
+@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = Long.class))
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
+public class Documento extends BaseEntity {
+
+    @Column(nullable = false)
+    private Long tenantId;
+
+    // ... demais campos
+}
+```
+
+```java
+@Component
+public class TenantFilterAspect {
+
+    private final EntityManager entityManager;
+
+    public TenantFilterAspect(EntityManager entityManager) {
+        this.entityManager = entityManager;
+    }
+
+    @Before("execution(* com.exemplo.repository.*.*(..))")
+    public void ativarFiltroTenant() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof TenantUserDetails user) {
+            entityManager.unwrap(Session.class)
+                .enableFilter("tenantFilter")
+                .setParameter("tenantId", user.getTenantId());
+        }
+    }
+}
+```
+
+#### SpEL com tenant ID na query
+
+```java
+public interface DocumentoRepository extends JpaRepository<Documento, Long> {
+
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE d.tenantId = ?#{principal.tenantId}
+        ORDER BY d.criadoEm DESC
+        """)
+    List<Documento> findDoTenantAtual();
+
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE d.tenantId = ?#{principal.tenantId}
+          AND d.proprietario.username = ?#{principal.username}
+        """)
+    List<Documento> findMeusNoTenantAtual();
+}
+```
+
+### Auditoria com Spring Security — quem criou e quem alterou
+
+Integração com Spring Data Auditing (ver Seção 11 do Guia de Modelagem):
+
+```java
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+public abstract class AuditableEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreatedDate
+    @Column(nullable = false, updatable = false)
+    private OffsetDateTime criadoEm;
+
+    @LastModifiedDate
+    @Column(nullable = false)
+    private OffsetDateTime atualizadoEm;
+
+    @CreatedBy
+    @Column(updatable = false, length = 100)
+    private String criadoPor;
+
+    @LastModifiedBy
+    @Column(length = 100)
+    private String atualizadoPor;
+}
+```
+
+```java
+@Configuration
+@EnableJpaAuditing
+public class AuditConfig {
+
+    @Bean
+    public AuditorAware<String> auditorAware() {
+        return () -> Optional.ofNullable(SecurityContextHolder.getContext())
+            .map(SecurityContext::getAuthentication)
+            .filter(Authentication::isAuthenticated)
+            .filter(auth -> !(auth instanceof AnonymousAuthenticationToken))
+            .map(Authentication::getName);
+    }
+}
+```
+
+Agora toda entidade que estende `AuditableEntity` registra automaticamente quem criou e quem alterou, sem código explícito no service.
+
+### Consultar por campos de auditoria
+
+```java
+public interface DocumentoRepository extends JpaRepository<Documento, Long> {
+
+    // Documentos criados pelo usuário logado
+    @Query("SELECT d FROM Documento d WHERE d.criadoPor = ?#{principal.username}")
+    List<Documento> findCriadosPorMim();
+
+    // Documentos alterados pelo usuário logado
+    @Query("SELECT d FROM Documento d WHERE d.atualizadoPor = ?#{principal.username} AND d.criadoPor <> ?#{principal.username}")
+    List<Documento> findAlteradosPorMimMasNaoCriados();
+
+    // Atividade recente do usuário logado
+    @Query("""
+        SELECT d FROM Documento d
+        WHERE (d.criadoPor = ?#{principal.username} OR d.atualizadoPor = ?#{principal.username})
+          AND d.atualizadoEm >= :desde
+        ORDER BY d.atualizadoEm DESC
+        """)
+    List<Documento> findAtividadeRecente(@Param("desde") OffsetDateTime desde);
+}
+```
+
+### Diagrama: onde cada mecanismo atua
+
+```mermaid
+flowchart TD
+    subgraph "Request HTTP"
+        R[Controller recebe request]
+    end
+
+    subgraph "Camada de Segurança"
+        R --> A["@PreAuthorize\n(antes do método)"]
+        A --> S[Service / Repository]
+        S --> B["@PostAuthorize\n(após o método, antes do retorno)"]
+        B --> F["@PostFilter\n(filtra coleção retornada)"]
+    end
+
+    subgraph "Camada de Dados"
+        S --> Q["@Query + SpEL\n?#{principal.username}\n(filtro no SQL)"]
+        Q --> DB[(PostgreSQL)]
+    end
+
+    subgraph "Auditoria"
+        S --> AU["AuditingEntityListener\n@CreatedBy = authentication.name\n@LastModifiedBy = authentication.name"]
+        AU --> DB
+    end
+
+    style A fill:#f99,stroke:#333
+    style B fill:#fc9,stroke:#333
+    style F fill:#ff9,stroke:#333
+    style Q fill:#9f9,stroke:#333
+    style AU fill:#9cf,stroke:#333
+```
+
+### Comparação de abordagens
+
+| Mecanismo | Onde filtra | Performance | Uso ideal |
+|---|---|---|---|
+| SpEL em `@Query` | No SQL (banco) | Ótima (filtro no banco) | Filtro por proprietário/tenant |
+| `@PreAuthorize` | Antes do método | Boa (impede execução) | Controle de acesso por role |
+| `@PostAuthorize` | Após o método | Média (executa e depois verifica) | Verificação sobre o objeto retornado |
+| `@PostFilter` | Em memória | Ruim em coleções grandes | Filtros complexos em listas pequenas |
+| `@Filter` (Hibernate) | No SQL (banco) | Ótima | Multi-tenancy global |
+| `AuditorAware` | No INSERT/UPDATE | Mínimo | Rastrear quem criou/alterou |
+
+### Referência rápida — SpEL em @Query
+
+```java
+// Usuário logado
+?#{principal.username}
+?#{principal.email}
+?#{authentication.name}
+
+// Verificação de role
+?#{hasRole('ROLE_ADMIN')}
+?#{hasAnyRole('ROLE_ADMIN', 'ROLE_PROFESSOR')}
+?#{hasAuthority('DOCUMENTO_WRITE')}
+
+// Condicional — admin vê tudo, outros filtram
+?#{hasRole('ROLE_ADMIN') ? '%' : principal.username}
+
+// Verificação de autenticação
+?#{authentication.authenticated}
+?#{isAuthenticated()}
+?#{isAnonymous()}
+
+// Propriedade customizada do UserDetails
+?#{principal.tenantId}
+?#{principal.departamentoId}
+```
+
+---
+
 ## Referências
 
 - [Spring Data JPA Reference — Query Methods](https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html)
 - [Hibernate ORM 6 — HQL/JPQL Guide](https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html#query-language)
+- [Spring Security — Spring Data Integration](https://docs.spring.io/spring-security/reference/servlet/integrations/data.html)
 - [Vlad Mihalcea — High-Performance Java Persistence](https://vladmihalcea.com/)
 - [Thorben Janssen — Thoughts on Java / JPA & Hibernate](https://thorben-janssen.com/)
 - [PostgreSQL Full-Text Search Documentation](https://www.postgresql.org/docs/current/textsearch.html)
