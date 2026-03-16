@@ -47,16 +47,16 @@ flowchart TD
     REQ[HTTP Request] --> DFP[DelegatingFilterProxy]
     DFP --> FSB[FilterChainProxy]
     FSB --> MATCH{securityMatcher?}
-    MATCH -->|Chain 1 match| SFC1[SecurityFilterChain 1\nAPI - JWT]
-    MATCH -->|Chain 2 match| SFC2[SecurityFilterChain 2\nWeb - FormLogin]
-    MATCH -->|Chain 3 match| SFC3[SecurityFilterChain 3\nActuator - Basic]
+    MATCH -->|Chain 1 match| SFC1[SecurityFilterChain 1<br>API - JWT]
+    MATCH -->|Chain 2 match| SFC2[SecurityFilterChain 2<br>Web - FormLogin]
+    MATCH -->|Chain 3 match| SFC3[SecurityFilterChain 3<br>Actuator - Basic]
 
-    SFC1 --> AUTH1[Authentication\nBearerTokenFilter]
-    AUTH1 --> AUTHZ1[Authorization\nAuthorizationFilter]
+    SFC1 --> AUTH1[Authentication<br>BearerTokenFilter]
+    AUTH1 --> AUTHZ1[Authorization<br>AuthorizationFilter]
     AUTHZ1 --> CTRL[Controller / Handler]
 
-    SFC2 --> AUTH2[Authentication\nUsernamePasswordFilter]
-    AUTH2 --> AUTHZ2[Authorization\nAuthorizationFilter]
+    SFC2 --> AUTH2[Authentication<br>UsernamePasswordFilter]
+    AUTH2 --> AUTHZ2[Authorization<br>AuthorizationFilter]
     AUTHZ2 --> CTRL
 ```
 
@@ -203,13 +203,13 @@ O mecanismo real são as anotações `@ConditionalOnMissingBean` presentes nas c
 
 ```mermaid
 flowchart TD
-    SBA[SpringBootWebSecurityConfiguration] -->|"@ConditionalOnMissingBean(SecurityFilterChain)"| CHECK{Você declarou\num SecurityFilterChain?}
-    CHECK -->|Não| DEFAULT["Cria o default:\nformLogin + httpBasic\nem todos os endpoints"]
-    CHECK -->|Sim| BACKOFF[Back-off: não cria\no SecurityFilterChain padrão]
+    SBA[SpringBootWebSecurityConfiguration] -->|"@ConditionalOnMissingBean(SecurityFilterChain)"| CHECK{Você declarou<br>um SecurityFilterChain?}
+    CHECK -->|Não| DEFAULT["Cria o default:<br>formLogin + httpBasic<br>em todos os endpoints"]
+    CHECK -->|Sim| BACKOFF[Back-off: não cria<br>o SecurityFilterChain padrão]
 
-    UDSA[UserDetailsServiceAutoConfiguration] -->|"@ConditionalOnMissingBean(UserDetailsService)"| CHECK2{Você declarou\num UserDetailsService?}
-    CHECK2 -->|Não| INMEMORY["Cria InMemoryUserDetailsManager\ncom senha aleatória no log"]
-    CHECK2 -->|Sim| BACKOFF2[Back-off: não cria\nusuário em memória]
+    UDSA[UserDetailsServiceAutoConfiguration] -->|"@ConditionalOnMissingBean(UserDetailsService)"| CHECK2{Você declarou<br>um UserDetailsService?}
+    CHECK2 -->|Não| INMEMORY["Cria InMemoryUserDetailsManager<br>com senha aleatória no log"]
+    CHECK2 -->|Sim| BACKOFF2[Back-off: não cria<br>usuário em memória]
 ```
 
 O trecho real do Spring Boot que implementa esse comportamento:
@@ -476,10 +476,10 @@ flowchart LR
     end
 
     subgraph SecurityFilterChains
-        SFC1["Chain @Order(1)\nAPI — JWT Bearer\nstateless, csrf.disable"]
-        SFC2["Chain @Order(2)\nAdmin — Basic Auth\nstateless"]
-        SFC3["Chain @Order(3)\nActuator — Basic Auth\nstateless"]
-        SFC4["Chain @Order(4)\nWeb — Form Login\nstateful, csrf enabled"]
+        SFC1["Chain @Order(1)<br>API — JWT Bearer<br>stateless, csrf.disable"]
+        SFC2["Chain @Order(2)<br>Admin — Basic Auth<br>stateless"]
+        SFC3["Chain @Order(3)<br>Actuator — Basic Auth<br>stateless"]
+        SFC4["Chain @Order(4)<br>Web — Form Login<br>stateful, csrf enabled"]
     end
 
     A --> SFC1
@@ -1200,7 +1200,7 @@ public class CustomAuthFailureHandler implements AuthenticationFailureHandler {
 
 ```mermaid
 mindmap
-  root((Segundo Fator\nde Autenticação))
+  root((Segundo Fator<br>de Autenticação))
     TOTP
       RFC 6238
       Google Authenticator
@@ -3349,9 +3349,9 @@ O Spring Security avalia `@PreAuthorize` usando `SecurityExpressionRoot`, que ex
 flowchart TD
     PA["@PreAuthorize('meuMetodo(#param)')"] --> MSEH[MethodSecurityExpressionHandler]
     MSEH --> CSER[CustomSecurityExpressionRoot]
-    CSER --> MO[MySecurityOperations\nBean com lógica customizada]
+    CSER --> MO[MySecurityOperations<br>Bean com lógica customizada]
     MO --> DB[(Database / Cache)]
-    MO --> AUTH[Authentication\nobject]
+    MO --> AUTH[Authentication<br>object]
 ```
 
 ### 10.2 Implementação Completa
@@ -3960,15 +3960,15 @@ flowchart TD
     end
 
     subgraph Backend
-        API[Spring Boot\nResource Server]
-        WEB[Spring Boot\nOAuth2 Client]
+        API[Spring Boot<br>Resource Server]
+        WEB[Spring Boot<br>OAuth2 Client]
     end
 
     subgraph Keycloak
-        KC[Keycloak Server\nport 8180]
+        KC[Keycloak Server<br>port 8180]
         REALM[Realm: myrealm]
-        CLI_API[Client: myapp-api\nbearer-only]
-        CLI_WEB[Client: myapp-web\nconfidential]
+        CLI_API[Client: myapp-api<br>bearer-only]
+        CLI_WEB[Client: myapp-web<br>confidential]
     end
 
     SPA -->|"Authorization Code + PKCE"| KC
@@ -5669,15 +5669,15 @@ LDAP (Lightweight Directory Access Protocol) é o protocolo padrão para diretó
 ```mermaid
 flowchart TD
     subgraph "Bind Authentication (padrão)"
-        BA1[1. Busca o DN do usuário\nno diretório via conta de serviço]
-        BA2[2. Tenta bind com\nusuário + senha informados]
+        BA1[1. Busca o DN do usuário<br>no diretório via conta de serviço]
+        BA2[2. Tenta bind com<br>usuário + senha informados]
         BA3[3. Bind OK → autenticado]
         BA1 --> BA2 --> BA3
     end
 
     subgraph "Password Comparison"
-        PC1[1. Busca o atributo\nuserPassword do usuário]
-        PC2[2. Compara senha localmente\ncom BCrypt / SHA / MD5]
+        PC1[1. Busca o atributo<br>userPassword do usuário]
+        PC2[2. Compara senha localmente<br>com BCrypt / SHA / MD5]
         PC3[3. Match → autenticado]
         PC1 --> PC2 --> PC3
     end
@@ -6206,7 +6206,7 @@ public DaoAuthenticationProvider dbAuthenticationProvider(
 
 ```mermaid
 mindmap
-  root((OWASP\nSpring Security))
+  root((OWASP<br>Spring Security))
     A01 Broken Access Control
       Principle of Least Privilege
       @PreAuthorize em serviços
@@ -9071,9 +9071,9 @@ public class RoleHierarchyConfig {
 
 ```mermaid
 flowchart TD
-    A["ROLE_ADMIN\n(tudo abaixo implicito)"]
-    M["ROLE_MANAGER\n+ USER + VIEWER"]
-    U["ROLE_USER\n+ VIEWER"]
+    A["ROLE_ADMIN<br>(tudo abaixo implicito)"]
+    M["ROLE_MANAGER<br>+ USER + VIEWER"]
+    U["ROLE_USER<br>+ VIEWER"]
     V["ROLE_VIEWER"]
     A --> M --> U --> V
 ```
