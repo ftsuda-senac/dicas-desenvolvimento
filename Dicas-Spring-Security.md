@@ -10095,3 +10095,56 @@ public RoleHierarchy roleHierarchy() {
 - [ ] `show-sql: false` em produção (senhas em SQL logs)
 - [ ] CORS restrito a origens conhecidas
 - [ ] Resposta genérica para erros de autenticação (não vazar detalhes)
+
+
+---
+
+## Referências e Créditos
+
+### Referências Principais
+
+**Documentação Oficial**
+
+| Recurso | URL |
+|---|---|
+| Spring Security Reference | https://docs.spring.io/spring-security/reference/index.html |
+| Spring Authorization Server Reference | https://docs.spring.io/spring-authorization-server/reference/index.html |
+| Spring Boot Actuator | https://docs.spring.io/spring-boot/reference/actuator/index.html |
+| Spring Session Reference | https://docs.spring.io/spring-session/reference/index.html |
+| Spring LDAP Reference | https://docs.spring.io/spring-ldap/reference/index.html |
+
+**Especificações e Padrões**
+
+| Recurso | URL |
+|---|---|
+| RFC 6238 — TOTP | https://datatracker.ietf.org/doc/html/rfc6238 |
+| RFC 6749 — OAuth 2.0 | https://datatracker.ietf.org/doc/html/rfc6749 |
+| RFC 7519 — JWT | https://datatracker.ietf.org/doc/html/rfc7519 |
+| RFC 7807 — Problem Details | https://datatracker.ietf.org/doc/html/rfc7807 |
+| RFC 8414 — OAuth 2.0 Authorization Server Metadata | https://datatracker.ietf.org/doc/html/rfc8414 |
+| OpenID Connect Core 1.0 | https://openid.net/specs/openid-connect-core-1_0.html |
+| SAML 2.0 Technical Overview | https://www.oasis-open.org/committees/download.php/27819/sstc-saml-tech-overview-2.0-cd-02.pdf |
+| OWASP Password Storage Cheat Sheet | https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html |
+| OWASP REST Security Cheat Sheet | https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html |
+| OWASP CSRF Prevention Cheat Sheet | https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html |
+| OWASP JWT Security Cheat Sheet | https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html |
+
+**Bibliotecas**
+
+| Recurso | URL |
+|---|---|
+| Nimbus JOSE+JWT | https://connect2id.com/products/nimbus-jose-jwt |
+| Bouncy Castle (Argon2id) | https://www.bouncycastle.org/documentation.html |
+| dev.samstevens.totp | https://github.com/samdjstevens/java-totp |
+| TanStack Query | https://tanstack.com/query/latest |
+| oidc-client-ts | https://github.com/authts/oidc-client-ts |
+
+---
+
+### Créditos
+
+Este documento foi elaborado de forma colaborativa entre:
+
+- **[@ftsuda-senac](https://github.com/ftsuda-senac)** — autor das perguntas, revisões e direcionamentos que moldaram o conteúdo e a estrutura do documento.
+
+- **[Claude Sonnet 4.6](https://www.anthropic.com/claude)** (Anthropic) — modelo de linguagem utilizado para geração, estruturação e revisão do conteúdo técnico ao longo de toda a conversa.
