@@ -62,24 +62,25 @@
     * Diferenças Checked exceptions X Unchecked exceptions (RuntimeException)
 * Evitar criar classes dentro do pacote "default"
 * Ao comparar String, colocar o literal como responsável pela chamada à comparação, para evitar NullPointerException.
-* Não comparar Strings usando `==`. Em vez disso, deve-usar os métodos `equals()` ou `equalsIgnoreCase()`
-```
-String str = "Abc";
-"Abc" == str; // resultado FALSE - Compara local de alocação em memória
-"Abc".equals(str); // resultado TRUE
-"abc".equals(str); // resultado FALSE - A maiúsculo diferente de minúsculo
-"abc".equalsIgnoreCase(str); // resultado TRUE
+* Não comparar Strings usando `==`. Em vez disso, deve-se usar os métodos `equals()` ou `equalsIgnoreCase()`
+```java
+String str = new String("Abc");
+
+boolean comparacaoComIgualIgual = ("Abc" == str); // resultado false - compara referência
+boolean comparacaoComEquals = "Abc".equals(str); // resultado true
+boolean comparacaoComEqualsCaseSensitive = "abc".equals(str); // resultado false
+boolean comparacaoComEqualsIgnoreCase = "abc".equalsIgnoreCase(str); // resultado true
 ```
 * Clareza do código - comparar exemplos abaixo
 ```java
-function boolean compararInadequado(int valor1, int valor2) {
+static boolean compararInadequado(int valor1, int valor2) {
     if (valor1 > valor2) {
         return true;
     } else {
         return false;
     }
 }
-function boolean compararAdequado(int valor1, int valor2) {
+static boolean compararAdequado(int valor1, int valor2) {
     return (valor1 > valor2);
 }
 ```
@@ -100,8 +101,11 @@ BigDecimal soma = valor1.add(valor2); // Valor de soma deve ser 4.00
 * Regras de precedência de operadores - Ver https://docs.oracle.com/javase/tutorial/java/nutsandbolts/operators.html
 * Cuidado ao importar classes que possuem o mesmo nome, mas que vem de pacotes diferentes.
 ```java
-import java.util.Date;
-import java.sql.Date;
+// Exemplo: classe Date - pode ser java.util.Date OU java.sql.Date
+// Evite importar as duas classes com o mesmo nome no mesmo arquivo.
+// Quando houver conflito, prefira usar o nome completo da classe.
+java.util.Date dataUtil = new java.util.Date();
+java.sql.Date dataSql = new java.sql.Date(System.currentTimeMillis());
 ```
 * Exceptions (Exceções)
 
@@ -166,7 +170,29 @@ Alguns links para ver:
 ## Exemplos úteis Java
 * Calcular idade Java 8+: https://gist.github.com/ftsuda-senac/14279241af919ecb847b24f5fc8352be
 * Singleton: https://gist.github.com/ftsuda-senac/e9f1e7b89dfd43d01d0df4bebc2e4072
-* Classe utilitária (métodos static): TODO
+* Classe utilitária (métodos static):
+```java
+public final class TextoUtil {
+
+    private TextoUtil() {
+        // Evita criação de objetos desta classe utilitária
+    }
+
+    public static String limpar(String valor) {
+        // Verifica null antes de usar trim()/toLowerCase() para evitar NullPointerException
+        if (valor == null) {
+            return "";
+        }
+        return valor.trim().toLowerCase();
+    }
+
+    public static boolean estaVazio(String valor) {
+        return valor == null || valor.trim().isEmpty();
+    }
+
+}
+```
+Use classe utilitária quando os métodos não dependem de atributos de objeto e servem somente para reaproveitar lógica comum.
 
 ## Alguns problemas pegos nas correções do PI1 - 2022-1
 
@@ -330,7 +356,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     
     public class Jogo {
     
-        public static void main(String[] args) {
+        public static void main(String[] args) throws InterruptedException {
             System.out.println("Mensagem");
             TimeUnit.SECONDS.sleep(1); // OU Thread.sleep(1000);
             
@@ -348,12 +374,12 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     
         // Notar que a "complexidade" de fazer o System.out.println e esperar fica
         // isolada dentro da função, deixando o código principal mais legível
-        static mostrarMensagemComEspera(String msg, long tempoEspera) {
+        static void mostrarMensagemComEspera(String msg, long tempoEspera) throws InterruptedException {
             System.out.println(msg);
             TimeUnit.SECONDS.sleep(tempoEspera); // OU Thread.sleep(1000 * tempoEspera);
         }
     
-        public static void main(String[] args) {
+        public static void main(String[] args) throws InterruptedException {
             mostrarMensagemComEspera("Mensagem", 1);
             mostrarMensagemComEspera("Outra mensagem", 2);
         }
@@ -388,8 +414,8 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
         // Ideal é deixar mais genérico/abstrato
 
         public static void main(String[] args) {
-            int hpFulano, hpCiclano = 500;
-            int hpCachorro, hpGato = 100;
+            int hpFulano = 500, hpCiclano = 500;
+            int hpCachorro = 100, hpGato = 100;
             mostrarStatusFulanoECachorro(hpFulano, hpCachorro);
             mostrarStatusFulanoEGato(hpFulano, hpGato);
             mostrarStatusCiclanoECachorro(hpCiclano, hpCachorro);
@@ -410,8 +436,8 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
         }
 
         public static void main(String[] args) {
-            int hpFulano, hpCiclano = 500;
-            int hpCachorro, hpGato = 100;
+            int hpFulano = 500, hpCiclano = 500;
+            int hpCachorro = 100, hpGato = 100;
             mostrarStatusPessoaEAnimal("Fulano", hpFulano, "Cachorro", hpCachorro);
             mostrarStatusPessoaEAnimal("Fulano", hpFulano, "Gato", hpGato);
             mostrarStatusPessoaEAnimal("Ciclano", hpCiclano, "Cachorro",  hpCachorro);
@@ -421,7 +447,7 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     ```
     
     <details>
-        <summary> Exemplo inicial Orientação a objetos <em>(FUTURO)</em></summary>
+        <summary> Exemplo inicial Orientação a objetos <em>(Será visto em outras disciplinas)</em></summary>
     
     ```java
     // arquivo Personagem.java
@@ -436,7 +462,8 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
             this.hp = hp;
         }
         
-        // TODO: Pode precisar criar getNome()/setNome()/getHp()/setHp()
+        // Métodos como getNome(), setNome(), getHp() e setHp() podem ser adicionados aqui.
+        // Eles ajudam a aplicar o encapsulamento em orientação a objetos, mas foram omitidos por brevidade.
         
         public String obterStatus() {
             return "HP " + nome + ": " + hp;
