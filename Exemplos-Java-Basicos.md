@@ -1726,6 +1726,9 @@ System.out.println(validador.testar("Java")); // true
 | `Supplier<T>` | nada | `T` | fornecer/criar valor |
 | `UnaryOperator<T>` | `T` | `T` | transformar mantendo o mesmo tipo |
 | `BinaryOperator<T>` | `T`, `T` | `T` | combinar dois valores do mesmo tipo |
+| `IntFunction<R>` | `int` | `R` | transformar `int` sem boxing |
+| `ToIntFunction<T>` | `T` | `int` | extrair `int` de um objeto sem boxing |
+| `IntUnaryOperator` | `int` | `int` | transformar `int` em `int` sem boxing |
 
 ### 9.3 Exemplos com tipos mais usados
 
@@ -1782,6 +1785,35 @@ import java.util.function.UnaryOperator;
 
 UnaryOperator<String> maiusculo = texto -> texto.toUpperCase();
 System.out.println(maiusculo.apply("java")); // JAVA
+```
+
+#### `IntFunction<R>`
+
+```java
+import java.util.function.IntFunction;
+
+IntFunction<String> numeroParaTexto = valor -> "Valor: " + valor;
+System.out.println(numeroParaTexto.apply(10)); // Valor: 10
+```
+
+#### `ToIntFunction<T>`
+
+```java
+import java.util.function.ToIntFunction;
+
+record Produto(String nome) {}
+
+ToIntFunction<Produto> tamanhoNome = produto -> produto.nome().length();
+System.out.println(tamanhoNome.applyAsInt(new Produto("Mouse"))); // 5
+```
+
+#### `IntUnaryOperator`
+
+```java
+import java.util.function.IntUnaryOperator;
+
+IntUnaryOperator dobrar = valor -> valor * 2;
+System.out.println(dobrar.applyAsInt(21)); // 42
 ```
 
 ### 9.4 Compondo funções

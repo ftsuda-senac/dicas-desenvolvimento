@@ -1,6 +1,8 @@
 # Spring MVC — Guia Completo: REST APIs e SSR com Thymeleaf
 
-> **Versões de referência:** Spring Boot 3.5 / 4.0 · Spring Framework 6.x / 7.x · Java 21+ · Thymeleaf 3.x · SpringDoc OpenAPI 2.x / 3.x
+> **Baseline principal:** Spring Boot 3.5 · Spring Framework 6.x · Java 21+ · Thymeleaf 3.x · SpringDoc OpenAPI 2.x
+>
+> **Notas de compatibilidade:** quando uma seção exigir Spring Boot 4 / Spring Framework 7 ou SpringDoc 3.x, isso será indicado explicitamente.
 
 ---
 
@@ -30,7 +32,7 @@
     - [4.4 Convertendo ConstraintViolationException em BindingResult](#44-convertendo-constraintviolationexception-do-service-em-bindingresult)
     - [4.5 Atributos de Modelo Compartilhados com @ModelAttribute](#45-atributos-de-modelo-compartilhados-com-modelattribute)
     - [4.6 @SessionAttributes e @SessionAttribute](#46-sessionattributes-e-sessionattribute)
-5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated--valid-vs-validated)
+5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated)
     - [5.1 Diferença Conceitual](#51-diferença-conceitual)
     - [5.2 Exemplo Prático de Grupos de Validação](#52-exemplo-prático-de-grupos-de-validação)
     - [5.3 Validação em Serviços com @Validated](#53-validação-em-serviços-com-validated)
@@ -76,7 +78,7 @@
     - [11.7 Flash Attributes — Dados entre Redirects (PRG Pattern)](#117-flash-attributes--dados-entre-redirects-prg-pattern)
     - [11.8 ResponseBodyAdvice — Interceptar Respostas Globalmente](#118-responsebodyadvice--interceptar-respostas-globalmente)
     - [11.9 Controller Assíncrono — CompletableFuture, Callable e DeferredResult](#119-controller-assíncrono--completablefuture-callable-e-deferredresult)
-    - [11.10 Versionamento de API Nativo — Spring Boot 4 / Spring Framework 7](#1110-api-versioning--spring-boot-4--spring-framework-7)
+    - [11.10 API Versioning nativo — Spring Framework 7 / Spring Boot 4](#1110-api-versioning-nativo--spring-framework-7--spring-boot-4)
     - [11.11 HttpServletRequest, HttpServletResponse e RequestContextHolder](#1111-acesso-a-recursos-do-servlet--httpservletrequest-httpservletresponse-e-requestcontextholder)
     - [11.12 Integração com Spring Security](#1112-integração-com-spring-security)
 12. [Alternativas ao Thymeleaf](#12-alternativas-ao-thymeleaf)
@@ -140,6 +142,8 @@
     - [22.8 Testando Upload, CORS e SSE](#228-testando-upload-cors-e-sse)
 23. [Tópicos Relevantes Não Cobertos Neste Documento](#23-tópicos-relevantes-não-cobertos-neste-documento)
 ---
+
+> **Como navegar este material:** para uma primeira leitura, priorize as seções 1 a 5, 8, 9 e 22. As seções 11 a 23 funcionam melhor como consulta e aprofundamento.
 
 ## Java — Recursos da Linguagem Relevantes para o Documento
 
@@ -308,7 +312,7 @@ public class RelatorioService {
 
 ```java
 // Interfaces com exatamente UM método abstrato podem ser usadas com lambdas.
-// Ver seção J.6 para o catálogo completo de java.util.function.
+// Ver seção J.5 para o catálogo completo de java.util.function.
 
 // Supplier<T>: sem parâmetros, retorna T
 Supplier<Produto>  supplier  = () -> new Produto("Notebook", BigDecimal.TEN);
@@ -616,13 +620,13 @@ String comEspacos = """
 
 ---
 
-### J.6 Programação Funcional — `java.util.function`, Composição e Method References
+### J.5 Programação Funcional — `java.util.function`, Composição e Method References
 
 O pacote `java.util.function` define as interfaces funcionais padrão do Java.
 Todas possuem exatamente **um método abstrato** (`@FunctionalInterface`) e por
 isso aceitam lambdas e method references como implementações.
 
-#### J.6.1 Catálogo das interfaces principais
+#### J.5.1 Catálogo das interfaces principais
 
 ```java
 // ════════════════════════════════════════════════════════════════════════════════
@@ -735,7 +739,7 @@ IntPredicate  positivo = n -> n > 0;                        // int → boolean
 LongPredicate par      = n -> n % 2 == 0;                   // long → boolean
 ```
 
-#### J.6.2 Composição de funções
+#### J.5.2 Composição de funções
 
 Todas as interfaces funcionais do `java.util.function` oferecem métodos `default`
 para **encadear e combinar** funções sem variáveis intermediárias.
@@ -805,7 +809,7 @@ Map<Long, Produto> porId = produtos.stream()
         .collect(Collectors.toMap(Produto::getId, Function.identity()));
 ```
 
-#### J.6.3 Method references — quatro formas
+#### J.5.3 Method references — quatro formas
 
 ```java
 // ════════════════════════════════════════════════════════════════════════════════
@@ -859,7 +863,7 @@ List<String> resultado = nomes.stream()
         .collect(Collectors.toList()); // ["ANA", "BOB"]
 ```
 
-#### J.6.4 Interfaces funcionais customizadas e usos no Spring MVC
+#### J.5.4 Interfaces funcionais customizadas e usos no Spring MVC
 
 ```java
 // ─── @FunctionalInterface — garante que a interface tem exatamente 1 método abs.
@@ -914,7 +918,7 @@ CompletableFuture.runAsync(tarefa, executor);
 Callable<RelatorioResponse> callable = () -> relatorioService.gerarCompleto(periodo);
 ```
 
-#### J.6.5 Resumo — guia de escolha rápida
+#### J.5.5 Resumo — guia de escolha rápida
 
 | Preciso... | Interface | Assinatura |
 |---|---|---|
@@ -935,7 +939,7 @@ Callable<RelatorioResponse> callable = () -> relatorioService.gerarCompleto(peri
 
 ---
 
-### J.5 Outros Recursos Java Usados no Documento
+### J.6 Outros Recursos Java Usados no Documento
 
 Referência rápida de recursos Java modernos que aparecem nos exemplos das seções
 numeradas.
@@ -3858,7 +3862,7 @@ public class CheckoutController {
 
 ---
 
-## 5. Bean Validation — @Valid vs @Validated — @Valid vs @Validated
+## 5. Bean Validation — @Valid vs @Validated
 
 ### 5.1 Diferença Conceitual
 
@@ -6275,7 +6279,7 @@ class ProdutoAsyncControllerIT {
 
 ---
 
-### 11.10 API Versioning — Spring Boot 4 / Spring Framework 7
+### 11.10 API Versioning nativo — Spring Framework 7 / Spring Boot 4
 
 O Spring Framework 7 (base do Spring Boot 4) introduziu suporte nativo a
 versionamento de API por meio da classe `ApiVersionRequestMappingHandlerMapping`
@@ -7401,21 +7405,6 @@ spring:
     cache-duration: 1s          # 0 = sem cache (útil em desenvolvimento)
     use-code-as-default-message: false  # false = lança exceção se chave não existir
 ```
-
----
-
-## Referências
-
-- [Spring MVC Reference Documentation](https://docs.spring.io/spring-framework/reference/web/webmvc.html)
-- [Spring Boot Web Reference](https://docs.spring.io/spring-boot/reference/web/servlet.html)
-- [Thymeleaf Documentation](https://www.thymeleaf.org/documentation.html)
-- [Thymeleaf Layout Dialect](https://ultraq.github.io/thymeleaf-layout-dialect/)
-- [SpringDoc OpenAPI 3.x](https://springdoc.org/)
-- [Jakarta Bean Validation 3.0](https://beanvalidation.org/3.0/)
-- [RFC 9457 — Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457)
-- [JTE — Java Template Engine](https://jte.gg/)
-
----
 
 ## 14. CORS — Cross-Origin Resource Sharing
 
@@ -9767,7 +9756,9 @@ class PedidoControllerIT {
 Carrega apenas o slice MVC (controllers, filters, converters, security web).
 **Não carrega** services, repositories nem o banco — estes devem ser mockados.
 
-#### 22.3.1 REST Controller com `RestTestClient`
+#### 22.3.1 REST Controller com `RestTestClient` (Spring Boot 4)
+
+> **Nota:** no baseline Spring Boot 3.5 deste documento, prefira `MockMvc` ou um cliente equivalente. O `RestTestClient` é tratado aqui como recurso nativo da stack Spring Boot 4 / Spring Framework 7.
 
 ```java
 @WebMvcTest(ProdutoController.class)
@@ -10131,6 +10122,8 @@ class ProdutoControllerIT {
 
 ### 22.6 `MockMvc` vs `RestTestClient` — Comparativo
 
+> **Nota:** na comparação abaixo, a disponibilidade do `RestTestClient` sem dependência extra refere-se ao Spring Boot 4.
+
 ```java
 // ─── MockMvc — API imperativa tradicional ─────────────────────────────────────
 // Verboso mas flexível; suporte nativo ao Thymeleaf (view(), model(), xpath())
@@ -10302,30 +10295,32 @@ Assuntos relacionados ao Spring MVC ainda ausentes neste documento, ordenados po
 
 ### 23.1 Tópicos Ausentes — Alta Relevância
 
-**2. HTTP Interface — `@HttpExchange`**
+**1. HTTP Interface — `@HttpExchange`**
 Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao Feign) usando interfaces anotadas com `@GetExchange`, `@PostExchange` etc., resolvidos por `HttpServiceProxyFactory`. Direto ao território do Spring MVC e completamente ausente.
 
-**3. HATEOAS**
+**2. HATEOAS**
 `spring-hateoas`, `EntityModel<T>`, `CollectionModel<T>`, `WebMvcLinkBuilder`, representação HAL. Ausente por completo, apesar de ser parte oficial do ecossistema Spring MVC para APIs hipermídia.
 
 ### 23.2 Tópicos Ausentes — Relevância Moderada
 
-**4. Endpoints funcionais — `RouterFunction` / WebMvc.fn**
+**3. Endpoints funcionais — `RouterFunction` / WebMvc.fn**
 Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `WebMvcConfigurer.addRouterFunctions()`. Não substitui `@Controller` no dia a dia mas é relevante para cenários de roteamento dinâmico ou bibliotecas internas.
 
 ### 23.3 Tópicos Ausentes — Relevância Menor mas Notáveis
 
-**5. `WebMvcTest` + `MockMvcRestDocumentation`** — geração de documentação a partir dos testes (Spring REST Docs)
+**4. `WebMvcTest` + `MockMvcRestDocumentation`** — geração de documentação a partir dos testes (Spring REST Docs)
 
-**6. Virtual Threads — seção dedicada** — mencionado em vários lugares, mas sem consolidar os impactos no MVC (thread locals, `@Async`, `SecurityContextHolder`, `TransactionSynchronizationManager`)
+**5. Virtual Threads — seção dedicada** — mencionado em vários lugares, mas sem consolidar os impactos no MVC (thread locals, `@Async`, `SecurityContextHolder`, `TransactionSynchronizationManager`)
 
 ### 23.4 Resumo por Prioridade
 
 | Prioridade | Tópico | Justificativa |
 |---|---|---|
 | 🔴 Alta | `@HttpExchange` | Substitui Feign no ecossistema Spring — muito usado em microserviços |
-| 🟡 Média | HATEOAS | Relevante para APIs que seguem nível 3 do Richardson Maturity Model |
-| 🟢 Baixa | WebMvc.fn | Nicho, mas parte oficial da spec |
+| 🔴 Alta | HATEOAS | Parte oficial do ecossistema Spring MVC para APIs hipermídia |
+| 🟡 Média | WebMvc.fn | Nicho, mas parte oficial da stack MVC |
+| 🟢 Baixa | `MockMvcRestDocumentation` | Útil para gerar documentação a partir dos testes |
+| 🟢 Baixa | Virtual Threads | Merece consolidação dos impactos no MVC e em contexto assíncrono |
 
 ---
 

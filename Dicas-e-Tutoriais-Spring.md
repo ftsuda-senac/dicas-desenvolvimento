@@ -691,4 +691,56 @@ Se necessário, trocar "current" pela versão desejada
 
 ## Troubleshooting
 
+### Erros comuns de iniciantes
+
+* Exemplo de estrutura Maven com exemplos e contra exemplos
+```text
+meu-projeto/
+|-- pom.xml
+|-- src/
+|   |-- main/
+|   |   |-- java/
+|   |   |   `-- com/
+|   |   |       `-- exemplo/
+|   |   |           |-- projeto/
+|   |   |               |-- Application.java              OK - classe principal com @SpringBootApplication
+|   |   |               |-- GlobalExceptionHandler.java   OK - classe no mesmo package base da aplicacao
+|   |   |               |-- controller/
+|   |   |               |   `-- UsuarioController.java   OK - codigo da aplicacao
+|   |   |               |-- service/
+|   |   |               |   `-- UsuarioService.java      OK - codigo da aplicacao
+|   |   |               `-- repository/
+|   |   |                   `-- UsuarioRepository.java   OK - codigo da aplicacao
+|   |   |           `-- UsuarioAvulsoService.java        NAO RECOMENDADO - fora do package base com.exemplo.projeto
+|   |   `-- resources/
+|   |       |-- application.properties           OK - configuracao
+|   |       |-- static/                          OK - arquivos estaticos de projetos web (CSS, JS, imagens)
+|   |       `-- templates/                       OK - templates e arquivos de recurso
+|   `-- test/
+|       |-- java/
+|       |   `-- com/exemplo/projeto/
+|       |       `-- UsuarioServiceTest.java      OK - testes
+|       `-- resources/                           OK - massa de teste e configs de teste
+|-- target/
+|   |-- classes/                                 NAO CRIAR - saida gerada pela build
+|   |-- test-classes/                            NAO CRIAR - saida gerada pela build de testes
+|   `-- generated-sources/                       NAO CRIAR manualmente - codigo gerado
+|-- UsuarioService.java                          NAO CRIAR - fora do src/main/java
+|-- src/test/java/com/exemplo/projeto/UsuarioService.java
+|                                               NAO CRIAR - codigo de producao no lugar errado
+`-- src/main/java/com/exemplo/projeto/usuarioService.java
+                                                NAO CRIAR - nome fora da convencao PascalCase
+```
+
+* Criar classes fora do package da classe principal anotada com `@SpringBootApplication`
+    * Isso pode fazer o Spring não encontrar a classe no component scanning e gerar erros como bean não localizado, controller não mapeado ou configuração ignorada.
+* Criar arquivos no diretório `target`
+    * O diretório `target` é gerado pela build e pode ser apagado ou recriado a qualquer momento. Arquivos de código, templates ou configuração não devem ser criados ali.
+* Criar arquivos de código no diretório `test`
+    * Código de produção deve ficar em `src/main/java`. O diretório `src/test/java` deve conter apenas testes e classes auxiliares de teste.
+* Criar arquivos com nomes fora da convenção PascalCase
+    * Classes Java normalmente devem seguir convenção como `MinhaClasse`, `PedidoService`, `UsuarioController`. Fugir disso dificulta leitura, navegação e manutenção.
+* Nome da classe diferente do nome do arquivo
+    * Em Java, classes públicas devem ter o mesmo nome do arquivo. Se isso não for respeitado, o projeto nem compila.
+
 * Problema ao estender a classe ResponseEntityExceptionHandler (+ @RestControllerAdvice) - [ref](https://stackoverflow.com/questions/51991992/getting-ambiguous-exceptionhandler-method-mapped-for-methodargumentnotvalidexce)
