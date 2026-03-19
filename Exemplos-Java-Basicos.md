@@ -2293,7 +2293,19 @@ System.out.println(quantidadePorDepartamento);
 
 `CompletableFuture` é usado para representar tarefas assíncronas e encadear etapas sem bloquear o fluxo principal o tempo todo.
 
-### 11.1 Exemplo básico com `supplyAsync`
+### 11.1 Processamento assíncrono em geral
+
+Processamento assíncrono é quando você dispara uma tarefa e o fluxo principal pode continuar sem esperar imediatamente pelo resultado.
+
+Isso costuma ser útil para:
+- chamadas HTTP ou integrações externas
+- leitura e escrita em recursos lentos
+- composição de múltiplas operações independentes
+- tarefas em background que não precisam bloquear a thread atual
+
+Em Java moderno, `CompletableFuture` é uma das APIs mais usadas para esse tipo de cenário.
+
+### 11.2 Exemplo básico com `supplyAsync`
 
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -2305,7 +2317,21 @@ CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
 System.out.println(future.join());
 ```
 
-### 11.2 Encadeando etapas
+### 11.3 Exemplo com `runAsync`
+
+Use `runAsync` quando a tarefa não precisa retornar valor.
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+    System.out.println("Processando em background...");
+});
+
+future.join();
+```
+
+### 11.4 Encadeando etapas
 
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -2317,7 +2343,7 @@ CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> "java")
 System.out.println(future.join()); // Tecnologia: JAVA
 ```
 
-### 11.3 Consumindo resultado
+### 11.5 Consumindo resultado
 
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -2327,7 +2353,20 @@ CompletableFuture.supplyAsync(() -> "Processamento concluído")
     .join();
 ```
 
-### 11.4 Tratando erros
+### 11.6 Encadeando tarefas dependentes com `thenCompose`
+
+`thenCompose` é útil quando a próxima etapa também devolve um `CompletableFuture`, evitando aninhamento.
+
+```java
+import java.util.concurrent.CompletableFuture;
+
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> 10)
+    .thenCompose(id -> CompletableFuture.supplyAsync(() -> "Usuário " + id));
+
+System.out.println(future.join()); // Usuário 10
+```
+
+### 11.7 Tratando erros
 
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -2345,7 +2384,7 @@ CompletableFuture<Integer> future = CompletableFuture.supplyAsync(() -> {
 System.out.println(future.join()); // 0
 ```
 
-### 11.5 Combinando tarefas
+### 11.8 Combinando tarefas
 
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -2358,7 +2397,7 @@ CompletableFuture<Integer> soma = future1.thenCombine(future2, Integer::sum);
 System.out.println(soma.join()); // 30
 ```
 
-### 11.6 Esperando múltiplas tarefas
+### 11.9 Esperando múltiplas tarefas
 
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -2374,7 +2413,44 @@ System.out.println(f2.join());
 System.out.println(f3.join());
 ```
 
-### 11.7 Quando usar com cuidado
+### 11.10 Usando `Executor` customizado
+
+Em aplicações reais, muitas vezes vale definir o executor para controlar a quantidade de threads usadas.
+
+```java
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+ExecutorService executor = Executors.newFixedThreadPool(4);
+
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    return "Executando com pool customizado";
+}, executor);
+
+System.out.println(future.join());
+executor.shutdown();
+```
+
+### 11.11 Timeout em processamento assíncrono
+
+```java
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+    try {
+        Thread.sleep(3000);
+    } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+    }
+    return "Concluído";
+}).completeOnTimeout("Tempo esgotado", 1, TimeUnit.SECONDS);
+
+System.out.println(future.join()); // Tempo esgotado
+```
+
+### 11.12 Quando usar com cuidado
 
 - `CompletableFuture` é útil para I/O, integrações e composição assíncrona
 - nem todo código precisa ser assíncrono

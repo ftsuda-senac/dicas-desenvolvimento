@@ -9,7 +9,17 @@
 * <a href="https://www.javatpoint.com/java-tutorial" target="_blank" rel="nofollow noopener noreferrer">https://www.javatpoint.com/java-tutorial</a>
 * <a href="https://www.tutorialspoint.com/java/index.htm" target="_blank" rel="nofollow noopener noreferrer">https://www.tutorialspoint.com/java/index.htm</a>
 * <a href="https://javaalmanac.io/" target="_blank" rel="nofollow noopener noreferrer">https://javaalmanac.io/</a>
-* <a href="https://javaevolved.github.io/" target="_blank" rel="nofollow noopener noreferrer">https://javaevolved.github.io/ (Dicas Java Moderno)/</a>
+* <a href="https://javaevolved.github.io/" target="_blank" rel="nofollow noopener noreferrer">https://javaevolved.github.io/ (Dicas Java Moderno)</a>
+
+## Quotes
+
+> "Programs must be written for people to read, and only incidentally for machines to execute."
+> 
+> &mdash; <cite>Unknown</cite> <a href="https://twitter.com/MakadiaHarsh/status/1512821254318870537" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
+
+> "Programming is not about typing, it's about thinking."
+> 
+>  &mdash; <cite>Rich Hickey</cite> <a href="https://twitter.com/CodeWisdom/status/1511684402039959555" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
 
 ## Convenções para escrita do código
 
@@ -1116,12 +1126,4 @@ Considerando somente o uso de recursos básicos da linguagem e evitando uso de c
     ```
     </details>
 
-## Quotes
 
-> "Programs must be written for people to read, and only incidentally for machines to execute."
-> 
-> &mdash; <cite>Unknown</cite> <a href="https://twitter.com/MakadiaHarsh/status/1512821254318870537" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
-
-> "Programming is not about typing, it's about thinking."
-> 
->  &mdash; <cite>Rich Hickey</cite> <a href="https://twitter.com/CodeWisdom/status/1511684402039959555" target="_blank" rel="nofollow noopener noreferrer">tweet</a>

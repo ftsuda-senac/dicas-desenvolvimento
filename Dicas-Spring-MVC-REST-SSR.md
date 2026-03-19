@@ -2694,37 +2694,112 @@ public class ProdutoController {
             //   @Size(max) = cada String da lista deve ter no máximo 50 chars
         return ResponseEntity.ok(produtoService.listarPorTags(tags));
     }
+}
+```
 
-    /*
-     * ─── Pageable automático — Spring Boot auto-configura via starter ─────────
-     *
-     * O spring-boot-starter-data-jpa registra automaticamente o
-     * PageableHandlerMethodArgumentResolver via SpringDataWebAutoConfiguration.
-     * Não é necessário nenhum código extra para resolver Pageable em controllers.
-     *
-     * Para customizar os defaults globalmente (opcional):
-     *
-     *   @Configuration
-     *   public class PageableConfig implements WebMvcConfigurer {
-     *       @Override
-     *       public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
-     *           var resolver = new PageableHandlerMethodArgumentResolver();
-     *           resolver.setMaxPageSize(100);
-     *           resolver.setFallbackPageable(PageRequest.of(0, 20));
-     *           resolvers.add(resolver);
-     *       }
-     *   }
-     *
-     * Ou via propriedade no application.yml (mais simples):
-     *
-     *   spring:
-     *     data:
-     *       web:
-     *         pageable:
-     *           default-page-size: 20
-     *           max-page-size: 100
-     *           one-indexed-parameters: false  # página começa em 0 (padrão)
-     */
+#### Pageable automático
+
+O `spring-boot-starter-data-jpa` registra automaticamente o `PageableHandlerMethodArgumentResolver` via `SpringDataWebAutoConfiguration`. Não é necessário nenhum código extra para resolver `Pageable` em controllers.
+
+Para customizar os defaults **globalmente** via `application.yml`:
+
+```yaml
+spring:
+  data:
+    web:
+      pageable:
+        default-page-size: 20
+        max-page-size: 100
+        one-indexed-parameters: false  # página começa em 0 (padrão)
+```
+
+Ou programaticamente via `WebMvcConfigurer` (mais verboso, raramente necessário):
+
+```java
+@Configuration
+public class PageableConfig implements WebMvcConfigurer {
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        var resolver = new PageableHandlerMethodArgumentResolver();
+        resolver.setMaxPageSize(100);
+        resolver.setFallbackPageable(PageRequest.of(0, 20));
+        resolvers.add(resolver);
+    }
+}
+```
+
+#### `@PageableDefault` — defaults por endpoint
+
+Use `@PageableDefault` para sobrescrever os defaults globais em um endpoint específico, sem alterar a configuração global. O cliente ainda pode sobrescrever via query string (`?size=30&sort=id,asc`); a anotação só se aplica quando o parâmetro não é enviado.
+
+| Atributo    | Descrição                                      | Padrão Spring |
+|-------------|------------------------------------------------|---------------|
+| `size`      | Tamanho da página                              | `20`          |
+| `page`      | Número da página inicial                       | `0`           |
+| `sort`      | Campo(s) de ordenação padrão                   | —             |
+| `direction` | Direção da ordenação (`ASC` ou `DESC`)         | `ASC`         |
+
+```java
+// Ordenação ascendente por nome, 10 itens por página
+@GetMapping
+public ResponseEntity<Page<ProdutoResponse>> listar(
+        @PageableDefault(size = 10, sort = "nome") Pageable pageable) {
+    return ResponseEntity.ok(produtoService.listar(pageable));
+}
+
+// Ordenação descendente por preço, 5 itens por página
+@GetMapping("/destaques")
+public ResponseEntity<Page<ProdutoResponse>> destaques(
+        @PageableDefault(size = 5, sort = "preco", direction = Sort.Direction.DESC)
+        Pageable pageable) {
+    return ResponseEntity.ok(produtoService.listarDestaques(pageable));
+}
+```
+
+#### Objeto customizado para query parameters (`@ParameterObject`)
+
+Em vez de declarar cada query parameter como argumento separado no método, agrupe-os em um `record` e anote com `@ParameterObject`. O Spring resolve cada campo como se fosse um `@RequestParam` individual. O SpringDoc/Swagger "explode" os campos no Swagger UI automaticamente.
+
+**1. Definição do record de filtros:**
+
+```java
+public record ProdutoFiltros(
+
+    @RequestParam(required = false)
+    String busca,                    // ?busca=notebook
+
+    @RequestParam(required = false)
+    @DecimalMin("0.0")
+    BigDecimal precoMin,             // ?precoMin=100.00
+
+    @RequestParam(required = false)
+    @DecimalMin("0.0")
+    BigDecimal precoMax              // ?precoMax=5000.00
+
+) {}
+```
+
+**2. Uso no controller — assinatura limpa, sem `@RequestParam` espalhados:**
+
+```java
+// GET /api/v1/produtos?busca=notebook&precoMin=100&page=0&size=10&sort=nome,asc
+@GetMapping
+public ResponseEntity<Page<ProdutoResponse>> listar(
+        @ParameterObject @Valid ProdutoFiltros filtros,
+        @ParameterObject @PageableDefault(size = 10, sort = "nome") Pageable pageable) {
+
+    return ResponseEntity.ok(produtoService.listar(filtros, pageable));
+}
+```
+
+| Anotação           | Papel                                                              |
+|--------------------|--------------------------------------------------------------------|
+| `@ParameterObject` | Instrui o SpringDoc a expor os campos individualmente no Swagger   |
+| `@Valid`           | Dispara o Bean Validation nos campos do record                     |
+| `@PageableDefault` | Define valores padrão de paginação quando não enviados pelo cliente |
+
+```java
+// Continuação de ProdutoController...
 
     // ─── GET /api/v1/produtos/{id} ───────────────────────────────────────────
     @GetMapping("/{id}")
