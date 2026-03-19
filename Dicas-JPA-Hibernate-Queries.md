@@ -882,8 +882,8 @@ List<AlunoRanking> findRanking();
 
 ```mermaid
 flowchart TD
-    A{Qual o cenário?} -->|"Poucos campos, query simples"| B["Interface Projection\nCursoResumo"]
-    A -->|"DTO tipado com lógica"| C["Record Projection\nnew MatriculaResumo(...)"]
+    A{Qual o cenário?} -->|"Poucos campos, query simples"| B["Interface Projection<br>CursoResumo"]
+    A -->|"DTO tipado com lógica"| C["Record Projection<br>new MatriculaResumo(...)"]
     A -->|"Campo calculado via SpEL"| D["Interface + @Value"]
     A -->|"Relacionamentos aninhados"| E["Interface com nested interfaces"]
     A -->|"SQL nativo com window functions"| F["Interface + nativeQuery"]
@@ -1157,12 +1157,12 @@ flowchart TD
     A{Filtros dinâmicos?} -->|Não| B{Query complexa?}
     A -->|Sim| C{Já usa Spring Data?}
 
-    B -->|Simples| D["Derived Query\n(nome do método)"]
+    B -->|Simples| D["Derived Query<br>(nome do método)"]
     B -->|Média| E["@Query JPQL"]
     B -->|Window functions, CTE| F["@Query nativa"]
 
-    C -->|Sim| G["Specification\n+ SpecBuilder"]
-    C -->|Não, usa EntityManager| H["Criteria API\n+ Metamodel"]
+    C -->|Sim| G["Specification<br>+ SpecBuilder"]
+    C -->|Não, usa EntityManager| H["Criteria API<br>+ Metamodel"]
 
     style D fill:#9f9,stroke:#333
     style E fill:#9f9,stroke:#333
@@ -1563,7 +1563,7 @@ flowchart TD
 
     subgraph "LOAD graph"
         L1["Atributos no grafo → EAGER"]
-        L2["Demais → mantém @ManyToOne EAGER\n@OneToMany LAZY etc."]
+        L2["Demais → mantém @ManyToOne EAGER<br>@OneToMany LAZY etc."]
         L1 --> L3["Complementa o mapeamento padrão"]
     end
 ```
@@ -1685,14 +1685,14 @@ Optional<Curso> completo = repository.findByIdComGrafoNomeado(1L, "Curso.complet
 
 ```mermaid
 flowchart TD
-    A{Grafo de fetch\nvaria em runtime?} -->|Não| B{Usa Spring Data?}
-    A -->|Sim| C["EntityGraph dinâmico\nvia EntityManager"]
+    A{Grafo de fetch<br>varia em runtime?} -->|Não| B{Usa Spring Data?}
+    A -->|Sim| C["EntityGraph dinâmico<br>via EntityManager"]
 
-    B -->|Sim, poucos grafos| D["@NamedEntityGraph\n+ @EntityGraph no repository"]
-    B -->|Sim, inline simples| E["@EntityGraph(attributePaths)\nno repository"]
-    B -->|Não, JPA puro| F["@NamedEntityGraph\n+ hints no EntityManager"]
+    B -->|Sim, poucos grafos| D["@NamedEntityGraph<br>+ @EntityGraph no repository"]
+    B -->|Sim, inline simples| E["@EntityGraph(attributePaths)<br>no repository"]
+    B -->|Não, JPA puro| F["@NamedEntityGraph<br>+ hints no EntityManager"]
 
-    C --> G["createEntityGraph()\n+ addSubgraph()\n+ setHint()"]
+    C --> G["createEntityGraph()<br>+ addSubgraph()<br>+ setHint()"]
 
     style D fill:#9f9,stroke:#333
     style E fill:#9f9,stroke:#333
@@ -2191,16 +2191,16 @@ public class PagamentoService {
 
 ```mermaid
 flowchart TD
-    A{O que precisa consultar?} -->|"Todos os tipos\n(listagem, relatório)"| B["PagamentoRepository\npolimórfico"]
-    A -->|"Só um subtipo\n(campos específicos)"| C["PagamentoPixRepository\nPagamentoCartaoRepository\netc."]
-    A -->|"Filtrar por tipo\nem runtime"| D{"Tipo vem como\nparâmetro?"}
+    A{O que precisa consultar?} -->|"Todos os tipos<br>(listagem, relatório)"| B["PagamentoRepository<br>polimórfico"]
+    A -->|"Só um subtipo<br>(campos específicos)"| C["PagamentoPixRepository<br>PagamentoCartaoRepository<br>etc."]
+    A -->|"Filtrar por tipo<br>em runtime"| D{"Tipo vem como<br>parâmetro?"}
 
     D -->|"Enum TipoPagamento"| E["findByTipo(TipoPagamento)"]
-    D -->|"Classe Java"| F["TYPE(p) = :tipo\nvia @Query JPQL"]
+    D -->|"Classe Java"| F["TYPE(p) = :tipo<br>via @Query JPQL"]
 
-    B --> G{Precisa acessar\ncampos do subtipo?}
-    G -->|Sim| H["TREAT(p AS PagamentoCartao)\n.parcelas"]
-    G -->|Não| I["Campos da classe base\n(valor, criadoEm, tipo)"]
+    B --> G{Precisa acessar<br>campos do subtipo?}
+    G -->|Sim| H["TREAT(p AS PagamentoCartao)<br>.parcelas"]
+    G -->|Não| I["Campos da classe base<br>(valor, criadoEm, tipo)"]
 
     style B fill:#9f9,stroke:#333
     style C fill:#9cf,stroke:#333
@@ -2272,11 +2272,11 @@ List<Aluno> findByNome(@Param("nome") String nome);
 
 ```mermaid
 flowchart TD
-    M[Método no Repository] --> Q{"@Query\npresente?"}
-    Q -->|Sim| R["Usa @Query\n(maior prioridade)"]
-    Q -->|Não| N{"@NamedQuery\nEntidade.nomeMetodo?"}
+    M[Método no Repository] --> Q{"@Query<br>presente?"}
+    Q -->|Sim| R["Usa @Query<br>(maior prioridade)"]
+    Q -->|Não| N{"@NamedQuery<br>Entidade.nomeMetodo?"}
     N -->|Sim| S["Usa @NamedQuery"]
-    N -->|Não| D["Derived Query\n(parseia nome do método)"]
+    N -->|Não| D["Derived Query<br>(parseia nome do método)"]
 
     style R fill:#9f9,stroke:#333
     style S fill:#ff9,stroke:#333
@@ -2379,12 +2379,12 @@ flowchart TD
     A -->|Sim| B{Complexidade?}
     A -->|Não, dinâmicos| C{Usa Spring Data?}
 
-    B -->|"1-3 campos simples"| D["Derived Query\nfindByNomeAndStatus()"]
+    B -->|"1-3 campos simples"| D["Derived Query<br>findByNomeAndStatus()"]
     B -->|"JOIN, agregação, CASE"| E["@Query JPQL"]
-    B -->|"CTE, window function,\noperadores PG"| F["@Query nativa"]
+    B -->|"CTE, window function,<br>operadores PG"| F["@Query nativa"]
 
-    C -->|Sim| G["Specification\n+ JpaSpecificationExecutor"]
-    C -->|Não| H["Criteria API\n+ Metamodel"]
+    C -->|Sim| G["Specification<br>+ JpaSpecificationExecutor"]
+    C -->|Não| H["Criteria API<br>+ Metamodel"]
 
     D --> I{Precisa de performance?}
     E --> I
@@ -2392,10 +2392,10 @@ flowchart TD
     G --> I
     H --> I
 
-    I -->|Listagem| J["Projeção\n(interface ou record)"]
-    I -->|Detalhe com relacionamentos| K["@EntityGraph\nou JOIN FETCH"]
-    I -->|Paginação em tabela grande| L["Keyset/Cursor\nem vez de OFFSET"]
-    I -->|Validação de existência| M["existsBy / countBy\nem vez de findBy"]
+    I -->|Listagem| J["Projeção<br>(interface ou record)"]
+    I -->|Detalhe com relacionamentos| K["@EntityGraph<br>ou JOIN FETCH"]
+    I -->|Paginação em tabela grande| L["Keyset/Cursor<br>em vez de OFFSET"]
+    I -->|Validação de existência| M["existsBy / countBy<br>em vez de findBy"]
 
     style D fill:#9f9,stroke:#333
     style E fill:#9f9,stroke:#333
@@ -2702,12 +2702,12 @@ public List<Matricula> findComWorkMem(Long cursoId) {
 
 ```mermaid
 flowchart TD
-    A{Cenário da query} -->|"Listagem / relatório\n(não altera entidades)"| B["readOnly = true\n+ fetchSize = 50-100"]
-    A -->|"Dashboard com cache"| C["cacheable = true\n+ cacheRegion\n+ readOnly = true"]
-    A -->|"Query pesada\n(pode travar)"| D["query.timeout = N ms"]
-    A -->|"Debug em produção"| E["comment = descrição\n(visível em pg_stat)"]
-    A -->|"Controle fino de fetch"| F["fetchgraph / loadgraph\n(EntityGraph como hint)"]
-    A -->|"Query com muitos resultados"| G["fetchSize = 50\n(evita OOM no driver JDBC)"]
+    A{Cenário da query} -->|"Listagem / relatório<br>(não altera entidades)"| B["readOnly = true<br>+ fetchSize = 50-100"]
+    A -->|"Dashboard com cache"| C["cacheable = true<br>+ cacheRegion<br>+ readOnly = true"]
+    A -->|"Query pesada<br>(pode travar)"| D["query.timeout = N ms"]
+    A -->|"Debug em produção"| E["comment = descrição<br>(visível em pg_stat)"]
+    A -->|"Controle fino de fetch"| F["fetchgraph / loadgraph<br>(EntityGraph como hint)"]
+    A -->|"Query com muitos resultados"| G["fetchSize = 50<br>(evita OOM no driver JDBC)"]
 
     style B fill:#9f9,stroke:#333
     style D fill:#fc9,stroke:#333
@@ -2724,7 +2724,7 @@ flowchart TD
 stateDiagram-v2
     [*] --> Transient : new Entity()
     Transient --> Managed : persist() / save()
-    note right of Managed : id gerado\nHibernate rastreia mudanças\nINSERT executado no flush
+    note right of Managed : id gerado<br>Hibernate rastreia mudanças<br>INSERT executado no flush
     Managed --> [*] : flush / commit → INSERT no banco
 ```
 
@@ -2929,14 +2929,14 @@ public Aluno criar(CriarAlunoRequest request) {
 ```mermaid
 flowchart TD
     A["repository.save(entity)"] --> B{entity.getId() == null?}
-    B -->|Sim| C["entityManager.persist(entity)\nEntidade nova → INSERT"]
-    B -->|Não| D{Entidade está\nno persistence context?}
+    B -->|Sim| C["entityManager.persist(entity)<br>Entidade nova → INSERT"]
+    B -->|Não| D{Entidade está<br>no persistence context?}
 
-    D -->|Sim, managed| E["Dirty checking no flush\n→ UPDATE automático"]
-    D -->|Não, detached| F["entityManager.merge(entity)\n→ SELECT + UPDATE"]
+    D -->|Sim, managed| E["Dirty checking no flush<br>→ UPDATE automático"]
+    D -->|Não, detached| F["entityManager.merge(entity)<br>→ SELECT + UPDATE"]
 
     C --> G["Entidade retornada É a mesma instância"]
-    F --> H["Entidade retornada é uma CÓPIA managed\n(original continua detached)"]
+    F --> H["Entidade retornada é uma CÓPIA managed<br>(original continua detached)"]
 
     style C fill:#9f9,stroke:#333
     style E fill:#9cf,stroke:#333
@@ -2989,10 +2989,10 @@ O `@PostPersist` marca como "não novo" após o INSERT. O `@PostLoad` marca como
 
 ```mermaid
 flowchart TD
-    A{Como o ID é gerado?} -->|"@GeneratedValue\n(IDENTITY, SEQUENCE)"| B["Detecção padrão funciona\nid == null → persist\nNÃO precisa de Persistable"]
-    A -->|"UUID atribuído\nno construtor"| C["Precisa de Persistable\nid nunca é null"]
-    A -->|"ID vindo de\nsistema externo"| D["Precisa de Persistable\nid já vem preenchido"]
-    A -->|"@NaturalId como PK\n(sem surrogate key)"| E["Precisa de Persistable\nid atribuído manualmente"]
+    A{Como o ID é gerado?} -->|"@GeneratedValue<br>(IDENTITY, SEQUENCE)"| B["Detecção padrão funciona<br>id == null → persist<br>NÃO precisa de Persistable"]
+    A -->|"UUID atribuído<br>no construtor"| C["Precisa de Persistable<br>id nunca é null"]
+    A -->|"ID vindo de<br>sistema externo"| D["Precisa de Persistable<br>id já vem preenchido"]
+    A -->|"@NaturalId como PK<br>(sem surrogate key)"| E["Precisa de Persistable<br>id atribuído manualmente"]
 
     style B fill:#9f9,stroke:#333
     style C fill:#fc9,stroke:#333
@@ -3364,16 +3364,16 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A{Quantas entidades\nserão atualizadas?} -->|"1 entidade\n(por ID)"| B{Precisa de lógica\nde negócio?}
-    A -->|"N entidades\n(em massa)"| C["Bulk @Modifying\n+ flushAutomatically\n+ clearAutomatically"]
+    A{Quantas entidades<br>serão atualizadas?} -->|"1 entidade<br>(por ID)"| B{Precisa de lógica<br>de negócio?}
+    A -->|"N entidades<br>(em massa)"| C["Bulk @Modifying<br>+ flushAutomatically<br>+ clearAutomatically"]
 
-    B -->|Sim| D["findById + dirty checking\n(recomendado)"]
-    B -->|"Não, só setar campo"| E{Performance\ncrítica?}
+    B -->|Sim| D["findById + dirty checking<br>(recomendado)"]
+    B -->|"Não, só setar campo"| E{Performance<br>crítica?}
 
     E -->|Não| D
-    E -->|Sim| F["Bulk @Modifying\nmesmo para 1 registro"]
+    E -->|Sim| F["Bulk @Modifying<br>mesmo para 1 registro"]
 
-    D --> G["@Version para\noptimistic locking"]
+    D --> G["@Version para<br>optimistic locking"]
 
     style D fill:#9f9,stroke:#333
     style C fill:#9cf,stroke:#333
@@ -3615,16 +3615,16 @@ public void removerCursoComMatriculas(Long cursoId) {
 
 ```mermaid
 flowchart TD
-    A{O que deletar?} -->|"1 entidade por ID"| B{Precisa de\nlifecycle callbacks?}
-    A -->|"N entidades\n(limpeza, batch)"| C["Bulk @Modifying\n1 DELETE, 0 SELECTs"]
-    A -->|"Filho de uma\ncoleção do pai"| D{Coleção é\ngrande?}
-    A -->|"Soft delete\n(manter histórico)"| E["@SoftDelete\nUPDATE SET deleted = true"]
+    A{O que deletar?} -->|"1 entidade por ID"| B{Precisa de<br>lifecycle callbacks?}
+    A -->|"N entidades<br>(limpeza, batch)"| C["Bulk @Modifying<br>1 DELETE, 0 SELECTs"]
+    A -->|"Filho de uma<br>coleção do pai"| D{Coleção é<br>grande?}
+    A -->|"Soft delete<br>(manter histórico)"| E["@SoftDelete<br>UPDATE SET deleted = true"]
 
-    B -->|"Sim (@PreRemove,\ncascade)"| F["findById + delete()\n1 SELECT + 1 DELETE"]
-    B -->|Não| G["getReferenceById + delete()\n0 SELECTs + 1 DELETE"]
+    B -->|"Sim (@PreRemove,<br>cascade)"| F["findById + delete()<br>1 SELECT + 1 DELETE"]
+    B -->|Não| G["getReferenceById + delete()<br>0 SELECTs + 1 DELETE"]
 
-    D -->|"Pequena (<100)"| H["orphanRemoval\ncollection.remove()"]
-    D -->|"Grande (100+)"| I["Remoção direta\nmatriculaRepository.delete()"]
+    D -->|"Pequena (<100)"| H["orphanRemoval<br>collection.remove()"]
+    D -->|"Grande (100+)"| I["Remoção direta<br>matriculaRepository.delete()"]
 
     style F fill:#9f9,stroke:#333
     style G fill:#9cf,stroke:#333
@@ -4006,9 +4006,9 @@ Quando há múltiplos listeners e callbacks inline, a ordem é:
 
 ```mermaid
 flowchart TD
-    A["1. Listeners globais (orm.xml)\nem ordem de declaração"] --> B["2. @EntityListeners da classe\nem ordem de declaração"]
-    B --> C["3. @EntityListeners herdados\n(superclasse → subclasse)"]
-    C --> D["4. Callbacks inline da entidade\n(@PrePersist no método)"]
+    A["1. Listeners globais (orm.xml)<br>em ordem de declaração"] --> B["2. @EntityListeners da classe<br>em ordem de declaração"]
+    B --> C["3. @EntityListeners herdados<br>(superclasse → subclasse)"]
+    C --> D["4. Callbacks inline da entidade<br>(@PrePersist no método)"]
 
     style A fill:#f9f,stroke:#333
     style B fill:#9cf,stroke:#333
@@ -4252,8 +4252,8 @@ flowchart LR
         C1[Controller] --> S1[Service]
         S1 --> R1[Repository]
         R1 --> DB1[(DB)]
-        C1 -.->|"lazy load\nacidental"| DB1
-        note1["Sessão aberta\ndurante TODA a request"]
+        C1 -.->|"lazy load<br>acidental"| DB1
+        note1["Sessão aberta<br>durante TODA a request"]
     end
 ```
 
@@ -4264,8 +4264,8 @@ flowchart LR
         C2[Controller] --> S2[Service @Transactional]
         S2 --> R2[Repository]
         R2 --> DB2[(DB)]
-        C2 -.->|"LazyInitException\n(falha explícita)"| X2[X]
-        note2["Sessão fechada\nao sair do @Transactional"]
+        C2 -.->|"LazyInitException<br>(falha explícita)"| X2[X]
+        note2["Sessão fechada<br>ao sair do @Transactional"]
     end
 ```
 
@@ -4305,7 +4305,7 @@ Para um servidor com 4 cores e SSD: `(4 * 2) + 1 = 9`. Arredonde para 10. Um poo
 flowchart TD
     A["Servidor: 4 cores, SSD"] --> B["(4 × 2) + 1 = 9"]
     B --> C["maximum-pool-size: 10"]
-    C --> D["minimum-idle: 5\n(metade do max)"]
+    C --> D["minimum-idle: 5<br>(metade do max)"]
 
     E["Servidor: 8 cores, SSD"] --> F["(8 × 2) + 1 = 17"]
     F --> G["maximum-pool-size: 20"]
@@ -4539,13 +4539,13 @@ flowchart TD
         D2["pool: 2-5 conexões"]
         D3["leak-detection: 30s"]
         D4["logging: SQL + bind + stats"]
-        D5["show-sql: false\n(usar logging formatado)"]
+        D5["show-sql: false<br>(usar logging formatado)"]
         D6["open-in-view: false"]
     end
 
     subgraph PROD["Profile: prod"]
         P1["ddl-auto: none"]
-        P2["pool: 10-20 conexões\n(fórmula por cores)"]
+        P2["pool: 10-20 conexões<br>(fórmula por cores)"]
         P3["leak-detection: 60s"]
         P4["logging: WARN only"]
         P5["batch: 50 + ordering"]
@@ -4557,7 +4557,7 @@ flowchart TD
     subgraph TEST["Profile: test"]
         T1["ddl-auto: create-drop"]
         T2["pool: 2 conexões"]
-        T3["Testcontainers\nPostgreSQL real"]
+        T3["Testcontainers<br>PostgreSQL real"]
         T4["logging: off"]
     end
 ```
@@ -5312,22 +5312,22 @@ List<Object[]> findCartoesPorValor(@Param("minimo") BigDecimal minimo);
 ```mermaid
 flowchart TD
     subgraph "Funções JPQL padrão"
-        S["String:\nCONCAT, SUBSTRING, TRIM,\nLENGTH, LOCATE, UPPER,\nLOWER, REPLACE"]
-        N["Numérica:\nABS, MOD, SQRT,\nROUND, FLOOR, CEILING,\nSIGN, POWER"]
-        D["Data/Hora:\nCURRENT_DATE, LOCAL DATE,\nEXTRACT, YEAR, MONTH, DAY"]
-        C["Coleção:\nSIZE, IS EMPTY,\nMEMBER OF"]
-        G["Geral:\nCOALESCE, NULLIF,\nCASE WHEN, CAST,\nTYPE, TREAT"]
+        S["String:<br>CONCAT, SUBSTRING, TRIM,<br>LENGTH, LOCATE, UPPER,<br>LOWER, REPLACE"]
+        N["Numérica:<br>ABS, MOD, SQRT,<br>ROUND, FLOOR, CEILING,<br>SIGN, POWER"]
+        D["Data/Hora:<br>CURRENT_DATE, LOCAL DATE,<br>EXTRACT, YEAR, MONTH, DAY"]
+        C["Coleção:<br>SIZE, IS EMPTY,<br>MEMBER OF"]
+        G["Geral:<br>COALESCE, NULLIF,<br>CASE WHEN, CAST,<br>TYPE, TREAT"]
     end
 
     subgraph "Funções nativas via FUNCTION()"
-        F1["FUNCTION('DATE_TRUNC', ...)\nFUNCTION('TO_CHAR', ...)\nFUNCTION('MD5', ...)"]
+        F1["FUNCTION('DATE_TRUNC', ...)<br>FUNCTION('TO_CHAR', ...)<br>FUNCTION('MD5', ...)"]
     end
 
     subgraph "Funções registradas (FunctionContributor)"
-        F2["date_trunc(...)\nsimilarity(...)\nstring_agg(...)"]
+        F2["date_trunc(...)<br>similarity(...)<br>string_agg(...)"]
     end
 
-    F1 -->|"Registrar para\nremover FUNCTION()"| F2
+    F1 -->|"Registrar para<br>remover FUNCTION()"| F2
 
     style S fill:#9f9,stroke:#333
     style N fill:#9cf,stroke:#333
@@ -5364,9 +5364,9 @@ stateDiagram-v2
     [*] --> Aberta : begin
     Aberta --> Aberta : persist / merge / remove / query
     Aberta --> Commitada : commit
-    note right of Commitada : Flush → SQL enviado ao banco\nPersistence context fechado
+    note right of Commitada : Flush → SQL enviado ao banco<br>Persistence context fechado
     Aberta --> Revertida : rollback
-    note right of Revertida : Nenhum SQL aplicado\nPersistence context descartado
+    note right of Revertida : Nenhum SQL aplicado<br>Persistence context descartado
     Commitada --> [*]
     Revertida --> [*]
 ```
@@ -5532,14 +5532,14 @@ public void criarComNotificacao() {
 ```mermaid
 flowchart TD
     A[Exceção lançada] --> B{Tipo da exceção?}
-    B -->|RuntimeException\nError| C[ROLLBACK automático]
-    B -->|Checked Exception| D{rollbackFor\nconfigurado?}
+    B -->|RuntimeException<br>Error| C[ROLLBACK automático]
+    B -->|Checked Exception| D{rollbackFor<br>configurado?}
 
     D -->|"Sim, inclui a classe"| C
     D -->|Não| E[COMMIT mesmo com exceção!]
 
-    C --> F["Transação revertida\nNenhum SQL aplicado"]
-    E --> G["Transação commitada\nDados persistidos apesar do erro"]
+    C --> F["Transação revertida<br>Nenhum SQL aplicado"]
+    E --> G["Transação commitada<br>Dados persistidos apesar do erro"]
 
     style C fill:#f99,stroke:#333
     style E fill:#fc9,stroke:#333
@@ -5906,8 +5906,8 @@ flowchart LR
     end
 
     subgraph "Chamada INTERNA (não funciona)"
-        S2["metodoPublico()"] -->|"this.metodo()\nsem proxy"| S3["metodoPrivado()"]
-        note1["@Transactional ignorado!\nNão passa pelo proxy"]
+        S2["metodoPublico()"] -->|"this.metodo()<br>sem proxy"| S3["metodoPrivado()"]
+        note1["@Transactional ignorado!<br>Não passa pelo proxy"]
     end
 ```
 
@@ -6114,13 +6114,13 @@ sequenceDiagram
 flowchart TD
     A{Tipo de operação?} -->|Leitura| B["@Transactional(readOnly = true)"]
     A -->|Escrita simples| C["@Transactional"]
-    A -->|"Escrita + efeito colateral\n(email, HTTP)"| D["@Transactional + @TransactionalEventListener\n(efeito após commit)"]
-    A -->|"Lotes independentes"| E["TransactionTemplate\n(cada lote em sua tx)"]
-    A -->|"Auditoria que\nnão pode perder"| F["@Transactional\n(propagation = REQUIRES_NEW)"]
-    A -->|"Múltiplas operações\ncom rollback parcial"| G["@Transactional\n(propagation = NESTED)\n+ savepoint"]
+    A -->|"Escrita + efeito colateral<br>(email, HTTP)"| D["@Transactional + @TransactionalEventListener<br>(efeito após commit)"]
+    A -->|"Lotes independentes"| E["TransactionTemplate<br>(cada lote em sua tx)"]
+    A -->|"Auditoria que<br>não pode perder"| F["@Transactional<br>(propagation = REQUIRES_NEW)"]
+    A -->|"Múltiplas operações<br>com rollback parcial"| G["@Transactional<br>(propagation = NESTED)<br>+ savepoint"]
 
-    B --> H["Hibernate pula dirty checking\nPostgreSQL otimiza snapshot"]
-    C --> I["Rollback em RuntimeException\nCommit em checked exception"]
+    B --> H["Hibernate pula dirty checking<br>PostgreSQL otimiza snapshot"]
+    C --> I["Rollback em RuntimeException<br>Commit em checked exception"]
 
     style B fill:#9f9,stroke:#333
     style C fill:#9f9,stroke:#333
@@ -6279,8 +6279,8 @@ public interface DocumentoRepository extends JpaRepository<Documento, Long> {
 ```mermaid
 flowchart TD
     A["@Query com SpEL"] --> B{"hasRole('ADMIN')?"}
-    B -->|Sim| C["WHERE proprietario LIKE '%'\n(retorna TODOS)"]
-    B -->|Não| D["WHERE proprietario = principal.username\n(retorna só do usuário)"]
+    B -->|Sim| C["WHERE proprietario LIKE '%'<br>(retorna TODOS)"]
+    B -->|Não| D["WHERE proprietario = principal.username<br>(retorna só do usuário)"]
 
     style C fill:#fc9,stroke:#333
     style D fill:#9f9,stroke:#333
@@ -6599,19 +6599,19 @@ flowchart TD
     end
 
     subgraph "Camada de Segurança"
-        R --> A["@PreAuthorize\n(antes do método)"]
+        R --> A["@PreAuthorize<br>(antes do método)"]
         A --> S[Service / Repository]
-        S --> B["@PostAuthorize\n(após o método, antes do retorno)"]
-        B --> F["@PostFilter\n(filtra coleção retornada)"]
+        S --> B["@PostAuthorize<br>(após o método, antes do retorno)"]
+        B --> F["@PostFilter<br>(filtra coleção retornada)"]
     end
 
     subgraph "Camada de Dados"
-        S --> Q["@Query + SpEL\n?#{principal.username}\n(filtro no SQL)"]
+        S --> Q["@Query + SpEL<br>?#{principal.username}<br>(filtro no SQL)"]
         Q --> DB[(PostgreSQL)]
     end
 
     subgraph "Auditoria"
-        S --> AU["AuditingEntityListener\n@CreatedBy = authentication.name\n@LastModifiedBy = authentication.name"]
+        S --> AU["AuditingEntityListener<br>@CreatedBy = authentication.name<br>@LastModifiedBy = authentication.name"]
         AU --> DB
     end
 

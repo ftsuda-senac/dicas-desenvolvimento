@@ -233,7 +233,7 @@ classDiagram
     BaseEntity <|-- Produto : herda campos
     BaseEntity <|-- Pedido : herda campos
 
-    note for BaseEntity "NÃO é entidade JPA\nNÃO gera tabela no banco\nCada subclasse gera sua própria tabela\ncom os campos herdados"
+    note for BaseEntity "NÃO é entidade JPA<br>NÃO gera tabela no banco<br>Cada subclasse gera sua própria tabela<br>com os campos herdados"
 ```
 
 ```java
@@ -324,7 +324,7 @@ O Hibernate lê a coluna discriminadora e instancia a classe concreta automatica
 
 ```mermaid
 flowchart LR
-    DB[(pagamento)] --> H{Hibernate lê\ncoluna 'tipo'}
+    DB[(pagamento)] --> H{Hibernate lê<br>coluna 'tipo'}
     H -->|tipo = PIX| P1["new PagamentoPix()"]
     H -->|tipo = CARTAO| P2["new PagamentoCartao()"]
     H -->|tipo = BOLETO| P3["new PagamentoBoleto()"]
@@ -333,7 +333,7 @@ flowchart LR
     P2 --> L
     P3 --> L
 
-    L --> SW{"switch (p)\npattern matching"}
+    L --> SW{"switch (p)<br>pattern matching"}
     SW -->|"PagamentoPix pix"| A1["pix.getChave()"]
     SW -->|"PagamentoCartao c"| A2["c.getBandeira()"]
     SW -->|"PagamentoBoleto b"| A3["b.getVencimento()"]
@@ -750,10 +750,10 @@ classDiagram
         sem orphanRemoval
     }
 
-    Curso "1" --> "*" Matricula : "cascade ALL\n+ orphanRemoval"
+    Curso "1" --> "*" Matricula : "cascade ALL<br>+ orphanRemoval"
     Matricula "*" --> "1" Curso : "SEM cascade"
     Matricula "*" --> "1" Aluno : "SEM cascade"
-    Aluno "1" --> "*" Matricula : "SEM cascade\nSEM orphanRemoval"
+    Aluno "1" --> "*" Matricula : "SEM cascade<br>SEM orphanRemoval"
 ```
 
 ### Cascade — propaga operações do EntityManager
@@ -1693,7 +1693,7 @@ classDiagram
     Aluno "1" --> "0..1" AlunoPerfil : "@OneToOne mappedBy"
     AlunoPerfil "1" --> "1" Aluno : "@MapsId"
 
-    note for AlunoPerfil "id = aluno.id (PK compartilhada)\n@MapsId copia o ID do relacionamento"
+    note for AlunoPerfil "id = aluno.id (PK compartilhada)<br>@MapsId copia o ID do relacionamento"
 ```
 
 #### @PrimaryKeyJoinColumn — alternativa sem @MapsId
@@ -1800,13 +1800,13 @@ public class Curso extends BaseEntity {
 
 ```mermaid
 flowchart TD
-    A{"@OneToOne:\nFilha compartilha\nPK com o pai?"} -->|Sim| B{JPA version?}
-    A -->|"Não — id próprio\n(mais flexível)"| C["@JoinColumn + @GeneratedValue\nFK separada com UNIQUE"]
+    A{"@OneToOne:<br>Filha compartilha<br>PK com o pai?"} -->|Sim| B{JPA version?}
+    A -->|"Não — id próprio<br>(mais flexível)"| C["@JoinColumn + @GeneratedValue<br>FK separada com UNIQUE"]
 
-    B -->|"2.0+"| D["@MapsId + @JoinColumn\n(recomendado)"]
+    B -->|"2.0+"| D["@MapsId + @JoinColumn<br>(recomendado)"]
     B -->|"1.0 legado"| E["@PrimaryKeyJoinColumn"]
 
-    D --> F["1 coluna: PK = FK\nid auto-preenchido\nmáxima economia"]
+    D --> F["1 coluna: PK = FK<br>id auto-preenchido<br>máxima economia"]
 
     style D fill:#9f9,stroke:#333
     style C fill:#9cf,stroke:#333
@@ -3323,19 +3323,19 @@ flowchart TD
     subgraph VIA_COLECAO["Via coleção (orphanRemoval)"]
         VC1["findById(cursoId)"] --> VC2["SELECT * FROM curso"]
         VC2 --> VC3["getMatriculas()"]
-        VC3 --> VC4["SELECT * FROM matricula\nWHERE curso_id = ?\n⚠️ carrega TUDO"]
+        VC3 --> VC4["SELECT * FROM matricula<br>WHERE curso_id = ?<br>⚠️ carrega TUDO"]
         VC4 --> VC5["removeIf(id == X)"]
-        VC5 --> VC6["DELETE FROM matricula\nWHERE id = X"]
+        VC5 --> VC6["DELETE FROM matricula<br>WHERE id = X"]
     end
 
     subgraph DIRETO["Via repository.delete (recomendado)"]
-        D1["findById(matriculaId)"] --> D2["SELECT * FROM matricula\nWHERE id = ?\n✅ 1 registro"]
+        D1["findById(matriculaId)"] --> D2["SELECT * FROM matricula<br>WHERE id = ?<br>✅ 1 registro"]
         D2 --> D3["delete(matricula)"]
-        D3 --> D4["DELETE FROM matricula\nWHERE id = ?"]
+        D3 --> D4["DELETE FROM matricula<br>WHERE id = ?"]
     end
 
     subgraph BULK["Via bulk JPQL (performance máxima)"]
-        B1["deleteByCursoAndId(...)"] --> B2["DELETE FROM matricula\nWHERE id = ? AND curso_id = ?\n✅ 0 SELECTs"]
+        B1["deleteByCursoAndId(...)"] --> B2["DELETE FROM matricula<br>WHERE id = ? AND curso_id = ?<br>✅ 0 SELECTs"]
     end
 ```
 
@@ -3416,11 +3416,11 @@ public @interface CpfValido {
 
 ```mermaid
 flowchart LR
-    A[Request\nString] --> B["DTO\n@CpfValido"]
-    B --> C["new Cpf(valor)\nValue Object validado"]
-    C --> D["Entity\ncampo Cpf"]
-    D --> E["CpfConverter\nCpf ↔ String"]
-    E --> F[("PostgreSQL\nVARCHAR")]
+    A[Request<br>String] --> B["DTO<br>@CpfValido"]
+    B --> C["new Cpf(valor)<br>Value Object validado"]
+    C --> D["Entity<br>campo Cpf"]
+    D --> E["CpfConverter<br>Cpf ↔ String"]
+    E --> F[("PostgreSQL<br>VARCHAR")]
 
     style A fill:#f9f,stroke:#333
     style C fill:#bfb,stroke:#333
@@ -3461,15 +3461,15 @@ As propriedades do `@Column` referem-se ao **tipo convertido** (String, Long no 
 ```mermaid
 flowchart LR
     subgraph Java
-        VO["Value Object\nCnpj, Cpf, Email,\nDinheiro, CorHex"]
+        VO["Value Object<br>Cnpj, Cpf, Email,<br>Dinheiro, CorHex"]
     end
     subgraph Converter["AttributeConverter"]
         direction TB
-        W["convertToDatabaseColumn()\nCnpj → String"]
-        R["convertToEntityAttribute()\nString → Cnpj"]
+        W["convertToDatabaseColumn()<br>Cnpj → String"]
+        R["convertToEntityAttribute()<br>String → Cnpj"]
     end
     subgraph Banco["PostgreSQL"]
-        COL["Coluna simples\nCHAR, VARCHAR,\nBIGINT, NUMERIC"]
+        COL["Coluna simples<br>CHAR, VARCHAR,<br>BIGINT, NUMERIC"]
     end
 
     VO -->|"escrita"| W --> COL
@@ -3489,7 +3489,7 @@ classDiagram
         -Dinheiro saldo
     }
 
-    note for Empresa "@Column(length=14, columnDefinition='CHAR(14)') → cnpj\n@Column(length=11) → cpfResponsavel\n@Column(length=255) → email\n@Column(columnDefinition='BIGINT') → saldo (centavos)"
+    note for Empresa "@Column(length=14, columnDefinition='CHAR(14)') → cnpj<br>@Column(length=11) → cpfResponsavel<br>@Column(length=255) → email<br>@Column(columnDefinition='BIGINT') → saldo (centavos)"
 ```
 
 ```java
@@ -3975,17 +3975,17 @@ Se todas as colunas do embeddable forem `NULL` no banco, o Hibernate retorna `nu
 ```mermaid
 stateDiagram-v2
     [*] --> Transient : new Entity()
-    note right of Transient : id = null\nhashCode deve ser ESTÁVEL
+    note right of Transient : id = null<br>hashCode deve ser ESTÁVEL
 
     Transient --> Managed : persist()
-    note right of Managed : id = 42\nhashCode NÃO pode mudar!
+    note right of Managed : id = 42<br>hashCode NÃO pode mudar!
 
     Managed --> Detached : detach() / close session
     Detached --> Managed : merge()
     Managed --> Removed : remove()
     Removed --> [*]
 
-    Detached --> Detached : equals deve funcionar\nentre sessões
+    Detached --> Detached : equals deve funcionar<br>entre sessões
 ```
 
 ### Abordagem recomendada: equals por id + hashCode fixo
@@ -4075,7 +4075,7 @@ classDiagram
     Pagamento <|-- PagamentoPix
     Pagamento <|-- PagamentoCartao
 
-    note for BaseEntity "equals: Hibernate.getClass() + getId()\nhashCode: return 31 (fixo)"
+    note for BaseEntity "equals: Hibernate.getClass() + getId()<br>hashCode: return 31 (fixo)"
 ```
 
 Centralizar na classe-base com `Hibernate.getClass()` para segurança com proxies:
@@ -4215,10 +4215,10 @@ erDiagram
 ```mermaid
 flowchart TD
     A[Request criar matrícula] --> B{existsByCursoIdAndAlunoId?}
-    B -->|Sim| C[MatriculaDuplicadaException\nfeedback amigável]
+    B -->|Sim| C[MatriculaDuplicadaException<br>feedback amigável]
     B -->|Não| D[repository.save]
-    D --> E{Constraint violation?\nrace condition}
-    E -->|Sim| F[DataIntegrityViolationException\nException Handler identifica por nome]
+    D --> E{Constraint violation?<br>race condition}
+    E -->|Sim| F[DataIntegrityViolationException<br>Exception Handler identifica por nome]
     E -->|Não| G[Matrícula criada com sucesso]
 
     style C fill:#f99,stroke:#333
@@ -4605,20 +4605,20 @@ A regra é a mesma de unique constraints: **sempre nomeie**. O custo é uma linh
 ```mermaid
 flowchart TD
     subgraph PostgreSQL
-        T1[(curso)] --> V1[/vw_curso_estatistica\nVIEW/]
-        T1 --> MV1[/mv_ranking_alunos\nMATERIALIZED VIEW/]
+        T1[(curso)] --> V1[/vw_curso_estatistica<br>VIEW/]
+        T1 --> MV1[/mv_ranking_alunos<br>MATERIALIZED VIEW/]
         T2[(matricula)] --> V1
         T2 --> MV1
         T3[(aluno)] --> MV1
-        T2 --> F1[("calcular_media_ponderada()\nFUNCTION")]
-        SP1[("fechar_matriculas_vencidas()\nSTORED PROCEDURE")] --> T2
+        T2 --> F1[("calcular_media_ponderada()<br>FUNCTION")]
+        SP1[("fechar_matriculas_vencidas()<br>STORED PROCEDURE")] --> T2
     end
 
     subgraph JPA / Hibernate
-        E1["@Entity @Immutable\nCursoEstatistica"] -.-> V1
-        E2["@Entity @Immutable\nRankingAluno"] -.-> MV1
-        E3["@Formula\n@Query nativa"] -.-> F1
-        E4["@Procedure\nEntityManager"] -.-> SP1
+        E1["@Entity @Immutable<br>CursoEstatistica"] -.-> V1
+        E2["@Entity @Immutable<br>RankingAluno"] -.-> MV1
+        E3["@Formula<br>@Query nativa"] -.-> F1
+        E4["@Procedure<br>EntityManager"] -.-> SP1
     end
 
     style V1 fill:#e8f4fd,stroke:#333
@@ -5401,8 +5401,8 @@ classDiagram
     ZonedDateTime *-- ZoneId : "regras de timezone"
     ZoneId --> ZoneRules : "consulta regras DST"
 
-    note for OffsetDateTime "Sabe o deslocamento\nNÃO sabe regras de DST"
-    note for ZonedDateTime "Sabe o timezone completo\nAjusta DST automaticamente"
+    note for OffsetDateTime "Sabe o deslocamento<br>NÃO sabe regras de DST"
+    note for ZonedDateTime "Sabe o timezone completo<br>Ajusta DST automaticamente"
 ```
 
 ### O que o PostgreSQL armazena
@@ -5628,13 +5628,13 @@ JSON resultante:
 flowchart TD
     A[Preciso persistir data/hora] --> B{Qual o caso de uso?}
 
-    B -->|"Auditoria / transações\n(quando aconteceu)"| C[OffsetDateTime]
-    B -->|"Agendamento futuro\n(respeitar DST)"| D["OffsetDateTime\n+ String timezone\n(duas colunas)"]
-    B -->|"Timezone do usuário\nna apresentação"| E["OffsetDateTime no banco\nConverte no DTO/Response"]
+    B -->|"Auditoria / transações<br>(quando aconteceu)"| C[OffsetDateTime]
+    B -->|"Agendamento futuro<br>(respeitar DST)"| D["OffsetDateTime<br>+ String timezone<br>(duas colunas)"]
+    B -->|"Timezone do usuário<br>na apresentação"| E["OffsetDateTime no banco<br>Converte no DTO/Response"]
 
-    C --> F["@Column TIMESTAMPTZ\n+ hibernate.jdbc.time_zone=UTC"]
-    D --> G["TIMESTAMPTZ + VARCHAR(50)\nReconstrói ZonedDateTime em memória"]
-    E --> H["getDataHoraUtc()\n.atZoneSameInstant(fusoUsuario)"]
+    C --> F["@Column TIMESTAMPTZ<br>+ hibernate.jdbc.time_zone=UTC"]
+    D --> G["TIMESTAMPTZ + VARCHAR(50)<br>Reconstrói ZonedDateTime em memória"]
+    E --> H["getDataHoraUtc()<br>.atZoneSameInstant(fusoUsuario)"]
 
     style C fill:#9f9,stroke:#333
     style D fill:#9f9,stroke:#333
@@ -5684,9 +5684,9 @@ public class Pedido {
 ```mermaid
 flowchart LR
     subgraph "java.util (legado)"
-        D1["@Temporal(TIMESTAMP)\nDate"]
-        D2["@Temporal(DATE)\nDate"]
-        D3["@Temporal(TIME)\nDate"]
+        D1["@Temporal(TIMESTAMP)<br>Date"]
+        D2["@Temporal(DATE)<br>Date"]
+        D3["@Temporal(TIME)<br>Date"]
     end
 
     subgraph "Coluna PostgreSQL"
@@ -5934,15 +5934,15 @@ Date date = Date.from(ld.atStartOfDay(ZoneId.systemDefault()).toInstant());
 
 ```mermaid
 flowchart TD
-    A["1. Verificar tipo real das colunas\n(information_schema)"] --> B{Tipo da coluna?}
+    A["1. Verificar tipo real das colunas<br>(information_schema)"] --> B{Tipo da coluna?}
 
-    B -->|TIMESTAMPTZ| C["Trocar para OffsetDateTime\n✅ zero impacto no banco"]
+    B -->|TIMESTAMPTZ| C["Trocar para OffsetDateTime<br>✅ zero impacto no banco"]
     B -->|TIMESTAMP| D{Quer timezone?}
-    B -->|DATE| E["Trocar para LocalDate\n✅ zero impacto no banco"]
-    B -->|TIME| F["Trocar para LocalTime\n✅ zero impacto no banco"]
+    B -->|DATE| E["Trocar para LocalDate<br>✅ zero impacto no banco"]
+    B -->|TIME| F["Trocar para LocalTime<br>✅ zero impacto no banco"]
 
-    D -->|Sim| G["Migration Flyway:\nALTER TYPE TIMESTAMPTZ\nUSING AT TIME ZONE 'fuso'\nDepois: OffsetDateTime"]
-    D -->|Não| H["Trocar para LocalDateTime\n✅ zero impacto no banco"]
+    D -->|Sim| G["Migration Flyway:<br>ALTER TYPE TIMESTAMPTZ<br>USING AT TIME ZONE 'fuso'<br>Depois: OffsetDateTime"]
+    D -->|Não| H["Trocar para LocalDateTime<br>✅ zero impacto no banco"]
 
     C --> I["Remover @Temporal"]
     E --> I
@@ -5950,8 +5950,8 @@ flowchart TD
     G --> I
     H --> I
 
-    I --> J["Atualizar comparações,\nformatações e DTOs"]
-    J --> K["Deprecar getters legados\ncom @Deprecated forRemoval"]
+    I --> J["Atualizar comparações,<br>formatações e DTOs"]
+    J --> K["Deprecar getters legados<br>com @Deprecated forRemoval"]
 
     style C fill:#9f9,stroke:#333
     style E fill:#9f9,stroke:#333
