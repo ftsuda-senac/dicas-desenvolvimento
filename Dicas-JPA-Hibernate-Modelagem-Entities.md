@@ -1,100 +1,380 @@
-# Guia Avançado de JPA/Hibernate com Spring Boot
-
-> Compilação de boas práticas, padrões e recursos avançados de JPA/Hibernate para aplicações Spring Boot com PostgreSQL.
-
----
-
 ## Sumário
 
-1. [Consulta Eficiente de IDs em Batch](#1-consulta-eficiente-de-ids-em-batch)
-2. [Herança JPA — Estratégias de Mapeamento](#2-herança-jpa--estratégias-de-mapeamento)
-3. [Abordagem Mista com @SecondaryTable](#3-abordagem-mista-com-secondarytable)
-4. [Resolução Polimórfica de Tipos](#4-resolução-polimórfica-de-tipos)
-5. [Agrupamento por Tipo com Streams](#5-agrupamento-por-tipo-com-streams)
-6. [Enum como Discriminator](#6-enum-como-discriminator)
-7. [Discriminator Acessível via Getter](#7-discriminator-acessível-via-getter)
-8. [ManyToMany e OneToMany na Mesma Tabela Intermediária](#8-manytomany-e-onetomany-na-mesma-tabela-intermediária)
-9. [Cascade vs OrphanRemoval](#9-cascade-vs-orphanremoval)
-10. [Cascade ALL Bidirecional — Problemas](#10-cascade-all-bidirecional--problemas)
-11. [Recursos Pouco Conhecidos do JPA/Hibernate](#11-recursos-pouco-conhecidos-do-jpahibernate)
-12. [Soft Delete Nativo (@SoftDelete)](#12-soft-delete-nativo-softdelete)
-13. [Ordenação de Coleções (@OrderBy, @OrderColumn, @SortNatural)](#13-ordenação-de-coleções-orderby-ordercolumn-sortnatural)
-14. [@ElementCollection vs @OneToMany](#14-elementcollection-vs-onetomany)
-15. [@EmbeddedId vs @IdClass — PKs Compostas](#15-embeddedid-vs-idclass--pks-compostas)
-16. [Recursos Adicionais do JPA/Hibernate](#16-recursos-adicionais-do-jpahibernate)
-17. [OffsetDateTime e Conversão de Timezone](#17-offsetdatetime-e-conversão-de-timezone)
-18. [Metamodel Estático do JPA](#18-metamodel-estático-do-jpa)
-19. [Segurança de Queries JPQL com Campos Renomeados](#19-segurança-de-queries-jpql-com-campos-renomeados)
-20. [@NamedQuery — Vantagens e Limitações](#20-namedquery--vantagens-e-limitações)
-21. [@Modifying — flushAutomatically e clearAutomatically](#21-modifying--flushautomatically-e-clearautomatically)
-22. [Remoção Eficiente de Itens em @OneToMany](#22-remoção-eficiente-de-itens-em-onetomany)
-23. [Dígitos Verificadores com Value Objects e AttributeConverter](#23-dígitos-verificadores-com-value-objects-e-attributeconverter)
-24. [Libs para Validação de Documentos Brasileiros](#24-libs-para-validação-de-documentos-brasileiros)
-25. [@Column com AttributeConverter de Objetos Complexos](#25-column-com-attributeconverter-de-objetos-complexos)
-26. [Records como @Embeddable](#26-records-como-embeddable)
-27. [equals/hashCode em Entidades JPA](#27-equalshashcode-em-entidades-jpa)
-28. [equals/hashCode em Hierarquias (@MappedSuperclass)](#28-equalshashcode-em-hierarquias-mappedsuperclass)
-29. [getReferenceById — Proxy sem SELECT](#29-getreferencebyid--proxy-sem-select)
-30. [Unique Constraints Compostas](#30-unique-constraints-compostas)
-31. [Nomeação de Foreign Keys com @ForeignKey](#31-nomeação-de-foreign-keys-com-foreignkey)
-32. [Functions, Stored Procedures, Views e Materialized Views](#32-functions-stored-procedures-views-e-materialized-views)
-33. [Coleções com Map vs Set em Relacionamentos JPA](#33-coleções-com-map-vs-set-em-relacionamentos-jpa)
-34. [OffsetDateTime vs ZonedDateTime na Modelagem de Entidades](#34-offsetdatetime-vs-zoneddatetime-na-modelagem-de-entidades)
-35. [Migração de java.util.Date para java.time em Entidades JPA](#35-migração-de-javautildate-para-javatime-em-entidades-jpa)
+
+**Parte 1 — Fundamentos de Entidades JPA**
+
+1. [Anotações Principais do JPA/Hibernate](#1-anotações-principais-do-jpahibernate)
+2. [equals/hashCode em Entidades JPA](#2-equalshashcode-em-entidades-jpa)
+3. [equals/hashCode em Hierarquias (@MappedSuperclass)](#3-equalshashcode-em-hierarquias-mappedsuperclass)
+4. [getReferenceById — Proxy sem SELECT](#4-getreferencebyid-proxy-sem-select)
+
+**Parte 2 — Herança e Polimorfismo**
+
+5. [Herança JPA — Estratégias de Mapeamento](#5-herança-jpa-estratégias-de-mapeamento)
+6. [Abordagem Mista com @SecondaryTable](#6-abordagem-mista-com-secondarytable)
+7. [Resolução Polimórfica de Tipos](#7-resolução-polimórfica-de-tipos)
+8. [Agrupamento por Tipo com Streams](#8-agrupamento-por-tipo-com-streams)
+9. [Enum como Discriminator](#9-enum-como-discriminator)
+10. [Discriminator Acessível via Getter](#10-discriminator-acessível-via-getter)
+
+**Parte 3 — Relacionamentos e Coleções**
+
+11. [ManyToMany e OneToMany na Mesma Tabela Intermediária](#11-manytomany-e-onetomany-na-mesma-tabela-intermediária)
+12. [Cascade vs OrphanRemoval](#12-cascade-vs-orphanremoval)
+13. [Cascade ALL Bidirecional — Problemas](#13-cascade-all-bidirecional-problemas)
+14. [Remoção Eficiente de Itens em @OneToMany](#14-remoção-eficiente-de-itens-em-onetomany)
+15. [Ordenação de Coleções (@OrderBy, @OrderColumn, @SortNatural)](#15-ordenação-de-coleções-orderby-ordercolumn-sortnatural)
+16. [@ElementCollection vs @OneToMany](#16-elementcollection-vs-onetomany)
+17. [@EmbeddedId vs @IdClass — PKs Compostas](#17-embeddedid-vs-idclass-pks-compostas)
+18. [Coleções com Map vs Set em Relacionamentos JPA](#18-coleções-com-map-vs-set-em-relacionamentos-jpa)
+
+**Parte 4 — Value Objects, @Embeddable e Tipos Customizados**
+
+19. [Dígitos Verificadores com Value Objects e AttributeConverter](#19-dígitos-verificadores-com-value-objects-e-attributeconverter)
+20. [Libs para Validação de Documentos Brasileiros](#20-libs-para-validação-de-documentos-brasileiros)
+21. [@Column com AttributeConverter de Objetos Complexos](#21-column-com-attributeconverter-de-objetos-complexos)
+22. [Records como @Embeddable](#22-records-como-embeddable)
+
+**Parte 5 — DDL, Constraints e Nomeação**
+
+23. [Unique Constraints Compostas](#23-unique-constraints-compostas)
+24. [Nomeação de Foreign Keys com @ForeignKey](#24-nomeação-de-foreign-keys-com-foreignkey)
+25. [@DynamicInsert — INSERT sem campos nulos (respeita DEFAULTs)](#25-dynamicinsert-insert-sem-campos-nulos-respeita-defaults)
+26. [@ColumnDefault — declarar o DEFAULT na geração do DDL](#26-columndefault-declarar-o-default-na-geração-do-ddl)
+
+**Parte 6 — Timestamps e Tipos Temporais**
+
+27. [OffsetDateTime e Conversão de Timezone](#27-offsetdatetime-e-conversão-de-timezone)
+28. [OffsetDateTime vs ZonedDateTime na Modelagem de Entidades](#28-offsetdatetime-vs-zoneddatetime-na-modelagem-de-entidades)
+29. [Migração de java.util.Date para java.time em Entidades JPA](#29-migração-de-javautildate-para-javatime-em-entidades-jpa)
+
+**Parte 7 — Recursos Avançados do Hibernate**
+
+30. [Recursos Pouco Conhecidos do JPA/Hibernate](#30-recursos-pouco-conhecidos-do-jpahibernate)
+31. [Soft Delete Nativo (@SoftDelete)](#31-soft-delete-nativo-softdelete)
+32. [Recursos Avançados do Hibernate](#32-recursos-avançados-do-hibernate)
+33. [Metamodel Estático do JPA](#33-metamodel-estático-do-jpa)
+34. [Functions, Stored Procedures, Views e Materialized Views](#34-functions-stored-procedures-views-e-materialized-views)
+35. [Múltiplos DataSources em um Projeto Spring Boot](#35-múltiplos-datasources-em-um-projeto-spring-boot)
 
 ---
 
-## 1. Consulta Eficiente de IDs em Batch
+## Parte 1 — Fundamentos de Entidades JPA
 
-### Validação pura — COUNT e comparação
+## 1. Anotações Principais do JPA/Hibernate
+
+Referência rápida das anotações usadas ao longo deste documento.
+
+#### Mapeamento de classe
+
+| Anotação | Onde aplicar | O que faz |
+|---|---|---|
+| `@Entity` | Classe | Marca a classe como entidade JPA — deve ter PK e construtor sem argumentos |
+| `@Table` | Classe | Configura nome da tabela, schema, unique constraints e índices para DDL |
+| `@MappedSuperclass` | Classe | Classe base com campos mapeados; ela própria não gera tabela no banco |
+| `@SecondaryTable` | Classe | Mapeia parte dos campos da entidade para uma segunda tabela |
+| `@Inheritance` | Classe | Define a estratégia de herança: `SINGLE_TABLE`, `JOINED` ou `TABLE_PER_CLASS` |
+| `@DiscriminatorColumn` | Classe raiz | Coluna que diferencia subtipos em `SINGLE_TABLE` |
+| `@DiscriminatorValue` | Subclasse | Valor do discriminador para uma subclasse específica |
+
+#### Mapeamento de campo ou propriedade
+
+| Anotação | Onde aplicar | O que faz |
+|---|---|---|
+| `@Id` | Campo / getter | Marca a chave primária da entidade |
+| `@GeneratedValue` | Junto com `@Id` | Define a estratégia de geração do PK (ver tabela abaixo) |
+| `@Column` | Campo / getter | Configura nome, tamanho, `nullable`, `unique`, `precision` e `scale` (ver tabela abaixo) |
+| `@Transient` | Campo / getter | Exclui o campo da persistência — nenhuma coluna é gerada |
+| `@Enumerated` | Campo enum | Persiste enum como `STRING` (nome) ou `ORDINAL` (posição — evitar) |
+| `@Convert` | Campo / getter | Aplica um `AttributeConverter` para transformar o valor antes de gravar no banco |
+| `@Lob` | Campo | Mapeia para `BLOB` / `CLOB` — adequado para conteúdo binário ou texto longo |
+
+#### Relacionamentos
+
+| Anotação | Onde aplicar | O que faz |
+|---|---|---|
+| `@ManyToOne` | Campo | FK do lado filho; `FetchType.EAGER` por padrão — prefira `LAZY` explicitamente |
+| `@OneToMany` | Campo coleção | Coleção de filhos; `FetchType.LAZY` por padrão — comportamento correto |
+| `@OneToOne` | Campo | Associação 1-para-1 entre entidades |
+| `@ManyToMany` | Campo coleção | Associação N-para-N via tabela intermediária |
+| `@JoinColumn` | Campo | Personaliza nome da coluna FK, `nullable`, `insertable`, `foreignKey` |
+| `@JoinTable` | Campo | Personaliza a tabela intermediária de `@ManyToMany` |
+
+#### Estratégias de `@GeneratedValue`
+
+| `strategy` | Comportamento |
+|---|---|
+| `IDENTITY` | Delega ao banco (`SERIAL` / `BIGSERIAL` no PostgreSQL) — compatível e simples |
+| `SEQUENCE` | Usa sequence no banco — mais eficiente para inserções em lote (pré-aloca blocos) |
+| `UUID` | Gera UUID antes do INSERT — útil para PKs expostas em APIs REST |
+| `AUTO` | Hibernate escolhe a estratégia — evitar (comportamento imprevisível entre bancos) |
+
+#### Principais atributos de `@Column`
+
+| Atributo | Tipo | Padrão | Uso |
+|---|---|---|---|
+| `name` | `String` | nome do campo | Nome da coluna no banco |
+| `nullable` | `boolean` | `true` | Gera `NOT NULL` no DDL quando `false` |
+| `unique` | `boolean` | `false` | Gera constraint `UNIQUE` simples na coluna |
+| `length` | `int` | `255` | Tamanho máximo para `VARCHAR` |
+| `precision` | `int` | `0` | Total de dígitos para `NUMERIC` / `DECIMAL` |
+| `scale` | `int` | `0` | Casas decimais para `NUMERIC` / `DECIMAL` |
+| `insertable` / `updatable` | `boolean` | `true` | Exclui a coluna do INSERT ou do UPDATE gerado pelo Hibernate |
+| `columnDefinition` | `String` | — | DDL literal para a coluna (ex.: `"TEXT"`, `"JSONB"`, `"BOOLEAN DEFAULT true"`) |
+
+#### Exemplo: entidade com as anotações mais comuns
 
 ```java
-@Query("SELECT COUNT(e.id) FROM Entity e WHERE e.id IN :ids")
-long countByIdIn(@Param("ids") Collection<Long> ids);
-```
+@Entity
+@Table(
+    name = "alunos",
+    uniqueConstraints = @UniqueConstraint(name = "uk_aluno_ra", columnNames = "ra")
+)
+public class Aluno extends BaseEntity {          // BaseEntity fornece @Id + @GeneratedValue
 
-```java
-if (repository.countByIdIn(ids) != ids.size()) {
-    throw new EntityNotFoundException("Um ou mais IDs não encontrados");
+    @Column(name = "nome_completo", nullable = false, length = 120)
+    private String nome;
+
+    @Column(nullable = false, length = 20, unique = true)
+    private String ra;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private StatusAluno status;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "curso_id", nullable = false)
+    private Curso curso;
+
+    @OneToMany(mappedBy = "aluno", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Matricula> matriculas = new ArrayList<>();
 }
 ```
 
-### Identificar quais IDs faltam — projeção de IDs
-
 ```java
-@Query("SELECT e.id FROM Entity e WHERE e.id IN :ids")
-Set<Long> findExistingIds(@Param("ids") Collection<Long> ids);
-```
+// BaseEntity — padrão do documento
+@MappedSuperclass
+public abstract class BaseEntity {
 
-```java
-Set<Long> existing = repository.findExistingIds(ids);
-Set<Long> missing = new HashSet<>(ids);
-missing.removeAll(existing);
-if (!missing.isEmpty()) {
-    throw new EntityNotFoundException("IDs não encontrados: " + missing);
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 }
-```
-
-### PostgreSQL — `= ANY` para listas grandes
-
-```java
-@Query(value = "SELECT id FROM entity WHERE id = ANY(:ids)", nativeQuery = true)
-Set<Long> findExistingIds(@Param("ids") Long[] ids);
-```
-
-O Hibernate 6.x já otimiza com `hibernate.query.in_list_padding` e suporte a arrays nativos do PostgreSQL.
-
-### Antipattern: N+1 em loop
-
-```java
-// NUNCA faça isso
-ids.forEach(id -> repository.findById(id)
-    .orElseThrow(() -> new EntityNotFoundException(id)));
 ```
 
 ---
 
-## 2. Herança JPA — Estratégias de Mapeamento
+## 2. equals/hashCode em Entidades JPA
+
+### Ciclo de vida da entidade e impacto no equals/hashCode
+
+```mermaid
+stateDiagram-v2
+    [*] --> Transient : new Entity()
+    note right of Transient : id = null<br>hashCode deve ser ESTÁVEL
+
+    Transient --> Managed : persist()
+    note right of Managed : id = 42<br>hashCode NÃO pode mudar!
+
+    Managed --> Detached : detach() / close session
+    Detached --> Managed : merge()
+    Managed --> Removed : remove()
+    Removed --> [*]
+
+    Detached --> Detached : equals deve funcionar<br>entre sessões
+```
+
+### Abordagem recomendada: equals por id + hashCode fixo
+
+```java
+@Override
+public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof Matricula that)) return false;
+    return id != null && id.equals(that.id);
+}
+
+@Override
+public int hashCode() {
+    return getClass().hashCode();
+}
+```
+
+- Duas entidades transient (id = null) nunca são iguais.
+- `hashCode` fixo garante consistência em `HashSet` antes e depois do `persist`.
+- Usar `instanceof` (não `getClass()`) para funcionar com proxies Hibernate.
+
+### Abordagem alternativa: natural key
+
+Quando existe chave natural imutável (atribuída antes do persist):
+
+```java
+@Override
+public boolean equals(Object o) {
+    if (this == o) return true;
+    if (!(o instanceof Aluno that)) return false;
+    return ra != null && ra.equals(that.ra);
+}
+
+@Override
+public int hashCode() {
+    return Objects.hash(ra);
+}
+```
+
+### O que NÃO fazer
+
+- `Objects.hash(id)` — muda após persist, quebra HashSet.
+- `getClass() != o.getClass()` — quebra com proxies Hibernate.
+- Usar todos os campos — quebra ao alterar qualquer atributo.
+
+---
+
+## 3. equals/hashCode em Hierarquias (@MappedSuperclass)
+
+### Hierarquia com equals/hashCode centralizado
+
+```mermaid
+classDiagram
+    class BaseEntity {
+        <<MappedSuperclass>>
+        #Long id
+        #OffsetDateTime criadoEm
+        #OffsetDateTime atualizadoEm
+        +equals(Object) boolean*
+        +hashCode() int*
+    }
+    class Aluno {
+        -String nome
+        -String ra
+    }
+    class Curso {
+        -String nome
+        -Integer cargaHoraria
+    }
+    class Pagamento {
+        <<abstract>>
+        -BigDecimal valor
+        -TipoPagamento tipo
+    }
+    class PagamentoPix {
+        -String chave
+    }
+    class PagamentoCartao {
+        -String bandeira
+        -Integer parcelas
+    }
+
+    BaseEntity <|-- Aluno : herda equals/hashCode
+    BaseEntity <|-- Curso : herda equals/hashCode
+    BaseEntity <|-- Pagamento : herda equals/hashCode
+    Pagamento <|-- PagamentoPix
+    Pagamento <|-- PagamentoCartao
+
+    note for BaseEntity "equals: Hibernate.getClass() + getId()<br>hashCode: return 31 (fixo)"
+```
+
+Centralizar na classe-base com `Hibernate.getClass()` para segurança com proxies:
+
+```java
+@MappedSuperclass
+public abstract class BaseEntity implements Serializable {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof BaseEntity that)) return false;
+
+        Class<?> thisType = Hibernate.getClass(this);
+        Class<?> thatType = Hibernate.getClass(that);
+        if (thisType != thatType) return false;
+
+        return getId() != null && getId().equals(that.getId());
+    }
+
+    @Override
+    public int hashCode() {
+        return 31; // constante fixa para TODA a hierarquia
+    }
+}
+```
+
+- `Hibernate.getClass()` resolve o tipo real mesmo com proxy.
+- Subclasses **não** sobrescrevem — herdam de `BaseEntity`.
+- Exceção: subclasse com natural key pode sobrescrever quando performance de Set importa.
+
+---
+
+## 4. getReferenceById — Proxy sem SELECT
+
+Retorna um proxy não inicializado. SELECT só acontece ao acessar campo que não seja id.
+
+### Comparação: findById vs getReferenceById
+
+```mermaid
+sequenceDiagram
+    participant S as Service
+    participant R as Repository
+    participant DB as Banco
+
+    rect rgb(240, 210, 200)
+        Note over S,DB: findById — SELECT imediato
+        S->>R: findById(1L)
+        R->>DB: SELECT * FROM curso WHERE id = 1
+        DB->>R: {id:1, nome:"JPA", carga:40}
+        R->>S: Optional Curso (completo)
+    end
+
+    rect rgb(200, 230, 200)
+        Note over S,DB: getReferenceById — proxy sem SELECT
+        S->>R: getReferenceById(1L)
+        Note over R: Cria proxy {id:1, initialized:false}
+        R->>S: Proxy Curso (apenas id)
+        Note over S: Usa proxy como FK no INSERT
+        S->>DB: INSERT INTO matricula (curso_id, ...) VALUES (1, ...)
+        Note over S,DB: 0 SELECTs para o Curso!
+    end
+```
+
+### Uso principal: setar FK sem carregar
+
+```java
+@Transactional
+public Matricula criar(CriarMatriculaRequest request) {
+    var matricula = new Matricula();
+    matricula.setCurso(cursoRepository.getReferenceById(request.cursoId()));
+    matricula.setAluno(alunoRepository.getReferenceById(request.alunoId()));
+    return repository.save(matricula);
+    // 1 INSERT, 0 SELECTs
+}
+```
+
+### Deletar sem carregar
+
+```java
+cursoRepository.delete(cursoRepository.getReferenceById(id));
+// 1 DELETE, 0 SELECTs
+```
+
+### Quando evitar
+
+- Precisa validar existência ou acessar dados → use `findById`.
+- Fora de `@Transactional` → `LazyInitializationException` ao acessar campos.
+
+| Aspecto | findById | getReferenceById |
+|---|---|---|
+| Retorno | `Optional<T>` | `T` (proxy) |
+| SELECT imediato | Sim | Não |
+| Entidade não existe | `Optional.empty()` | Exception (no acesso) |
+
+---
+
+## Parte 2 — Herança e Polimorfismo
+
+## 5. Herança JPA — Estratégias de Mapeamento
 
 ### Hierarquia de classes
 
@@ -259,7 +539,7 @@ public abstract class BaseEntity {
 
 ---
 
-## 3. Abordagem Mista com @SecondaryTable
+## 6. Abordagem Mista com @SecondaryTable
 
 A spec JPA não permite misturar estratégias, mas `@SecondaryTable` atinge o mesmo efeito. Mantém `SINGLE_TABLE` e move subtipos complexos para tabela separada.
 
@@ -316,7 +596,7 @@ public class PagamentoCartao extends Pagamento {
 
 ---
 
-## 4. Resolução Polimórfica de Tipos
+## 7. Resolução Polimórfica de Tipos
 
 O Hibernate lê a coluna discriminadora e instancia a classe concreta automaticamente.
 
@@ -369,7 +649,7 @@ public interface PagamentoPixRepository extends JpaRepository<PagamentoPix, Long
 
 ---
 
-## 5. Agrupamento por Tipo com Streams
+## 8. Agrupamento por Tipo com Streams
 
 ### Com `groupingBy` na classe
 
@@ -420,7 +700,7 @@ public record PagamentosAgrupados(
 
 ---
 
-## 6. Enum como Discriminator
+## 9. Enum como Discriminator
 
 O JPA só aceita `STRING`, `INTEGER` e `CHAR` como `DiscriminatorType`. Use constantes compartilhadas para manter consistência:
 
@@ -516,7 +796,7 @@ void discriminatorDeveCorresponderAoEnum() {
 
 ---
 
-## 7. Discriminator Acessível via Getter
+## 10. Discriminator Acessível via Getter
 
 Mapeie a coluna discriminadora como campo read-only:
 
@@ -543,7 +823,9 @@ O `insertable = false, updatable = false` evita conflito com o mecanismo de disc
 
 ---
 
-## 8. ManyToMany e OneToMany na Mesma Tabela Intermediária
+## Parte 3 — Relacionamentos e Coleções
+
+## 11. ManyToMany e OneToMany na Mesma Tabela Intermediária
 
 ### Modelo de relacionamento
 
@@ -648,7 +930,7 @@ public class Curso {
 
 ---
 
-## 9. Cascade vs OrphanRemoval
+## 12. Cascade vs OrphanRemoval
 
 `Cascade` propaga operações do `EntityManager`. `OrphanRemoval` reage à desassociação de um filho do pai.
 
@@ -803,7 +1085,7 @@ private Set<Matricula> matriculas = new HashSet<>();
 
 ---
 
-## 10. Cascade ALL Bidirecional — Problemas
+## 13. Cascade ALL Bidirecional — Problemas
 
 ### Direção correta do cascade
 
@@ -950,360 +1232,49 @@ private Set<Matricula> matriculas = new HashSet<>();
 
 ---
 
-## 11. Recursos Pouco Conhecidos do JPA/Hibernate
+## 14. Remoção Eficiente de Itens em @OneToMany
 
-### @Formula — campo calculado sem coluna
-
-```java
-@Formula("preco - desconto")
-private BigDecimal precoFinal;
-
-@Formula("(SELECT COUNT(*) FROM avaliacao a WHERE a.produto_id = id)")
-private Long totalAvaliacoes;
-```
-
-### @SQLRestriction — filtro automático (substitui @Where deprecado no Hibernate 6.3+)
-
-```java
-@Entity
-@SQLRestriction("deletado_em IS NULL")
-public class Produto {
-    private OffsetDateTime deletadoEm;
-}
-```
-
-### @Filter — filtro dinâmico para multi-tenancy
-
-```java
-@Entity
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = Long.class))
-@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
-public class Documento { }
-```
-
-### @NaturalId — cache e lookup por chave natural
-
-```java
-@NaturalId
-@Column(nullable = false, unique = true)
-private String ra;
-```
-
-### @DynamicUpdate — UPDATE só dos campos alterados
-
-```java
-@Entity
-@DynamicUpdate
-public class Pedido { }
-```
-
-### AttributeConverter — tipo custom transparente
-
-```java
-@Converter(autoApply = true)
-public class CpfConverter implements AttributeConverter<Cpf, String> {
-    @Override
-    public String convertToDatabaseColumn(Cpf cpf) {
-        return cpf == null ? null : cpf.valor();
-    }
-    @Override
-    public Cpf convertToEntityAttribute(String valor) {
-        return valor == null ? null : new Cpf(valor);
-    }
-}
-```
-
-### @CreationTimestamp e @UpdateTimestamp
-
-Annotations do Hibernate que preenchem automaticamente timestamps de auditoria:
-
-```java
-@MappedSuperclass
-public abstract class BaseEntity {
-    @CreationTimestamp
-    @Column(updatable = false)
-    private OffsetDateTime criadoEm;
-
-    @UpdateTimestamp
-    private OffsetDateTime atualizadoEm;
-}
-```
-
-O Hibernate preenche `criadoEm` no `persist()` e `atualizadoEm` em todo `persist()` e `merge()`. Mais simples que `@PrePersist` / `@PreUpdate` manual.
-
-#### Spring Data JPA Auditing — @CreatedDate, @LastModifiedDate, @CreatedBy, @LastModifiedBy
-
-O Spring Data oferece uma alternativa que **também rastreia quem** fez a operação (além de quando):
-
-```java
-@MappedSuperclass
-@EntityListeners(AuditingEntityListener.class)
-public abstract class AuditableEntity {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @CreatedDate
-    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
-    private OffsetDateTime criadoEm;
-
-    @LastModifiedDate
-    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
-    private OffsetDateTime atualizadoEm;
-
-    @CreatedBy
-    @Column(updatable = false, length = 100)
-    private String criadoPor;
-
-    @LastModifiedBy
-    @Column(length = 100)
-    private String atualizadoPor;
-}
-```
-
-Requer configuração:
-
-```java
-@Configuration
-@EnableJpaAuditing
-public class JpaAuditingConfig {
-
-    @Bean
-    public AuditorAware<String> auditorAware() {
-        return () -> Optional.ofNullable(SecurityContextHolder.getContext())
-            .map(SecurityContext::getAuthentication)
-            .filter(Authentication::isAuthenticated)
-            .map(Authentication::getName);
-    }
-}
-```
-
-O `AuditingEntityListener` é um `@EntityListeners` que o Spring Data registra automaticamente com `@EnableJpaAuditing`. O `AuditorAware` fornece o nome do usuário corrente — no exemplo, via Spring Security.
-
-#### Comparação
-
-| Aspecto | `@CreationTimestamp` / `@UpdateTimestamp` | `@CreatedDate` / `@LastModifiedDate` |
-|---|---|---|
-| Provedor | Hibernate | Spring Data JPA |
-| Rastreia "quando" | Sim | Sim |
-| Rastreia "quem" | Não | Sim (`@CreatedBy` / `@LastModifiedBy`) |
-| Requer `@EntityListeners` | Não | Sim (`AuditingEntityListener`) |
-| Requer `@EnableJpaAuditing` | Não | Sim |
-| Funciona sem Spring | Sim | Não |
-| Tipo suportado | `OffsetDateTime`, `Instant`, `Date`, `Calendar` | `OffsetDateTime`, `Instant`, `LocalDateTime`, `Date`, `Long` |
-
-Use `@CreationTimestamp` / `@UpdateTimestamp` quando precisa **apenas** de timestamps e quer menos configuração. Use Spring Data Auditing quando precisa de `@CreatedBy` / `@LastModifiedBy` ou já tem `@EnableJpaAuditing` configurado.
-
-### @BatchSize — controle de N+1 sem JOIN FETCH
+### Comparação de abordagens
 
 ```mermaid
-sequenceDiagram
-    participant App
-    participant DB
-
-    rect rgb(240, 210, 200)
-        Note over App,DB: Sem @BatchSize — N+1 (100 queries)
-        App->>DB: SELECT * FROM curso (100 cursos)
-        loop Para cada curso
-            App->>DB: SELECT * FROM matricula WHERE curso_id = ?
-        end
-        Note over App,DB: Total: 101 queries
+flowchart TD
+    subgraph VIA_COLECAO["Via coleção (orphanRemoval)"]
+        VC1["findById(cursoId)"] --> VC2["SELECT * FROM curso"]
+        VC2 --> VC3["getMatriculas()"]
+        VC3 --> VC4["SELECT * FROM matricula<br>WHERE curso_id = ?<br>⚠️ carrega TUDO"]
+        VC4 --> VC5["removeIf(id == X)"]
+        VC5 --> VC6["DELETE FROM matricula<br>WHERE id = X"]
     end
 
-    rect rgb(200, 230, 200)
-        Note over App,DB: Com @BatchSize(size=25) — 5 queries
-        App->>DB: SELECT * FROM curso (100 cursos)
-        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
-        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
-        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
-        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
-        Note over App,DB: Total: 5 queries
+    subgraph DIRETO["Via repository.delete (recomendado)"]
+        D1["findById(matriculaId)"] --> D2["SELECT * FROM matricula<br>WHERE id = ?<br>✅ 1 registro"]
+        D2 --> D3["delete(matricula)"]
+        D3 --> D4["DELETE FROM matricula<br>WHERE id = ?"]
+    end
+
+    subgraph BULK["Via bulk JPQL (performance máxima)"]
+        B1["deleteByCursoAndId(...)"] --> B2["DELETE FROM matricula<br>WHERE id = ? AND curso_id = ?<br>✅ 0 SELECTs"]
     end
 ```
 
-```java
-@OneToMany(mappedBy = "curso")
-@BatchSize(size = 25)
-private Set<Matricula> matriculas;
-```
-
-### Projeções com interface
-
-```java
-public interface CursoResumo {
-    Long getId();
-    String getNome();
-    long getTotalMatriculas();
-}
-```
-
-### @Immutable — entidade read-only (sem dirty checking)
-
-```java
-@Entity
-@Immutable
-public class VwRelatorioMatriculas { }
-```
-
-### @Transient — campos não persistidos
-
-Campos marcados com `@Transient` (JPA) ou `transient` (Java) são ignorados pelo Hibernate — não geram coluna no banco e não participam de INSERT/UPDATE/SELECT:
-
-```java
-@Entity
-public class Aluno extends BaseEntity {
-
-    @Column(nullable = false)
-    private String nome;
-
-    @Column(nullable = false, unique = true)
-    private String ra;
-
-    private BigDecimal nota;
-
-    // ── Campo calculado em memória — não existe no banco ──
-    @Transient
-    private String nomeCompleto;
-
-    // ── Flag de controle — não persistido ──
-    @Transient
-    private boolean editado;
-
-    // ── Dados temporários de integração ──
-    @Transient
-    private Map<String, Object> metadados;
-
-    // Inicialização via @PostLoad
-    @PostLoad
-    private void calcularCamposTransient() {
-        this.nomeCompleto = nome + " (" + ra + ")";
-    }
-}
-```
-
-#### @Transient vs transient (keyword Java)
-
-```java
-// @Transient (JPA) — ignorado pelo Hibernate, MAS serializado pelo Jackson
-@Transient
-private String campoCalculado; // aparece no JSON
-
-// transient (keyword Java) — ignorado pelo Hibernate E pelo Jackson
-transient private String cacheInterno; // NÃO aparece no JSON
-```
-
-| Modificador | Hibernate ignora | Jackson serializa | Uso típico |
+| Abordagem | Queries | Carrega coleção | Cascade/Lifecycle |
 |---|---|---|---|
-| `@Transient` (JPA) | Sim | Sim | Campos calculados expostos na API |
-| `transient` (Java) | Sim | Não | Cache interno, flags temporários |
-| `@Transient` + `@JsonIgnore` | Sim | Não | Campo auxiliar invisível na API |
+| `collection.remove()` | SELECT all + DELETE | Sim (tudo) | Sim |
+| Bulk JPQL `DELETE` | 1 DELETE | Não | Não |
+| `repository.delete(entity)` | 1 SELECT + 1 DELETE | Não | Sim |
+| `getReference` + `remove` | 1 DELETE | Não | Sim |
 
-#### Usos comuns de @Transient
+### Recomendação
 
-```java
-@Entity
-public class Pedido extends BaseEntity {
+`repository.delete(entity)` — carrega só o filho, respeita lifecycle, não carrega a coleção inteira. Para performance máxima sem cascatas, bulk JPQL.
 
-    @Column(nullable = false, precision = 19, scale = 2)
-    private BigDecimal subtotal;
+### Antipattern
 
-    @Column(nullable = false, precision = 5, scale = 2)
-    private BigDecimal taxaDesconto;
-
-    // Campo calculado — não existe coluna no banco
-    @Transient
-    private BigDecimal totalComDesconto;
-
-    @PostLoad
-    @PostPersist
-    @PostUpdate
-    private void calcularTotal() {
-        this.totalComDesconto = subtotal.multiply(
-            BigDecimal.ONE.subtract(taxaDesconto.divide(new BigDecimal("100")))
-        );
-    }
-
-    // Para Persistable — flag de controle de isNew()
-    @Transient
-    private boolean isNew = true;
-
-    @PostPersist
-    @PostLoad
-    private void markNotNew() {
-        this.isNew = false;
-    }
-}
-```
-
-**Regra prática:** se o campo é derivável de outros campos persistidos ou é estado temporário em memória, use `@Transient`. Se o valor precisa sobreviver entre sessões, deve ser persistido.
+Carregar o pai e acessar a coleção inteira só para remover um filho — evitar em coleções que podem crescer.
 
 ---
 
-## 12. Soft Delete Nativo (@SoftDelete)
-
-Introduzido no Hibernate 6.4 (Spring Boot 3.3+).
-
-### Comportamento do @SoftDelete
-
-```mermaid
-stateDiagram-v2
-    [*] --> Ativo : INSERT (deleted=false)
-    Ativo --> SoftDeletado : em.remove() / collection.remove()
-    note right of SoftDeletado : UPDATE SET deleted=true
-    Ativo --> Ativo : findAll / findById
-    note right of Ativo : WHERE deleted=false (automático)
-    SoftDeletado --> SoftDeletado : Invisível para JPQL
-    SoftDeletado --> Visivel : Query nativa (sem filtro)
-```
-
-```java
-@Entity
-@SoftDelete
-public class Aluno { }
-```
-
-- `em.remove()` gera `UPDATE SET deleted = true` em vez de `DELETE`.
-- Todas as queries adicionam `WHERE deleted = false` automaticamente.
-- Funciona com `orphanRemoval` e `@ManyToMany`.
-
-### Com timestamp
-
-```java
-@Entity
-@SoftDelete(columnName = "deletado_em", converter = DeletedAtConverter.class)
-public class Aluno { }
-```
-
-```java
-public class DeletedAtConverter implements AttributeConverter<Boolean, OffsetDateTime> {
-    @Override
-    public OffsetDateTime convertToDatabaseColumn(Boolean deleted) {
-        return deleted ? OffsetDateTime.now() : null;
-    }
-    @Override
-    public Boolean convertToEntityAttribute(OffsetDateTime deletedAt) {
-        return deletedAt != null;
-    }
-}
-```
-
-### Unique constraints com soft delete — partial index
-
-```sql
-CREATE UNIQUE INDEX uq_aluno_ra_ativo ON aluno (ra) WHERE deleted = false;
-```
-
-### Consultar deletados — query nativa
-
-```java
-@Query(value = "SELECT * FROM aluno WHERE deleted = true", nativeQuery = true)
-List<Aluno> findAllDeletados();
-```
-
----
-
-## 13. Ordenação de Coleções (@OrderBy, @OrderColumn, @SortNatural)
+## 15. Ordenação de Coleções (@OrderBy, @OrderColumn, @SortNatural)
 
 ### @OrderBy (JPA) — ORDER BY no SQL
 
@@ -1338,7 +1309,7 @@ private SortedSet<Matricula> matriculas = new TreeSet<>();
 
 ---
 
-## 14. @ElementCollection vs @OneToMany
+## 16. @ElementCollection vs @OneToMany
 
 ### Comparação de estrutura no banco
 
@@ -1482,7 +1453,7 @@ Ao modificar qualquer elemento, o Hibernate faz **delete-all + reinsert** (sem `
 
 ---
 
-## 15. @EmbeddedId vs @IdClass — PKs Compostas
+## 17. @EmbeddedId vs @IdClass — PKs Compostas
 
 ### Comparação estrutural
 
@@ -1815,7 +1786,2511 @@ flowchart TD
 
 ---
 
-## 16. Recursos Adicionais do JPA/Hibernate
+## 18. Coleções com Map vs Set em Relacionamentos JPA
+
+`Set` é a escolha padrão para coleções JPA. `Map` resolve um problema diferente: **acesso direto por chave** em vez de iteração. O `Map` não é melhor nem pior — ele se justifica quando a semântica chave-valor é natural no domínio.
+
+### Quando Map faz sentido
+
+#### @MapKey — chave é um campo da entidade filha
+
+```java
+@Entity
+public class Curso {
+
+    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+    @MapKey(name = "ra") // campo do Aluno via Matricula
+    private Map<String, Matricula> matriculasPorRa = new HashMap<>();
+}
+```
+
+```java
+// Com Map — O(1)
+Matricula m = curso.getMatriculasPorRa().get("2024001234");
+
+// Com Set — O(n), precisa iterar
+Matricula m = curso.getMatriculas().stream()
+    .filter(mat -> mat.getAluno().getRa().equals("2024001234"))
+    .findFirst()
+    .orElse(null);
+```
+
+#### @MapKeyColumn — chave é uma coluna da tabela (chave-valor puro)
+
+```java
+@Entity
+public class Aluno {
+
+    @ElementCollection
+    @CollectionTable(
+        name = "aluno_configuracao",
+        joinColumns = @JoinColumn(
+            name = "aluno_id",
+            foreignKey = @ForeignKey(name = "fk_aluno_configuracao_aluno")
+        )
+    )
+    @MapKeyColumn(name = "chave")
+    @Column(name = "valor")
+    private Map<String, String> configuracoes = new HashMap<>();
+}
+```
+
+```mermaid
+erDiagram
+    aluno {
+        bigint id PK
+        varchar nome
+    }
+    aluno_configuracao {
+        bigint aluno_id PK,FK "fk_aluno_configuracao_aluno"
+        varchar chave PK
+        varchar valor
+    }
+
+    aluno ||--o{ aluno_configuracao : "ElementCollection Map"
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE aluno_configuracao (
+    aluno_id  BIGINT NOT NULL REFERENCES aluno(id),
+    chave     VARCHAR(255) NOT NULL,
+    valor     VARCHAR(255),
+    PRIMARY KEY (aluno_id, chave)
+);
+```
+
+```java
+aluno.getConfiguracoes().put("tema", "escuro");
+aluno.getConfiguracoes().put("idioma", "pt-BR");
+
+String tema = aluno.getConfiguracoes().get("tema"); // "escuro"
+```
+
+#### @MapKeyEnumerated — enum como chave
+
+```java
+public enum TipoContato {
+    EMAIL, TELEFONE, CELULAR, LINKEDIN
+}
+```
+
+```java
+@Entity
+public class Aluno {
+
+    @ElementCollection
+    @CollectionTable(
+        name = "aluno_contato",
+        joinColumns = @JoinColumn(
+            name = "aluno_id",
+            foreignKey = @ForeignKey(name = "fk_aluno_contato_aluno")
+        )
+    )
+    @MapKeyEnumerated(EnumType.STRING)
+    @MapKeyColumn(name = "tipo")
+    @Column(name = "valor", nullable = false)
+    private Map<TipoContato, String> contatos = new EnumMap<>(TipoContato.class);
+}
+```
+
+```mermaid
+erDiagram
+    aluno {
+        bigint id PK
+        varchar nome
+    }
+    aluno_contato {
+        bigint aluno_id PK,FK "fk_aluno_contato_aluno"
+        varchar tipo PK "EMAIL, TELEFONE, CELULAR, LINKEDIN"
+        varchar valor "NOT NULL"
+    }
+
+    aluno ||--o{ aluno_contato : "Map por enum"
+```
+
+A semântica do `Map` garante no máximo **um valor por tipo** — unicidade na chave é automática:
+
+```java
+aluno.getContatos().put(TipoContato.EMAIL, "aluno@email.com");
+aluno.getContatos().put(TipoContato.CELULAR, "+5511999999999");
+
+String email = aluno.getContatos().get(TipoContato.EMAIL);
+```
+
+#### @MapKeyJoinColumn — outra entidade como chave
+
+```java
+@Entity
+public class Aluno {
+
+    @OneToMany(mappedBy = "aluno", cascade = CascadeType.ALL, orphanRemoval = true)
+    @MapKeyJoinColumn(name = "curso_id")
+    private Map<Curso, Matricula> matriculasPorCurso = new HashMap<>();
+}
+```
+
+```java
+Matricula m = aluno.getMatriculasPorCurso().get(curso);
+BigDecimal nota = m.getNota();
+```
+
+#### @MapKeyColumn com @Embeddable — Map de Value Objects
+
+```java
+@Embeddable
+public record Avaliacao(
+    @Column(nullable = false) BigDecimal nota,
+    @Column(length = 500) String comentario,
+    @Column(nullable = false) LocalDate data
+) {}
+```
+
+```java
+@Entity
+public class Aluno {
+
+    @ElementCollection
+    @CollectionTable(
+        name = "aluno_avaliacao",
+        joinColumns = @JoinColumn(name = "aluno_id")
+    )
+    @MapKeyJoinColumn(name = "curso_id")
+    private Map<Curso, Avaliacao> avaliacoesPorCurso = new HashMap<>();
+}
+```
+
+```mermaid
+erDiagram
+    aluno {
+        bigint id PK
+        varchar nome
+    }
+    aluno_avaliacao {
+        bigint aluno_id FK
+        bigint curso_id FK "chave do Map"
+        numeric nota "NOT NULL"
+        varchar comentario
+        date data "NOT NULL"
+    }
+    curso {
+        bigint id PK
+        varchar nome
+    }
+
+    aluno ||--o{ aluno_avaliacao : "Map ElementCollection"
+    curso ||--o{ aluno_avaliacao : "MapKey"
+```
+
+### Quando Set é melhor (maioria dos casos)
+
+```java
+@OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+private Set<Matricula> matriculas = new HashSet<>();
+```
+
+Se o acesso por chave é eventual, um método de conveniência resolve sem a complexidade do `Map`:
+
+```java
+@Entity
+public class Curso {
+
+    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
+    private Set<Matricula> matriculas = new HashSet<>();
+
+    public Optional<Matricula> findMatriculaPorRa(String ra) {
+        return matriculas.stream()
+            .filter(m -> m.getAluno().getRa().equals(ra))
+            .findFirst();
+    }
+}
+```
+
+Se a coleção não está carregada, uma query direta é mais eficiente que carregar todo o `Map`:
+
+```java
+@Query("SELECT m FROM Matricula m WHERE m.curso.id = :cursoId AND m.aluno.ra = :ra")
+Optional<Matricula> findByCursoAndRa(@Param("cursoId") Long cursoId, @Param("ra") String ra);
+```
+
+### Problemas do Map na prática
+
+**Lazy loading não é granular.** `map.get("chave")` inicializa **toda** a coleção, não só o elemento.
+
+**Chave desatualizada.** Se o campo usado como chave mudar, o mapa fica inconsistente:
+
+```java
+Matricula m = matriculasPorRa.get("2024001234");
+m.getAluno().setRa("2024005678"); // mudou o RA
+
+matriculasPorRa.get("2024005678"); // null — Map não reindexou!
+matriculasPorRa.get("2024001234"); // encontra, mas com RA errado
+```
+
+Por isso, chaves de `Map` devem ser **imutáveis** (`@NaturalId`, enums, ou campos `updatable = false`).
+
+**Serialização JSON.** O Jackson serializa `Map` como objeto, não array:
+
+```json
+// Set → array (padrão esperado em APIs REST)
+{ "matriculas": [ { "nota": 8.5 }, { "nota": 7.0 } ] }
+
+// Map → objeto indexado (pode surpreender o frontend)
+{ "matriculasPorRa": { "2024001234": { "nota": 8.5 }, "2024005678": { "nota": 7.0 } } }
+```
+
+### Comparação direta
+
+| Aspecto | `Set` | `Map` |
+|---|---|---|
+| Acesso por chave | O(n) via stream | O(1) via `get()` |
+| Complexidade de mapeamento | Baixa | Média (precisa de `@MapKey*`) |
+| Semântica | Coleção de filhos | Filhos indexados por chave |
+| Unicidade | Por `equals/hashCode` | Pela chave do Map |
+| Lazy loading | Carrega tudo | Carrega tudo (mesma coisa) |
+| Serialização JSON | Array `[]` | Objeto `{}` |
+| Dirty checking | Simples | Mais complexo |
+| Chave mutável | Não se aplica | Bug silencioso |
+
+### Annotations de mapeamento por tipo de chave
+
+| Tipo da chave | Annotation | Exemplo |
+|---|---|---|
+| Campo da entidade filha | `@MapKey(name = "campo")` | `Map<String, Matricula>` por RA |
+| Coluna simples (String) | `@MapKeyColumn(name = "col")` | `Map<String, String>` configurações |
+| Enum | `@MapKeyEnumerated` + `@MapKeyColumn` | `Map<TipoContato, String>` |
+| Outra entidade | `@MapKeyJoinColumn(name = "col_id")` | `Map<Curso, Matricula>` |
+| Tipo temporal | `@MapKeyTemporal` + `@MapKeyColumn` | `Map<LocalDate, Avaliacao>` |
+
+### Recomendação prática
+
+Use `Set` como padrão para `@OneToMany` e `@ManyToMany`. Reserve `Map` para cenários onde a semântica chave-valor é natural no domínio: configurações (`Map<String, String>`), contatos por tipo (`Map<TipoContato, String>`), avaliações por curso (`Map<Curso, Avaliacao>`), ou quando o acesso indexado por chave imutável é recorrente no código.
+
+---
+
+## Parte 4 — Value Objects, @Embeddable e Tipos Customizados
+
+## 19. Dígitos Verificadores com Value Objects e AttributeConverter
+
+### Value Object com validação no construtor
+
+```java
+public record Cpf(String valor) {
+    private static final int[] PESOS_PRIMEIRO = {10, 9, 8, 7, 6, 5, 4, 3, 2};
+    private static final int[] PESOS_SEGUNDO  = {11, 10, 9, 8, 7, 6, 5, 4, 3, 2};
+
+    public Cpf {
+        Objects.requireNonNull(valor, "CPF não pode ser nulo");
+        String digitos = valor.replaceAll("\\D", "");
+        if (digitos.length() != 11) throw new IllegalArgumentException("CPF deve ter 11 dígitos");
+        if (digitos.chars().distinct().count() == 1) throw new IllegalArgumentException("CPF repetidos");
+        if (!validarDigitos(digitos)) throw new IllegalArgumentException("CPF inválido: " + valor);
+        valor = digitos;
+    }
+
+    private static boolean validarDigitos(String digitos) {
+        int primeiro = Modulo11.calcularDigito(digitos, PESOS_PRIMEIRO);
+        int segundo = Modulo11.calcularDigito(digitos, PESOS_SEGUNDO);
+        return digitos.charAt(9) - '0' == primeiro && digitos.charAt(10) - '0' == segundo;
+    }
+}
+```
+
+### Módulo 11 genérico
+
+```java
+public final class Modulo11 {
+    private Modulo11() {}
+
+    public static int calcularDigito(String digitos, int[] pesos) {
+        int soma = 0;
+        for (int i = 0; i < pesos.length; i++) {
+            soma += (digitos.charAt(i) - '0') * pesos[i];
+        }
+        int resto = soma % 11;
+        return resto < 2 ? 0 : 11 - resto;
+    }
+}
+```
+
+### Bean Validation customizado
+
+```java
+@Target({ElementType.FIELD, ElementType.PARAMETER})
+@Retention(RetentionPolicy.RUNTIME)
+@Constraint(validatedBy = CpfValidator.class)
+public @interface CpfValido {
+    String message() default "CPF inválido";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}
+```
+
+### Arquitetura
+
+```mermaid
+flowchart LR
+    A[Request<br>String] --> B["DTO<br>@CpfValido"]
+    B --> C["new Cpf(valor)<br>Value Object validado"]
+    C --> D["Entity<br>campo Cpf"]
+    D --> E["CpfConverter<br>Cpf ↔ String"]
+    E --> F[("PostgreSQL<br>VARCHAR")]
+
+    style A fill:#f9f,stroke:#333
+    style C fill:#bfb,stroke:#333
+    style F fill:#bbf,stroke:#333
+```
+
+---
+
+## 20. Libs para Validação de Documentos Brasileiros
+
+### Apache Commons Validator
+
+Possui `ModulusCheckDigit` abstrata com `MODULUS_11`, mas implementações são para ISBN, ISSN, EC Number — não para documentos brasileiros.
+
+### Caelum Stella (recomendado para produção)
+
+```xml
+<dependency>
+    <groupId>br.com.caelum.stella</groupId>
+    <artifactId>caelum-stella-core</artifactId>
+    <version>2.2.0</version>
+</dependency>
+```
+
+- Validadores prontos: `CPFValidator`, `CNPJValidator`, NIT, RENAVAM, Título Eleitoral.
+- `DigitoPara`: fluent interface genérica para Módulo 11.
+- Bean Validation: `@CPF`, `@CNPJ` (módulo `caelum-stella-bean-validation`).
+- Geração de valores válidos para testes: `generateRandomValid()`.
+
+---
+
+## 21. @Column com AttributeConverter de Objetos Complexos
+
+As propriedades do `@Column` referem-se ao **tipo convertido** (String, Long no banco), não ao objeto Java.
+
+### Fluxo do AttributeConverter
+
+```mermaid
+flowchart LR
+    subgraph Java
+        VO["Value Object<br>Cnpj, Cpf, Email,<br>Dinheiro, CorHex"]
+    end
+    subgraph Converter["AttributeConverter"]
+        direction TB
+        W["convertToDatabaseColumn()<br>Cnpj → String"]
+        R["convertToEntityAttribute()<br>String → Cnpj"]
+    end
+    subgraph Banco["PostgreSQL"]
+        COL["Coluna simples<br>CHAR, VARCHAR,<br>BIGINT, NUMERIC"]
+    end
+
+    VO -->|"escrita"| W --> COL
+    COL -->|"leitura"| R --> VO
+```
+
+### @Column descreve a coluna, não o objeto
+
+```mermaid
+classDiagram
+    class Empresa {
+        -Long id
+        -String razaoSocial
+        -Cnpj cnpj
+        -Cpf cpfResponsavel
+        -Email email
+        -Dinheiro saldo
+    }
+
+    note for Empresa "@Column(length=14, columnDefinition='CHAR(14)') → cnpj<br>@Column(length=11) → cpfResponsavel<br>@Column(length=255) → email<br>@Column(columnDefinition='BIGINT') → saldo (centavos)"
+```
+
+```java
+@Column(nullable = false, unique = true, length = 14, columnDefinition = "CHAR(14)")
+private Cnpj cnpj; // persiste como CHAR(14) via CnpjConverter
+
+@Column(nullable = false, precision = 19, scale = 2)
+private Dinheiro valor; // converter para BigDecimal
+```
+
+### CHAR vs VARCHAR
+
+- **Tamanho fixo** (CPF, CNPJ): `columnDefinition = "CHAR(n)"`.
+- **Tamanho variável** (Email): `length = n` (VARCHAR padrão).
+
+### Múltiplas colunas → @Embeddable
+
+`AttributeConverter` é sempre 1 objeto → 1 coluna. Para múltiplas colunas, use `@Embeddable` com `@AttributeOverrides`.
+
+### Atributos avançados da annotation @Column
+
+Além dos atributos comuns (`name`, `nullable`, `unique`, `length`, `columnDefinition`), o `@Column` tem atributos menos utilizados mas poderosos:
+
+#### `precision` e `scale` — controle de casas decimais
+
+Aplicável a tipos numéricos (`BigDecimal`, `Double`). Mapeiam para `NUMERIC(precision, scale)` no PostgreSQL:
+
+```java
+@Entity
+public class Produto extends BaseEntity {
+
+    // NUMERIC(19,2) — até 19 dígitos total, 2 decimais → R$ 99.999.999.999.999.999,99
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal preco;
+
+    // NUMERIC(5,4) — até 5 dígitos, 4 decimais → 0.0000 a 9.9999 (taxa percentual)
+    @Column(nullable = false, precision = 5, scale = 4)
+    private BigDecimal taxaJuros;
+
+    // NUMERIC(10,6) — coordenadas geográficas
+    @Column(precision = 10, scale = 6)
+    private BigDecimal latitude;
+
+    @Column(precision = 10, scale = 6)
+    private BigDecimal longitude;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE produto (
+    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    preco      NUMERIC(19,2) NOT NULL,
+    taxa_juros NUMERIC(5,4) NOT NULL,
+    latitude   NUMERIC(10,6),
+    longitude  NUMERIC(10,6)
+);
+```
+
+Convenções comuns para `precision` e `scale`:
+
+| Caso de uso | `precision` | `scale` | Tipo no PostgreSQL |
+|---|---|---|---|
+| Dinheiro (BRL) | 19 | 2 | `NUMERIC(19,2)` |
+| Dinheiro (crypto) | 19 | 8 | `NUMERIC(19,8)` |
+| Percentual (0-100%) | 5 | 2 | `NUMERIC(5,2)` |
+| Taxa/fator (0.0000-9.9999) | 5 | 4 | `NUMERIC(5,4)` |
+| Coordenada geográfica | 10 | 6 | `NUMERIC(10,6)` |
+| Peso/medida | 10 | 3 | `NUMERIC(10,3)` |
+
+#### `check` — constraint CHECK inline (JPA 3.2 / Hibernate 6.5+)
+
+Gera uma constraint `CHECK` diretamente na coluna, sem necessidade de Flyway:
+
+```java
+@Entity
+public class Matricula extends BaseEntity {
+
+    @Column(precision = 4, scale = 2, check = @Check(constraints = "nota >= 0 AND nota <= 10"))
+    private BigDecimal nota;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 31, check = @Check(constraints = "status IN ('ATIVA','PENDENTE','CANCELADA','TRANSFERIDA')"))
+    private StatusMatricula status;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE matricula (
+    nota   NUMERIC(4,2) CHECK (nota >= 0 AND nota <= 10),
+    status VARCHAR(31) NOT NULL CHECK (status IN ('ATIVA','PENDENTE','CANCELADA','TRANSFERIDA'))
+);
+```
+
+O `@Check` também pode ser aplicado no nível da entidade para constraints compostas:
+
+```java
+@Entity
+@Check(constraints = "data_fim > data_inicio")
+public class Reserva extends BaseEntity {
+
+    @Column(nullable = false)
+    private LocalDate dataInicio;
+
+    @Column(nullable = false)
+    private LocalDate dataFim;
+}
+```
+
+#### `options` — cláusula extra no DDL (Hibernate 6.5+)
+
+Adiciona texto literal após a definição da coluna no DDL gerado. Útil para opções específicas do banco:
+
+```java
+@Entity
+public class LogEvento extends BaseEntity {
+
+    // COMPRESSION lz4 no PostgreSQL (requer TOAST)
+    @Column(columnDefinition = "TEXT", options = "COMPRESSION lz4")
+    private String payload;
+
+    // COLLATE específico
+    @Column(length = 200, options = "COLLATE \"pt_BR.utf8\"")
+    private String descricao;
+
+    // STORAGE para controle de TOAST
+    @Column(columnDefinition = "TEXT", options = "STORAGE EXTERNAL")
+    private String dadosBrutos;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE log_evento (
+    payload      TEXT COMPRESSION lz4,
+    descricao    VARCHAR(200) COLLATE "pt_BR.utf8",
+    dados_brutos TEXT STORAGE EXTERNAL
+);
+```
+
+O `options` é concatenado diretamente após a definição da coluna — aceita qualquer texto válido para o dialeto do banco.
+
+#### `table` — coluna em @SecondaryTable
+
+Para mapear um campo em uma tabela secundária:
+
+```java
+@Entity
+@SecondaryTable(name = "aluno_detalhe")
+public class Aluno extends BaseEntity {
+
+    @Column(nullable = false)
+    private String nome;
+
+    // Campos na tabela secundária
+    @Column(table = "aluno_detalhe", length = 1000)
+    private String bio;
+
+    @Column(table = "aluno_detalhe", length = 500)
+    private String fotoUrl;
+}
+```
+
+#### `insertable` e `updatable` — campos read-only parciais
+
+```java
+@Entity
+public class Pagamento extends BaseEntity {
+
+    // Coluna discriminadora — gerenciada pelo Hibernate, read-only para a aplicação
+    @Column(name = "tipo", insertable = false, updatable = false)
+    @Enumerated(EnumType.STRING)
+    private TipoPagamento tipo;
+
+    // Campo setado apenas no INSERT, nunca alterado
+    @Column(nullable = false, updatable = false)
+    private BigDecimal valorOriginal;
+
+    // Campo setado apenas em UPDATE (via trigger ou procedure externa)
+    @Column(insertable = false)
+    private OffsetDateTime processadoEm;
+}
+```
+
+| Combinação | INSERT inclui | UPDATE inclui | Uso típico |
+|---|---|---|---|
+| `insertable=true, updatable=true` (default) | Sim | Sim | Campo normal |
+| `insertable=false, updatable=false` | Não | Não | Read-only (discriminador, campo calculado) |
+| `insertable=true, updatable=false` | Sim | Não | Valor imutável (data de criação, valor original) |
+| `insertable=false, updatable=true` | Não | Sim | Campo preenchido pelo banco, editável depois |
+
+#### Referência completa dos atributos de @Column
+
+| Atributo | Tipo | Default | Efeito |
+|---|---|---|---|
+| `name` | `String` | Nome do campo (snake_case) | Nome da coluna no DDL |
+| `nullable` | `boolean` | `true` | `NOT NULL` no DDL |
+| `unique` | `boolean` | `false` | `UNIQUE` constraint |
+| `length` | `int` | `255` | Tamanho do `VARCHAR` |
+| `precision` | `int` | `0` | Dígitos totais do `NUMERIC` |
+| `scale` | `int` | `0` | Dígitos decimais do `NUMERIC` |
+| `columnDefinition` | `String` | `""` | Sobrescreve **toda** a definição DDL |
+| `table` | `String` | `""` | Tabela da coluna (para `@SecondaryTable`) |
+| `insertable` | `boolean` | `true` | Inclui no `INSERT` |
+| `updatable` | `boolean` | `true` | Inclui no `UPDATE` |
+| `check` | `@Check` | — | Constraint `CHECK` inline (JPA 3.2+) |
+| `options` | `String` | `""` | Texto extra no DDL após a coluna (Hibernate 6.5+) |
+
+---
+
+## 22. Records como @Embeddable
+
+Hibernate 6+ suporta nativamente. Usa o construtor canônico do record.
+
+### Composição de Value Objects com records
+
+```mermaid
+classDiagram
+    class Empresa {
+        -Long id
+        -String razaoSocial
+        -Cnpj cnpj
+        -Endereco endereco
+    }
+    class Endereco {
+        <<Embeddable / record>>
+        -String logradouro
+        -String cidade
+        -String uf
+        -Cep cep
+    }
+    class Cep {
+        <<Embeddable / record>>
+        -String valor
+        +formatado() String
+    }
+    class Cnpj {
+        <<Value Object / record>>
+        -String valor
+        +formatado() String
+    }
+
+    Empresa *-- Endereco : "@Embedded"
+    Empresa *-- Cnpj : "@Convert (autoApply)"
+    Endereco *-- Cep : "aninhado"
+```
+
+```mermaid
+erDiagram
+    empresa {
+        bigint id PK
+        varchar razao_social
+        char_14 cnpj UK "via CnpjConverter"
+        varchar logradouro "Endereco.logradouro"
+        varchar cidade "Endereco.cidade"
+        char_2 uf "Endereco.uf"
+        char_8 cep "Endereco > Cep.valor"
+    }
+```
+
+### Uso direto
+
+```java
+@Embeddable
+public record Endereco(
+    @Column(nullable = false, length = 200) String logradouro,
+    @Column(nullable = false, length = 100) String cidade,
+    @Column(nullable = false, length = 2, columnDefinition = "CHAR(2)") String uf,
+    @Column(nullable = false, length = 8, columnDefinition = "CHAR(8)") String cep
+) {}
+```
+
+### Composição de records aninhados
+
+```java
+@Embeddable
+public record Endereco(
+    String logradouro,
+    @AttributeOverride(name = "valor", column = @Column(name = "cep", columnDefinition = "CHAR(8)"))
+    Cep cep
+) {}
+```
+
+### @AttributeOverride — renomear e customizar colunas de @Embeddable
+
+Quando a mesma classe `@Embeddable` é usada em mais de um campo da entidade, o JPA precisa de `@AttributeOverride` para desambiguar os nomes de coluna. Sem isso, haveria conflito — duas colunas com o mesmo nome.
+
+#### O problema: dois endereços na mesma entidade
+
+```java
+@Embeddable
+public record Endereco(
+    @Column(nullable = false, length = 200) String logradouro,
+    @Column(nullable = false, length = 100) String cidade,
+    @Column(nullable = false, length = 2, columnDefinition = "CHAR(2)") String uf,
+    @Column(nullable = false, length = 8, columnDefinition = "CHAR(8)") String cep
+) {}
+```
+
+```java
+@Entity
+public class Empresa {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String razaoSocial;
+
+    // Sem @AttributeOverride → colisão de nomes de coluna!
+    @Embedded
+    private Endereco enderecoSede;
+
+    @Embedded
+    private Endereco enderecoCorrespondencia;
+}
+```
+
+O Hibernate lançaria erro: colunas `logradouro`, `cidade`, `uf`, `cep` duplicadas.
+
+#### A solução: @AttributeOverrides por campo
+
+```java
+@Entity
+public class Empresa {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String razaoSocial;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "logradouro", column = @Column(name = "sede_logradouro", nullable = false, length = 200)),
+        @AttributeOverride(name = "cidade",     column = @Column(name = "sede_cidade", nullable = false, length = 100)),
+        @AttributeOverride(name = "uf",         column = @Column(name = "sede_uf", nullable = false, columnDefinition = "CHAR(2)")),
+        @AttributeOverride(name = "cep",        column = @Column(name = "sede_cep", nullable = false, columnDefinition = "CHAR(8)"))
+    })
+    private Endereco enderecoSede;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "logradouro", column = @Column(name = "corresp_logradouro", length = 200)),
+        @AttributeOverride(name = "cidade",     column = @Column(name = "corresp_cidade", length = 100)),
+        @AttributeOverride(name = "uf",         column = @Column(name = "corresp_uf", columnDefinition = "CHAR(2)")),
+        @AttributeOverride(name = "cep",        column = @Column(name = "corresp_cep", columnDefinition = "CHAR(8)"))
+    })
+    private Endereco enderecoCorrespondencia;
+}
+```
+
+DDL gerado:
+
+```sql
+CREATE TABLE empresa (
+    id                   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    razao_social         VARCHAR(255),
+    -- Endereço sede
+    sede_logradouro      VARCHAR(200) NOT NULL,
+    sede_cidade          VARCHAR(100) NOT NULL,
+    sede_uf              CHAR(2) NOT NULL,
+    sede_cep             CHAR(8) NOT NULL,
+    -- Endereço correspondência (nullable — pode não ter)
+    corresp_logradouro   VARCHAR(200),
+    corresp_cidade       VARCHAR(100),
+    corresp_uf           CHAR(2),
+    corresp_cep          CHAR(8)
+);
+```
+
+```mermaid
+erDiagram
+    empresa {
+        bigint id PK
+        varchar razao_social
+        varchar sede_logradouro "Endereco sede"
+        varchar sede_cidade "Endereco sede"
+        char_2 sede_uf "Endereco sede"
+        char_8 sede_cep "Endereco sede"
+        varchar corresp_logradouro "Endereco corresp"
+        varchar corresp_cidade "Endereco corresp"
+        char_2 corresp_uf "Endereco corresp"
+        char_8 corresp_cep "Endereco corresp"
+    }
+```
+
+#### Override em @Embeddable aninhado (notação com ponto)
+
+Quando o embeddable contém outro embeddable, use notação com ponto para navegar:
+
+```java
+@Embeddable
+public record Periodo(
+    @Column(nullable = false) LocalDate inicio,
+    @Column(nullable = false) LocalDate fim
+) {}
+
+@Embeddable
+public record DadosContrato(
+    @Column(nullable = false, length = 50) String numero,
+    @Column(nullable = false, precision = 19, scale = 2) BigDecimal valorMensal,
+    Periodo vigencia
+) {}
+```
+
+```java
+@Entity
+public class Contrato {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Embedded
+    @AttributeOverrides({
+        @AttributeOverride(name = "numero",             column = @Column(name = "contrato_numero")),
+        @AttributeOverride(name = "valorMensal",        column = @Column(name = "contrato_valor_mensal")),
+        @AttributeOverride(name = "vigencia.inicio",    column = @Column(name = "contrato_inicio")),
+        @AttributeOverride(name = "vigencia.fim",       column = @Column(name = "contrato_fim"))
+    })
+    private DadosContrato dados;
+}
+```
+
+A notação `vigencia.inicio` navega de `DadosContrato.vigencia` (tipo `Periodo`) até `Periodo.inicio`.
+
+#### Override em @ElementCollection com @Embeddable
+
+O `@AttributeOverride` também funciona em coleções de embeddables:
+
+```java
+@Entity
+public class Funcionario {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nome;
+
+    @ElementCollection
+    @CollectionTable(name = "funcionario_dependente", joinColumns = @JoinColumn(name = "funcionario_id"))
+    @AttributeOverrides({
+        @AttributeOverride(name = "logradouro", column = @Column(name = "dep_logradouro", length = 200)),
+        @AttributeOverride(name = "cidade",     column = @Column(name = "dep_cidade", length = 100)),
+        @AttributeOverride(name = "uf",         column = @Column(name = "dep_uf", columnDefinition = "CHAR(2)")),
+        @AttributeOverride(name = "cep",        column = @Column(name = "dep_cep", columnDefinition = "CHAR(8)"))
+    })
+    private List<Endereco> enderecosDependentes = new ArrayList<>();
+}
+```
+
+#### Resumo de uso do @AttributeOverride
+
+| Cenário | Sintaxe do `name` | Exemplo |
+|---|---|---|
+| Campo direto do embeddable | `"campo"` | `@AttributeOverride(name = "logradouro", ...)` |
+| Embeddable aninhado | `"embeddable.campo"` | `@AttributeOverride(name = "vigencia.inicio", ...)` |
+| Aninhamento profundo | `"a.b.campo"` | `@AttributeOverride(name = "endereco.cep.valor", ...)` |
+| Em `@ElementCollection` | Mesmo padrão | `@AttributeOverride(name = "logradouro", ...)` na coleção |
+
+### Vantagens sobre classes
+
+- Imutabilidade garantida.
+- `equals/hashCode` automático por todos os campos.
+- Construtor canônico com compact constructor para validação.
+
+### Limitação
+
+Se todas as colunas do embeddable forem `NULL` no banco, o Hibernate retorna `null` (não um record com valores nulos).
+
+---
+
+## Parte 5 — DDL, Constraints e Nomeação
+
+## 23. Unique Constraints Compostas
+
+### Exemplo de constraints no modelo
+
+```mermaid
+erDiagram
+    aluno {
+        bigint id PK
+        varchar ra UK "uk_aluno_ra"
+        varchar email UK "uk_aluno_email"
+        varchar nome "uk_aluno_nome_turma (composto)"
+        bigint turma_id FK "uk_aluno_nome_turma (composto)"
+    }
+    matricula {
+        bigint id PK
+        bigint curso_id FK "uk_matricula_curso_aluno (composto)"
+        bigint aluno_id FK "uk_matricula_curso_aluno (composto)"
+        numeric nota
+        varchar status
+    }
+    turma {
+        bigint id PK
+        varchar nome
+    }
+    curso {
+        bigint id PK
+        varchar nome
+    }
+
+    turma ||--o{ aluno : "turma_id"
+    curso ||--o{ matricula : "curso_id"
+    aluno ||--o{ matricula : "aluno_id"
+```
+
+### Fluxo de validação de unicidade
+
+```mermaid
+flowchart TD
+    A[Request criar matrícula] --> B{existsByCursoIdAndAlunoId?}
+    B -->|Sim| C[MatriculaDuplicadaException<br>feedback amigável]
+    B -->|Não| D[repository.save]
+    D --> E{Constraint violation?<br>race condition}
+    E -->|Sim| F[DataIntegrityViolationException<br>Exception Handler identifica por nome]
+    E -->|Não| G[Matrícula criada com sucesso]
+
+    style C fill:#f99,stroke:#333
+    style F fill:#fc9,stroke:#333
+    style G fill:#9f9,stroke:#333
+```
+
+### @UniqueConstraint — sempre com nome legível
+
+```java
+@Table(
+    name = "matricula",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uk_matricula_curso_aluno",
+        columnNames = {"curso_id", "aluno_id"}
+    )
+)
+public class Matricula { }
+```
+
+### Tratamento de violação por nome
+
+```java
+@ExceptionHandler(DataIntegrityViolationException.class)
+public ProblemDetail handleDuplicado(DataIntegrityViolationException ex) {
+    if (ex.getMostSpecificCause().getMessage().contains("uk_matricula_curso_aluno")) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Aluno já matriculado");
+    }
+    return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Registro duplicado");
+}
+```
+
+### Com soft delete — partial index via Flyway
+
+```sql
+CREATE UNIQUE INDEX uk_matricula_curso_aluno_ativo
+    ON matricula (curso_id, aluno_id) WHERE deleted = false;
+```
+
+### Case-insensitive — functional index via Flyway
+
+```sql
+CREATE UNIQUE INDEX uk_aluno_email_lower ON aluno (LOWER(email));
+```
+
+### Validação preventiva + constraint como defesa
+
+```java
+if (repository.existsByCursoIdAndAlunoId(cursoId, alunoId)) {
+    throw new MatriculaDuplicadaException(cursoId, alunoId);
+}
+```
+
+Verificação otimista — constraint é indispensável como última defesa contra race conditions.
+
+---
+
+## 24. Nomeação de Foreign Keys com @ForeignKey
+
+Por padrão, o Hibernate gera nomes de FK como `FKa3b7c9d2e1` — hashes ilegíveis que dificultam debug, migrações e análise de erros de constraint violation. A annotation `@ForeignKey` resolve isso.
+
+### O problema: nomes gerados ilegíveis
+
+Sem `@ForeignKey`, o DDL gerado pelo Hibernate:
+
+```sql
+ALTER TABLE matricula
+    ADD CONSTRAINT FKa3b7c9d2e1 FOREIGN KEY (curso_id) REFERENCES curso(id);
+
+ALTER TABLE matricula
+    ADD CONSTRAINT FK7f8e2a1b9c FOREIGN KEY (aluno_id) REFERENCES aluno(id);
+```
+
+Quando uma violação ocorre, a mensagem de erro é:
+
+```
+ERROR: insert or update on table "matricula" violates foreign key constraint "FKa3b7c9d2e1"
+```
+
+Impossível saber de imediato qual relacionamento falhou.
+
+### A solução: @ForeignKey em @JoinColumn
+
+```java
+@Entity
+public class Matricula {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "curso_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_matricula_curso")
+    )
+    private Curso curso;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "aluno_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_matricula_aluno")
+    )
+    private Aluno aluno;
+
+    private BigDecimal nota;
+}
+```
+
+DDL gerado:
+
+```sql
+ALTER TABLE matricula
+    ADD CONSTRAINT fk_matricula_curso FOREIGN KEY (curso_id) REFERENCES curso(id);
+
+ALTER TABLE matricula
+    ADD CONSTRAINT fk_matricula_aluno FOREIGN KEY (aluno_id) REFERENCES aluno(id);
+```
+
+Agora a mensagem de erro é clara:
+
+```
+ERROR: insert or update on table "matricula" violates foreign key constraint "fk_matricula_curso"
+Detail: Key (curso_id)=(999) is not present in table "curso".
+```
+
+### Convenção de nomeação
+
+O padrão recomendado é `fk_{tabela_origem}_{tabela_destino}` ou `fk_{tabela_origem}_{coluna}`:
+
+| Relacionamento | Nome da FK |
+|---|---|
+| `matricula.curso_id → curso.id` | `fk_matricula_curso` |
+| `matricula.aluno_id → aluno.id` | `fk_matricula_aluno` |
+| `pedido.cliente_id → cliente.id` | `fk_pedido_cliente` |
+| `item_pedido.pedido_id → pedido.id` | `fk_item_pedido_pedido` |
+| `item_pedido.produto_id → produto.id` | `fk_item_pedido_produto` |
+
+Se houver mais de uma FK para a mesma tabela destino, use o nome da coluna para desambiguar:
+
+```java
+@Entity
+public class Transferencia {
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "conta_origem_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_transferencia_conta_origem")
+    )
+    private Conta contaOrigem;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "conta_destino_id",
+        nullable = false,
+        foreignKey = @ForeignKey(name = "fk_transferencia_conta_destino")
+    )
+    private Conta contaDestino;
+}
+```
+
+### @ForeignKey em @JoinTable (ManyToMany)
+
+```java
+@Entity
+public class Curso {
+
+    @ManyToMany
+    @JoinTable(
+        name = "curso_professor",
+        joinColumns = @JoinColumn(
+            name = "curso_id",
+            foreignKey = @ForeignKey(name = "fk_curso_professor_curso")
+        ),
+        inverseJoinColumns = @JoinColumn(
+            name = "professor_id",
+            foreignKey = @ForeignKey(name = "fk_curso_professor_professor")
+        )
+    )
+    private Set<Professor> professores = new HashSet<>();
+}
+```
+
+### @ForeignKey em @SecondaryTable
+
+```java
+@Entity
+@DiscriminatorValue("CARTAO")
+@SecondaryTable(
+    name = "pagamento_cartao",
+    pkJoinColumns = @PrimaryKeyJoinColumn(
+        name = "pagamento_id",
+        foreignKey = @ForeignKey(name = "fk_pagamento_cartao_pagamento")
+    )
+)
+public class PagamentoCartao extends Pagamento { }
+```
+
+### @ForeignKey em @CollectionTable (ElementCollection)
+
+```java
+@Entity
+public class Aluno {
+
+    @ElementCollection
+    @CollectionTable(
+        name = "aluno_telefone",
+        joinColumns = @JoinColumn(
+            name = "aluno_id",
+            foreignKey = @ForeignKey(name = "fk_aluno_telefone_aluno")
+        )
+    )
+    @Column(name = "telefone")
+    private Set<String> telefones = new HashSet<>();
+}
+```
+
+### @ForeignKey em herança JOINED
+
+```java
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED)
+public abstract class Pagamento {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+}
+
+@Entity
+@PrimaryKeyJoinColumn(
+    name = "id",
+    foreignKey = @ForeignKey(name = "fk_pagamento_pix_pagamento")
+)
+public class PagamentoPix extends Pagamento {
+    private String chave;
+}
+```
+
+### Desabilitando FK (casos raros)
+
+Em cenários como tabelas de auditoria ou cross-database, pode ser necessário não gerar a FK:
+
+```java
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(
+    name = "entidade_externa_id",
+    foreignKey = @ForeignKey(name = "none", value = ConstraintMode.NO_CONSTRAINT)
+)
+private EntidadeExterna entidade;
+```
+
+O Hibernate não gera a constraint `FOREIGN KEY` no DDL. Use com cautela — sem FK o banco não garante integridade referencial.
+
+### Estratégia global com ImplicitNamingStrategy
+
+Para não repetir `@ForeignKey` em toda entidade, crie uma naming strategy customizada:
+
+```java
+public class CustomNamingStrategy extends CamelCaseToUnderscoresNamingStrategy {
+
+    @Override
+    public Identifier determineForeignKeyName(ImplicitForeignKeyNameSource source) {
+        String tableName = source.getTableName().getText();
+        String referencedTable = source.getReferencedTableName().getText();
+        String columnName = source.getColumnNames().get(0).getText();
+
+        String name = "fk_" + tableName + "_" + referencedTable;
+
+        // Desambigua se há mais de uma FK para a mesma tabela
+        if (!columnName.equals(referencedTable + "_id")) {
+            name = "fk_" + tableName + "_" + columnName.replace("_id", "");
+        }
+
+        return Identifier.toIdentifier(name);
+    }
+}
+```
+
+Registre no `application.yml`:
+
+```yaml
+spring:
+  jpa:
+    hibernate:
+      naming:
+        implicit-strategy: com.exemplo.config.CustomNamingStrategy
+```
+
+Com isso, **todas** as FKs seguem a convenção automaticamente, sem precisar de `@ForeignKey` em cada `@JoinColumn`.
+
+### Tratamento de violação de FK no Exception Handler
+
+Assim como em unique constraints, o nome legível da FK facilita o tratamento:
+
+```java
+@ExceptionHandler(DataIntegrityViolationException.class)
+public ProblemDetail handleIntegridade(DataIntegrityViolationException ex) {
+    String message = ex.getMostSpecificCause().getMessage();
+
+    if (message.contains("fk_matricula_curso")) {
+        return ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Curso informado não existe"
+        );
+    }
+    if (message.contains("fk_matricula_aluno")) {
+        return ProblemDetail.forStatusAndDetail(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Aluno informado não existe"
+        );
+    }
+
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT,
+        "Violação de integridade referencial"
+    );
+}
+```
+
+### Modelo completo com todas as constraints nomeadas
+
+```mermaid
+erDiagram
+    curso {
+        bigint id PK
+        varchar nome
+    }
+    aluno {
+        bigint id PK
+        varchar nome
+        varchar ra UK "uk_aluno_ra"
+    }
+    matricula {
+        bigint id PK
+        bigint curso_id FK "fk_matricula_curso"
+        bigint aluno_id FK "fk_matricula_aluno"
+        numeric nota
+        varchar status
+    }
+    professor {
+        bigint id PK
+        varchar nome
+    }
+    curso_professor {
+        bigint curso_id FK "fk_curso_professor_curso"
+        bigint professor_id FK "fk_curso_professor_professor"
+    }
+    aluno_telefone {
+        bigint aluno_id FK "fk_aluno_telefone_aluno"
+        varchar telefone
+    }
+
+    curso ||--o{ matricula : "fk_matricula_curso"
+    aluno ||--o{ matricula : "fk_matricula_aluno"
+    curso ||--o{ curso_professor : "fk_curso_professor_curso"
+    professor ||--o{ curso_professor : "fk_curso_professor_professor"
+    aluno ||--o{ aluno_telefone : "fk_aluno_telefone_aluno"
+```
+
+### Resumo: onde usar @ForeignKey
+
+| Contexto | Annotation | Propriedade |
+|---|---|---|
+| `@ManyToOne` / `@OneToOne` | `@JoinColumn` | `foreignKey = @ForeignKey(name = "...")` |
+| `@ManyToMany` | `@JoinTable` → `joinColumns` / `inverseJoinColumns` | `foreignKey = @ForeignKey(name = "...")` |
+| `@ElementCollection` | `@CollectionTable` → `joinColumns` | `foreignKey = @ForeignKey(name = "...")` |
+| `@SecondaryTable` | `pkJoinColumns` → `@PrimaryKeyJoinColumn` | `foreignKey = @ForeignKey(name = "...")` |
+| Herança `JOINED` | `@PrimaryKeyJoinColumn` | `foreignKey = @ForeignKey(name = "...")` |
+| Desabilitar FK | `@JoinColumn` | `foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT)` |
+| Global (todas as FKs) | `ImplicitNamingStrategy` | Override `determineForeignKeyName()` |
+
+A regra é a mesma de unique constraints: **sempre nomeie**. O custo é uma linha extra por relacionamento. O benefício é legibilidade imediata em logs, migrações, monitoramento e exception handlers.
+
+---
+
+## 25. @DynamicInsert — INSERT sem campos nulos (respeita DEFAULTs)
+
+```java
+@Entity
+@DynamicInsert
+public class Configuracao { }
+```
+
+Sem `@DynamicInsert`, o Hibernate inclui **todas** as colunas no INSERT — mesmo as nulas — e sobrescreve o `DEFAULT` definido no DDL:
+
+```sql
+-- Sem @DynamicInsert: campo nulo sobrescreve o DEFAULT do banco
+INSERT INTO configuracao (tema, idioma, timeout) VALUES (NULL, NULL, NULL);
+-- DEFAULT ignorado!
+
+-- Com @DynamicInsert: campos nulos omitidos, banco aplica DEFAULT
+INSERT INTO configuracao () VALUES ();
+-- DEFAULT aplicado!
+```
+
+---
+
+## 26. @ColumnDefault — declarar o DEFAULT na geração do DDL
+
+O `@ColumnDefault` do Hibernate define a cláusula `DEFAULT` da coluna no DDL gerado. É complementar ao `@DynamicInsert`:
+
+```java
+@Entity
+@DynamicInsert // necessário para que o DEFAULT seja respeitado no INSERT
+public class Configuracao extends BaseEntity {
+
+    @ColumnDefault("'escuro'")
+    @Column(nullable = false, length = 50)
+    private String tema;
+
+    @ColumnDefault("'pt-BR'")
+    @Column(nullable = false, length = 10)
+    private String idioma;
+
+    @ColumnDefault("30")
+    @Column(nullable = false)
+    private Integer timeoutMinutos;
+
+    @ColumnDefault("true")
+    @Column(nullable = false)
+    private boolean ativo;
+}
+```
+
+DDL gerado pelo Hibernate:
+
+```sql
+CREATE TABLE configuracao (
+    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tema             VARCHAR(50) NOT NULL DEFAULT 'escuro',
+    idioma           VARCHAR(10) NOT NULL DEFAULT 'pt-BR',
+    timeout_minutos  INTEGER NOT NULL DEFAULT 30,
+    ativo            BOOLEAN NOT NULL DEFAULT true,
+    criado_em        TIMESTAMPTZ NOT NULL,
+    atualizado_em    TIMESTAMPTZ NOT NULL
+);
+```
+
+Uso — os campos não setados recebem o DEFAULT do banco:
+
+```java
+var config = new Configuracao();
+// Não seta tema, idioma, timeout, ativo
+repository.save(config);
+
+// Com @DynamicInsert, o INSERT omite os campos nulos:
+// INSERT INTO configuracao (criado_em, atualizado_em) VALUES (?, ?)
+// Banco aplica: tema='escuro', idioma='pt-BR', timeout_minutos=30, ativo=true
+
+Configuracao salva = repository.findById(config.getId()).orElseThrow();
+salva.getTema();           // "escuro" (DEFAULT do banco)
+salva.getIdioma();         // "pt-BR"
+salva.getTimeoutMinutos(); // 30
+salva.isAtivo();           // true
+```
+
+#### @ColumnDefault com expressões SQL
+
+O valor do `@ColumnDefault` é uma **expressão SQL literal** — strings precisam de aspas simples internas:
+
+```java
+// String literal — aspas simples dentro da anotação
+@ColumnDefault("'pendente'")
+private String status;
+
+// Expressão SQL — função do banco
+@ColumnDefault("NOW()")
+@Column(columnDefinition = "TIMESTAMPTZ")
+private OffsetDateTime criadoEm;
+
+// Expressão SQL — cálculo
+@ColumnDefault("0.00")
+@Column(precision = 19, scale = 2)
+private BigDecimal saldo;
+
+// UUID gerado pelo banco
+@ColumnDefault("GEN_RANDOM_UUID()")
+@Column(columnDefinition = "UUID")
+private UUID codigoPublico;
+
+// Sequência específica
+@ColumnDefault("NEXTVAL('numero_protocolo_seq')")
+private Long numeroProtocolo;
+```
+
+#### @ColumnDefault vs columnDefinition com DEFAULT
+
+Ambos definem DEFAULT, mas `@ColumnDefault` é mais limpo:
+
+```java
+// @ColumnDefault — só o DEFAULT, Hibernate cuida do tipo
+@ColumnDefault("'ativo'")
+@Column(nullable = false, length = 30)
+private String status;
+
+// columnDefinition — precisa repetir o tipo inteiro
+@Column(nullable = false, columnDefinition = "VARCHAR(30) DEFAULT 'ativo'")
+private String status;
+```
+
+O `@ColumnDefault` é preferível porque não acopla a definição de tipo com o default. O `columnDefinition` sobrescreve toda a definição da coluna, o que pode causar problemas em migrações.
+
+#### Quando @ColumnDefault é útil vs desnecessário
+
+| Cenário | @ColumnDefault + @DynamicInsert | Setar no Java |
+|---|---|---|
+| Default simples e fixo | Sim — banco é a fonte de verdade | Também funciona |
+| Default com lógica SQL (`NOW()`, `GEN_RANDOM_UUID()`) | Sim — só o banco executa | Não é possível |
+| Default que pode mudar sem deploy | Sim — altera no banco via Flyway | Precisa de deploy |
+| Campos que a aplicação sempre seta | Desnecessário | Setar no construtor/setter |
+| Compatibilidade com outros clientes SQL | Sim — qualquer INSERT usa o DEFAULT | Não — só via aplicação |
+
+**Regra prática:** use `@ColumnDefault` quando o valor default é relevante para o banco (outros clientes SQL, migrações de dados, consistência). Use inicialização em Java quando o default é puramente lógica da aplicação.
+
+---
+
+## Parte 6 — Timestamps e Tipos Temporais
+
+## 27. OffsetDateTime e Conversão de Timezone
+
+O PostgreSQL `timestamptz` converte tudo para UTC internamente e retorna no timezone da sessão.
+
+### Configuração recomendada — forçar UTC
+
+```yaml
+spring:
+  datasource:
+    hikari:
+      connection-init-sql: SET timezone = 'UTC'
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+```
+
+### Mapeamento correto
+
+```java
+@Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT NOW()")
+@CreationTimestamp
+private OffsetDateTime criadoEm;
+```
+
+**Regra de ouro:** persista em UTC, converta na camada de apresentação.
+
+### Fluxo completo
+
+```mermaid
+sequenceDiagram
+    participant Java as Java (OffsetDateTime)
+    participant Hibernate as Hibernate (jdbc.time_zone=UTC)
+    participant JDBC as JDBC Driver
+    participant PG as PostgreSQL (TIMESTAMPTZ)
+
+    Note over Java: 2026-03-13T14:30:00-03:00
+
+    Java->>Hibernate: persist(entity)
+    Hibernate->>JDBC: setObject() convertido UTC
+    Note over JDBC: 2026-03-13T17:30:00+00:00
+    JDBC->>PG: INSERT
+    Note over PG: Armazena 17:30:00 UTC<br/>(offset descartado)
+
+    Java->>Hibernate: find(id)
+    Hibernate->>JDBC: executeQuery()
+    PG->>JDBC: 17:30:00+00 (timezone sessão)
+    JDBC->>Hibernate: ResultSet
+    Hibernate->>Java: OffsetDateTime
+    Note over Java: 2026-03-13T17:30:00Z<br/>(converte para usuário na apresentação)
+```
+
+---
+
+## 28. OffsetDateTime vs ZonedDateTime na Modelagem de Entidades
+
+Ambos representam um instante no tempo com informação de fuso, mas com granularidades diferentes. A escolha impacta o mapeamento JPA e a portabilidade dos dados.
+
+### A diferença fundamental
+
+`OffsetDateTime` carrega um **deslocamento fixo** em relação ao UTC. `ZonedDateTime` carrega uma **região/timezone** que inclui regras de horário de verão.
+
+```java
+// OffsetDateTime — offset fixo, sem regras de DST
+OffsetDateTime odt = OffsetDateTime.of(2025, 1, 15, 14, 30, 0, 0, ZoneOffset.ofHours(-3));
+// 2025-01-15T14:30:00-03:00
+
+// ZonedDateTime — timezone com regras de DST
+ZonedDateTime zdt = ZonedDateTime.of(2025, 1, 15, 14, 30, 0, 0, ZoneId.of("America/Sao_Paulo"));
+// 2025-01-15T14:30:00-03:00[America/Sao_Paulo]
+```
+
+No exemplo acima, ambos resolvem para o mesmo instante. A diferença aparece quando o horário de verão entra em jogo — o `ZonedDateTime` ajusta automaticamente, o `OffsetDateTime` não sabe que existe DST.
+
+```mermaid
+classDiagram
+    class OffsetDateTime {
+        -LocalDateTime dateTime
+        -ZoneOffset offset
+        +toInstant() Instant
+        +atZoneSameInstant(ZoneId) ZonedDateTime
+    }
+    class ZonedDateTime {
+        -LocalDateTime dateTime
+        -ZoneOffset offset
+        -ZoneId zone
+        +toInstant() Instant
+        +toOffsetDateTime() OffsetDateTime
+    }
+    class ZoneOffset {
+        -int totalSeconds
+        +ofHours(int) ZoneOffset
+        +UTC ZoneOffset
+    }
+    class ZoneId {
+        -String id
+        +of(String) ZoneId
+        +getRules() ZoneRules
+    }
+    class ZoneRules {
+        +isDaylightSavings(Instant) boolean
+        +getOffset(Instant) ZoneOffset
+    }
+
+    OffsetDateTime *-- ZoneOffset : "offset fixo"
+    ZonedDateTime *-- ZoneOffset : "offset atual"
+    ZonedDateTime *-- ZoneId : "regras de timezone"
+    ZoneId --> ZoneRules : "consulta regras DST"
+
+    note for OffsetDateTime "Sabe o deslocamento<br>NÃO sabe regras de DST"
+    note for ZonedDateTime "Sabe o timezone completo<br>Ajusta DST automaticamente"
+```
+
+### O que o PostgreSQL armazena
+
+O `TIMESTAMPTZ` armazena **apenas o instante UTC**. Não guarda nem o offset nem o timezone:
+
+```sql
+-- Ambos resultam no mesmo valor armazenado
+INSERT INTO evento (criado_em) VALUES ('2025-01-15T14:30:00-03:00');
+INSERT INTO evento (criado_em) VALUES ('2025-01-15T17:30:00+00:00');
+
+-- PostgreSQL armazena internamente: 2025-01-15 17:30:00 UTC (nos dois casos)
+```
+
+### O problema do ZonedDateTime com JPA
+
+O Hibernate mapeia `ZonedDateTime` para `TIMESTAMPTZ`, mas a informação do timezone é **perdida** no roundtrip:
+
+```mermaid
+sequenceDiagram
+    participant Java as Java (ZonedDateTime)
+    participant Hib as Hibernate
+    participant PG as PostgreSQL
+
+    Note over Java: 14:30:00-03:00<br/>[America/Sao_Paulo]
+
+    Java->>Hib: persist(evento)
+    Hib->>PG: INSERT 17:30:00 UTC
+    Note over PG: Armazena instante UTC<br/>timezone DESCARTADO
+
+    Java->>Hib: find(id)
+    PG->>Hib: 17:30:00+00
+    Hib->>Java: ZonedDateTime
+    Note over Java: 17:30:00Z[UTC]<br/>⚠️ NÃO é mais<br/>America/Sao_Paulo!
+```
+
+```java
+// Gravação
+ZonedDateTime original = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo"));
+// 2025-01-15T14:30:00-03:00[America/Sao_Paulo]
+evento.setCriadoEm(original);
+repository.save(evento);
+
+// Leitura
+Evento lido = repository.findById(id).orElseThrow();
+lido.getCriadoEm();
+// 2025-01-15T17:30:00Z[UTC]  ← timezone original PERDIDO!
+```
+
+O instante é o mesmo, mas `getCriadoEm().getZone()` retorna `UTC`, não `America/Sao_Paulo`. Qualquer lógica que dependa do timezone original vai quebrar.
+
+### OffsetDateTime — roundtrip previsível
+
+```mermaid
+sequenceDiagram
+    participant Java as Java (OffsetDateTime)
+    participant Hib as Hibernate
+    participant PG as PostgreSQL
+
+    Note over Java: 14:30:00-03:00
+
+    Java->>Hib: persist(evento)
+    Hib->>PG: INSERT 17:30:00 UTC
+    Note over PG: Armazena instante UTC
+
+    Java->>Hib: find(id)
+    PG->>Hib: 17:30:00+00
+    Hib->>Java: OffsetDateTime
+    Note over Java: 17:30:00+00:00<br/>✅ Comportamento esperado<br/>Converte para local na apresentação
+```
+
+### Quando a diferença importa: agendamentos futuros
+
+```java
+// Agendar reunião para "15h horário de São Paulo" em outubro
+// Se o Brasil reintroduzir horário de verão:
+
+// OffsetDateTime: 15:00-03:00 → sempre 15:00-03:00 (offset fixo)
+// Se DST mudar o fuso para -02:00, o horário LOCAL será 16:00
+// O instante no tempo não muda, mas o relógio local muda.
+
+// ZonedDateTime: 15:00 America/Sao_Paulo → ajusta com DST
+// Sempre 15:00 no relógio de São Paulo, independente de DST
+// O instante UTC muda conforme as regras do timezone.
+```
+
+### Mapeamento recomendado: OffsetDateTime para persistência
+
+```java
+@MappedSuperclass
+public abstract class BaseEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime criadoEm;
+
+    @UpdateTimestamp
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime atualizadoEm;
+}
+```
+
+### Quando precisa do timezone: persista separadamente
+
+Para agendamentos futuros que devem respeitar DST, persista o instante e o timezone como duas colunas:
+
+```java
+@Entity
+public class Agendamento extends BaseEntity {
+
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime dataHoraUtc;
+
+    @Column(nullable = false, length = 50)
+    private String timezone; // "America/Sao_Paulo"
+
+    private String descricao;
+
+    // Reconstrói ZonedDateTime quando necessário (em memória)
+    public ZonedDateTime getDataHoraLocal() {
+        return dataHoraUtc.atZoneSameInstant(ZoneId.of(timezone));
+    }
+
+    // Factory method a partir de ZonedDateTime
+    public static Agendamento of(ZonedDateTime dataHoraLocal, String descricao) {
+        var agendamento = new Agendamento();
+        agendamento.dataHoraUtc = dataHoraLocal.toOffsetDateTime();
+        agendamento.timezone = dataHoraLocal.getZone().getId();
+        agendamento.descricao = descricao;
+        return agendamento;
+    }
+}
+```
+
+```mermaid
+erDiagram
+    agendamento {
+        bigint id PK
+        timestamptz data_hora_utc "instante em UTC"
+        varchar timezone "America/Sao_Paulo"
+        varchar descricao
+        timestamptz criado_em
+        timestamptz atualizado_em
+    }
+```
+
+Uso:
+
+```java
+// Criar agendamento para 15h em São Paulo
+ZonedDateTime reuniao = ZonedDateTime.of(
+    2025, 10, 20, 15, 0, 0, 0,
+    ZoneId.of("America/Sao_Paulo")
+);
+Agendamento ag = Agendamento.of(reuniao, "Review Sprint 42");
+repository.save(ag);
+
+// Leitura — reconstrói o ZonedDateTime
+Agendamento lido = repository.findById(id).orElseThrow();
+ZonedDateTime local = lido.getDataHoraLocal();
+// 2025-10-20T15:00:00-03:00[America/Sao_Paulo]  ✅ timezone preservado
+```
+
+O instante fica no `TIMESTAMPTZ` (otimizado para comparações, índices e ordenação) e o timezone como `VARCHAR` é preservado integralmente.
+
+### Conversão na apresentação (API REST)
+
+Para endpoints que retornam datas no timezone do usuário:
+
+```java
+public record AgendamentoResponse(
+    Long id,
+    String descricao,
+    OffsetDateTime dataHoraUtc,
+    String timezone,
+    String dataHoraLocal // formatado no fuso do agendamento
+) {
+
+    public static AgendamentoResponse of(Agendamento ag) {
+        ZonedDateTime local = ag.getDataHoraLocal();
+        return new AgendamentoResponse(
+            ag.getId(),
+            ag.getDescricao(),
+            ag.getDataHoraUtc(),
+            ag.getTimezone(),
+            local.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm (z)"))
+        );
+    }
+}
+```
+
+JSON resultante:
+
+```json
+{
+    "id": 1,
+    "descricao": "Review Sprint 42",
+    "dataHoraUtc": "2025-10-20T18:00:00Z",
+    "timezone": "America/Sao_Paulo",
+    "dataHoraLocal": "20/10/2025 15:00 (BRT)"
+}
+```
+
+### Comparação direta
+
+| Aspecto | `OffsetDateTime` | `ZonedDateTime` |
+|---|---|---|
+| Informação | Offset fixo (`-03:00`) | Timezone + regras DST |
+| Mapeamento JDBC/Hibernate | Direto para `TIMESTAMPTZ` | Direto para `TIMESTAMPTZ` |
+| Roundtrip banco → Java | Offset preservado (da sessão) | **Timezone perdido** |
+| ISO 8601 / APIs REST | Formato nativo | Precisa converter |
+| Regras de DST | Não conhece | Ajusta automaticamente |
+| Uso em JPA | Recomendado | Evitar como campo persistido |
+| Comparação/ordenação | Direto no SQL | Direto no SQL (mesmo instante) |
+
+### Resumo de decisão
+
+```mermaid
+flowchart TD
+    A[Preciso persistir data/hora] --> B{Qual o caso de uso?}
+
+    B -->|"Auditoria / transações<br>(quando aconteceu)"| C[OffsetDateTime]
+    B -->|"Agendamento futuro<br>(respeitar DST)"| D["OffsetDateTime<br>+ String timezone<br>(duas colunas)"]
+    B -->|"Timezone do usuário<br>na apresentação"| E["OffsetDateTime no banco<br>Converte no DTO/Response"]
+
+    C --> F["@Column TIMESTAMPTZ<br>+ hibernate.jdbc.time_zone=UTC"]
+    D --> G["TIMESTAMPTZ + VARCHAR(50)<br>Reconstrói ZonedDateTime em memória"]
+    E --> H["getDataHoraUtc()<br>.atZoneSameInstant(fusoUsuario)"]
+
+    style C fill:#9f9,stroke:#333
+    style D fill:#9f9,stroke:#333
+    style E fill:#9f9,stroke:#333
+```
+
+A regra é: `OffsetDateTime` para persistência, `ZonedDateTime` para lógica de apresentação e agendamento em memória. O banco de dados não é o lugar para guardar regras de timezone — essas regras mudam com legislação e o banco não as acompanha.
+
+---
+
+## 29. Migração de java.util.Date para java.time em Entidades JPA
+
+A migração é direta porque o PostgreSQL já armazena os dados no formato correto — a mudança é apenas no tipo Java, sem alterar colunas no banco na maioria dos casos.
+
+### Entidade legada com java.util.Date
+
+```java
+@Entity
+public class Pedido {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private BigDecimal total;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "criado_em")
+    private Date criadoEm;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "atualizado_em")
+    private Date atualizadoEm;
+
+    @Temporal(TemporalType.DATE)
+    @Column(name = "data_entrega")
+    private Date dataEntrega;
+
+    @Temporal(TemporalType.TIME)
+    @Column(name = "hora_limite")
+    private Date horaLimite;
+}
+```
+
+### Mapeamento direto: @Temporal → java.time
+
+```mermaid
+flowchart LR
+    subgraph "java.util (legado)"
+        D1["@Temporal(TIMESTAMP)<br>Date"]
+        D2["@Temporal(DATE)<br>Date"]
+        D3["@Temporal(TIME)<br>Date"]
+    end
+
+    subgraph "Coluna PostgreSQL"
+        C1["TIMESTAMPTZ"]
+        C2["TIMESTAMP"]
+        C3["DATE"]
+        C4["TIME"]
+    end
+
+    subgraph "java.time (moderno)"
+        T1["OffsetDateTime"]
+        T2["LocalDateTime"]
+        T3["LocalDate"]
+        T4["LocalTime"]
+    end
+
+    D1 --> C1
+    D1 --> C2
+    D2 --> C3
+    D3 --> C4
+
+    C1 --> T1
+    C2 --> T2
+    C3 --> T3
+    C4 --> T4
+
+    style D1 fill:#f99,stroke:#333
+    style D2 fill:#f99,stroke:#333
+    style D3 fill:#f99,stroke:#333
+    style T1 fill:#9f9,stroke:#333
+    style T2 fill:#9f9,stroke:#333
+    style T3 fill:#9f9,stroke:#333
+    style T4 fill:#9f9,stroke:#333
+```
+
+| `@Temporal` | Tipo no banco | Substituto `java.time` |
+|---|---|---|
+| `TemporalType.TIMESTAMP` | `TIMESTAMPTZ` | `OffsetDateTime` |
+| `TemporalType.TIMESTAMP` | `TIMESTAMP` | `LocalDateTime` |
+| `TemporalType.DATE` | `DATE` | `LocalDate` |
+| `TemporalType.TIME` | `TIME` | `LocalTime` |
+
+### Passo 1: Identificar o tipo real da coluna
+
+```sql
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'pedido'
+  AND column_name IN ('criado_em', 'atualizado_em', 'data_entrega', 'hora_limite');
+```
+
+```
+| column_name   | data_type                  | Tipo java.time     |
+|---------------|----------------------------|--------------------|
+| criado_em     | timestamp with time zone   | OffsetDateTime     |
+| atualizado_em | timestamp with time zone   | OffsetDateTime     |
+| data_entrega  | date                       | LocalDate          |
+| hora_limite   | time without time zone     | LocalTime          |
+```
+
+### Passo 2: Substituir os tipos (zero impacto no DDL)
+
+```java
+@Entity
+public class Pedido {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private BigDecimal total;
+
+    // ANTES: @Temporal(TemporalType.TIMESTAMP) Date criadoEm
+    @Column(name = "criado_em", nullable = false, updatable = false)
+    @CreationTimestamp
+    private OffsetDateTime criadoEm;
+
+    // ANTES: @Temporal(TemporalType.TIMESTAMP) Date atualizadoEm
+    @Column(name = "atualizado_em", nullable = false)
+    @UpdateTimestamp
+    private OffsetDateTime atualizadoEm;
+
+    // ANTES: @Temporal(TemporalType.DATE) Date dataEntrega
+    @Column(name = "data_entrega")
+    private LocalDate dataEntrega;
+
+    // ANTES: @Temporal(TemporalType.TIME) Date horaLimite
+    @Column(name = "hora_limite")
+    private LocalTime horaLimite;
+}
+```
+
+O `@Temporal` é **removido** — o Hibernate 6 infere o tipo SQL a partir do tipo Java. Nenhuma migration Flyway necessária se o tipo da coluna no banco já corresponde.
+
+### Passo 3: Atualizar o código que consome a entidade
+
+#### Comparações
+
+```java
+// ANTES (java.util.Date)
+if (pedido.getCriadoEm().before(new Date())) { }
+if (pedido.getCriadoEm().after(limiteDate)) { }
+
+// DEPOIS (java.time)
+if (pedido.getCriadoEm().isBefore(OffsetDateTime.now())) { }
+if (pedido.getCriadoEm().isAfter(limite)) { }
+```
+
+#### Formatação
+
+```java
+// ANTES — não thread-safe!
+SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+String formatted = sdf.format(pedido.getCriadoEm());
+
+// DEPOIS — imutável, thread-safe
+DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+String formatted = pedido.getCriadoEm().format(fmt);
+```
+
+#### Manipulação
+
+```java
+// ANTES
+Calendar cal = Calendar.getInstance();
+cal.setTime(pedido.getDataEntrega());
+cal.add(Calendar.DAY_OF_MONTH, 30);
+Date novaData = cal.getTime();
+
+// DEPOIS
+LocalDate novaData = pedido.getDataEntrega().plusDays(30);
+```
+
+#### Criação de instâncias
+
+```java
+// ANTES
+Date agora = new Date();
+Date dataEspecifica = new SimpleDateFormat("yyyy-MM-dd").parse("2025-06-15");
+
+// DEPOIS
+OffsetDateTime agora = OffsetDateTime.now();
+LocalDate dataEspecifica = LocalDate.of(2025, 6, 15);
+```
+
+### Caso especial: TIMESTAMP (sem tz) → OffsetDateTime
+
+Se a coluna é `timestamp without time zone` mas você quer migrar para `OffsetDateTime`, precisa de migration:
+
+```sql
+-- V10__migrate_timestamp_to_timestamptz.sql
+ALTER TABLE pedido
+    ALTER COLUMN criado_em TYPE TIMESTAMPTZ
+    USING criado_em AT TIME ZONE 'America/Sao_Paulo';
+
+ALTER TABLE pedido
+    ALTER COLUMN atualizado_em TYPE TIMESTAMPTZ
+    USING atualizado_em AT TIME ZONE 'America/Sao_Paulo';
+```
+
+O `AT TIME ZONE 'America/Sao_Paulo'` diz ao PostgreSQL que os valores existentes estavam nesse fuso, e ele converte para UTC internamente. Sem o `USING`, o PostgreSQL assume UTC — o que pode estar errado se a aplicação gravava no horário local.
+
+```mermaid
+sequenceDiagram
+    participant App as Aplicação
+    participant FW as Flyway
+    participant PG as PostgreSQL
+
+    Note over App: Entidade ainda com Date
+
+    FW->>PG: ALTER COLUMN criado_em TYPE TIMESTAMPTZ<br/>USING criado_em AT TIME ZONE 'America/Sao_Paulo'
+    Note over PG: Converte valores existentes<br/>2025-01-15 14:30:00<br/>→ 2025-01-15 17:30:00 UTC
+
+    Note over App: Deploy com OffsetDateTime
+    App->>PG: SELECT criado_em FROM pedido
+    PG->>App: 2025-01-15 17:30:00+00
+    Note over App: OffsetDateTime.parse(...)
+```
+
+### Caso especial: java.sql.Date e java.sql.Timestamp
+
+```java
+// ANTES (java.sql)
+private java.sql.Date dataEntrega;
+private java.sql.Timestamp criadoEm;
+
+// DEPOIS (java.time) — mesma substituição
+private LocalDate dataEntrega;
+private OffsetDateTime criadoEm;
+```
+
+### Convivência temporária: getter legado @Deprecated
+
+Se a migração precisa ser gradual (entidade consumida por muitos services):
+
+```java
+@Entity
+public class Pedido {
+
+    @Column(name = "criado_em")
+    private OffsetDateTime criadoEm;
+
+    // Getter principal — código novo usa este
+    public OffsetDateTime getCriadoEm() {
+        return criadoEm;
+    }
+
+    // Getter para código legado que ainda espera Date
+    @Deprecated(forRemoval = true)
+    public Date getCriadoEmAsDate() {
+        return criadoEm == null ? null : Date.from(criadoEm.toInstant());
+    }
+}
+```
+
+O `@Deprecated(forRemoval = true)` sinaliza para a equipe que o getter legado será removido, e a IDE marca como strikethrough.
+
+### Tabela de conversão entre tipos (referência rápida)
+
+```java
+// ── Date → java.time ──────────────────────────────────────
+
+// Date → OffsetDateTime
+OffsetDateTime odt = date.toInstant().atOffset(ZoneOffset.UTC);
+
+// Date → LocalDateTime (assume fuso da JVM — cuidado!)
+LocalDateTime ldt = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+
+// Date → LocalDate
+LocalDate ld = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+
+// ── java.time → Date ──────────────────────────────────────
+
+// OffsetDateTime → Date
+Date date = Date.from(odt.toInstant());
+
+// LocalDateTime → Date (assume fuso da JVM)
+Date date = Date.from(ldt.atZone(ZoneId.systemDefault()).toInstant());
+
+// LocalDate → Date (meia-noite no fuso da JVM)
+Date date = Date.from(ld.atStartOfDay(ZoneId.systemDefault()).toInstant());
+```
+
+### Checklist de migração
+
+```mermaid
+flowchart TD
+    A["1. Verificar tipo real das colunas<br>(information_schema)"] --> B{Tipo da coluna?}
+
+    B -->|TIMESTAMPTZ| C["Trocar para OffsetDateTime<br>✅ zero impacto no banco"]
+    B -->|TIMESTAMP| D{Quer timezone?}
+    B -->|DATE| E["Trocar para LocalDate<br>✅ zero impacto no banco"]
+    B -->|TIME| F["Trocar para LocalTime<br>✅ zero impacto no banco"]
+
+    D -->|Sim| G["Migration Flyway:<br>ALTER TYPE TIMESTAMPTZ<br>USING AT TIME ZONE 'fuso'<br>Depois: OffsetDateTime"]
+    D -->|Não| H["Trocar para LocalDateTime<br>✅ zero impacto no banco"]
+
+    C --> I["Remover @Temporal"]
+    E --> I
+    F --> I
+    G --> I
+    H --> I
+
+    I --> J["Atualizar comparações,<br>formatações e DTOs"]
+    J --> K["Deprecar getters legados<br>com @Deprecated forRemoval"]
+
+    style C fill:#9f9,stroke:#333
+    style E fill:#9f9,stroke:#333
+    style F fill:#9f9,stroke:#333
+    style H fill:#9f9,stroke:#333
+    style G fill:#fc9,stroke:#333
+```
+
+| Etapa | Ação | Impacto no banco |
+|---|---|---|
+| 1 | Verificar tipo real das colunas (`information_schema`) | Nenhum |
+| 2 | `TIMESTAMPTZ` → `OffsetDateTime` | Nenhum |
+| 3 | `TIMESTAMP` → `LocalDateTime` | Nenhum |
+| 4 | `DATE` → `LocalDate` | Nenhum |
+| 5 | `TIME` → `LocalTime` | Nenhum |
+| 6 | `TIMESTAMP` → `OffsetDateTime` (upgrade de coluna) | Migration: `ALTER TYPE TIMESTAMPTZ` |
+| 7 | Remover `@Temporal` | Nenhum |
+| 8 | Atualizar comparações, formatações, DTOs | Nenhum |
+| 9 | Deprecar getters legados com `Date` | Nenhum |
+
+Na grande maioria dos casos (etapas 1–5 e 7–9), a migração é puramente Java — nenhuma alteração no banco. A única situação que exige Flyway migration é quando se quer **promover** uma coluna `TIMESTAMP` para `TIMESTAMPTZ`.
+
+---
+
+## Parte 7 — Recursos Avançados do Hibernate
+
+## 30. Recursos Pouco Conhecidos do JPA/Hibernate
+
+### @Formula — campo calculado sem coluna
+
+```java
+@Formula("preco - desconto")
+private BigDecimal precoFinal;
+
+@Formula("(SELECT COUNT(*) FROM avaliacao a WHERE a.produto_id = id)")
+private Long totalAvaliacoes;
+```
+
+### @SQLRestriction — filtro automático (substitui @Where deprecado no Hibernate 6.3+)
+
+```java
+@Entity
+@SQLRestriction("deletado_em IS NULL")
+public class Produto {
+    private OffsetDateTime deletadoEm;
+}
+```
+
+### @Filter — filtro dinâmico para multi-tenancy
+
+```java
+@Entity
+@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = Long.class))
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
+public class Documento { }
+```
+
+### @NaturalId — cache e lookup por chave natural
+
+```java
+@NaturalId
+@Column(nullable = false, unique = true)
+private String ra;
+```
+
+### @DynamicUpdate — UPDATE só dos campos alterados
+
+```java
+@Entity
+@DynamicUpdate
+public class Pedido { }
+```
+
+### AttributeConverter — tipo custom transparente
+
+```java
+@Converter(autoApply = true)
+public class CpfConverter implements AttributeConverter<Cpf, String> {
+    @Override
+    public String convertToDatabaseColumn(Cpf cpf) {
+        return cpf == null ? null : cpf.valor();
+    }
+    @Override
+    public Cpf convertToEntityAttribute(String valor) {
+        return valor == null ? null : new Cpf(valor);
+    }
+}
+```
+
+### @CreationTimestamp e @UpdateTimestamp
+
+Annotations do Hibernate que preenchem automaticamente timestamps de auditoria:
+
+```java
+@MappedSuperclass
+public abstract class BaseEntity {
+    @CreationTimestamp
+    @Column(updatable = false)
+    private OffsetDateTime criadoEm;
+
+    @UpdateTimestamp
+    private OffsetDateTime atualizadoEm;
+}
+```
+
+O Hibernate preenche `criadoEm` no `persist()` e `atualizadoEm` em todo `persist()` e `merge()`. Mais simples que `@PrePersist` / `@PreUpdate` manual.
+
+#### Spring Data JPA Auditing — @CreatedDate, @LastModifiedDate, @CreatedBy, @LastModifiedBy
+
+O Spring Data oferece uma alternativa que **também rastreia quem** fez a operação (além de quando):
+
+```java
+@MappedSuperclass
+@EntityListeners(AuditingEntityListener.class)
+public abstract class AuditableEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @CreatedDate
+    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime criadoEm;
+
+    @LastModifiedDate
+    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime atualizadoEm;
+
+    @CreatedBy
+    @Column(updatable = false, length = 100)
+    private String criadoPor;
+
+    @LastModifiedBy
+    @Column(length = 100)
+    private String atualizadoPor;
+}
+```
+
+Requer configuração:
+
+```java
+@Configuration
+@EnableJpaAuditing
+public class JpaAuditingConfig {
+
+    @Bean
+    public AuditorAware<String> auditorAware() {
+        return () -> Optional.ofNullable(SecurityContextHolder.getContext())
+            .map(SecurityContext::getAuthentication)
+            .filter(Authentication::isAuthenticated)
+            .map(Authentication::getName);
+    }
+}
+```
+
+O `AuditingEntityListener` é um `@EntityListeners` que o Spring Data registra automaticamente com `@EnableJpaAuditing`. O `AuditorAware` fornece o nome do usuário corrente — no exemplo, via Spring Security.
+
+#### Comparação
+
+| Aspecto | `@CreationTimestamp` / `@UpdateTimestamp` | `@CreatedDate` / `@LastModifiedDate` |
+|---|---|---|
+| Provedor | Hibernate | Spring Data JPA |
+| Rastreia "quando" | Sim | Sim |
+| Rastreia "quem" | Não | Sim (`@CreatedBy` / `@LastModifiedBy`) |
+| Requer `@EntityListeners` | Não | Sim (`AuditingEntityListener`) |
+| Requer `@EnableJpaAuditing` | Não | Sim |
+| Funciona sem Spring | Sim | Não |
+| Tipo suportado | `OffsetDateTime`, `Instant`, `Date`, `Calendar` | `OffsetDateTime`, `Instant`, `LocalDateTime`, `Date`, `Long` |
+
+Use `@CreationTimestamp` / `@UpdateTimestamp` quando precisa **apenas** de timestamps e quer menos configuração. Use Spring Data Auditing quando precisa de `@CreatedBy` / `@LastModifiedBy` ou já tem `@EnableJpaAuditing` configurado.
+
+### @BatchSize — controle de N+1 sem JOIN FETCH
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant DB
+
+    rect rgb(240, 210, 200)
+        Note over App,DB: Sem @BatchSize — N+1 (100 queries)
+        App->>DB: SELECT * FROM curso (100 cursos)
+        loop Para cada curso
+            App->>DB: SELECT * FROM matricula WHERE curso_id = ?
+        end
+        Note over App,DB: Total: 101 queries
+    end
+
+    rect rgb(200, 230, 200)
+        Note over App,DB: Com @BatchSize(size=25) — 5 queries
+        App->>DB: SELECT * FROM curso (100 cursos)
+        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
+        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
+        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
+        App->>DB: SELECT * FROM matricula WHERE curso_id IN (?,?,...25 ids)
+        Note over App,DB: Total: 5 queries
+    end
+```
+
+```java
+@OneToMany(mappedBy = "curso")
+@BatchSize(size = 25)
+private Set<Matricula> matriculas;
+```
+
+### Projeções com interface
+
+```java
+public interface CursoResumo {
+    Long getId();
+    String getNome();
+    long getTotalMatriculas();
+}
+```
+
+### @Immutable — entidade read-only (sem dirty checking)
+
+```java
+@Entity
+@Immutable
+public class VwRelatorioMatriculas { }
+```
+
+### @Transient — campos não persistidos
+
+Campos marcados com `@Transient` (JPA) ou `transient` (Java) são ignorados pelo Hibernate — não geram coluna no banco e não participam de INSERT/UPDATE/SELECT:
+
+```java
+@Entity
+public class Aluno extends BaseEntity {
+
+    @Column(nullable = false)
+    private String nome;
+
+    @Column(nullable = false, unique = true)
+    private String ra;
+
+    private BigDecimal nota;
+
+    // ── Campo calculado em memória — não existe no banco ──
+    @Transient
+    private String nomeCompleto;
+
+    // ── Flag de controle — não persistido ──
+    @Transient
+    private boolean editado;
+
+    // ── Dados temporários de integração ──
+    @Transient
+    private Map<String, Object> metadados;
+
+    // Inicialização via @PostLoad
+    @PostLoad
+    private void calcularCamposTransient() {
+        this.nomeCompleto = nome + " (" + ra + ")";
+    }
+}
+```
+
+#### @Transient vs transient (keyword Java)
+
+```java
+// @Transient (JPA) — ignorado pelo Hibernate, MAS serializado pelo Jackson
+@Transient
+private String campoCalculado; // aparece no JSON
+
+// transient (keyword Java) — ignorado pelo Hibernate E pelo Jackson
+transient private String cacheInterno; // NÃO aparece no JSON
+```
+
+| Modificador | Hibernate ignora | Jackson serializa | Uso típico |
+|---|---|---|---|
+| `@Transient` (JPA) | Sim | Sim | Campos calculados expostos na API |
+| `transient` (Java) | Sim | Não | Cache interno, flags temporários |
+| `@Transient` + `@JsonIgnore` | Sim | Não | Campo auxiliar invisível na API |
+
+#### Usos comuns de @Transient
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal subtotal;
+
+    @Column(nullable = false, precision = 5, scale = 2)
+    private BigDecimal taxaDesconto;
+
+    // Campo calculado — não existe coluna no banco
+    @Transient
+    private BigDecimal totalComDesconto;
+
+    @PostLoad
+    @PostPersist
+    @PostUpdate
+    private void calcularTotal() {
+        this.totalComDesconto = subtotal.multiply(
+            BigDecimal.ONE.subtract(taxaDesconto.divide(new BigDecimal("100")))
+        );
+    }
+
+    // Para Persistable — flag de controle de isNew()
+    @Transient
+    private boolean isNew = true;
+
+    @PostPersist
+    @PostLoad
+    private void markNotNew() {
+        this.isNew = false;
+    }
+}
+```
+
+**Regra prática:** se o campo é derivável de outros campos persistidos ou é estado temporário em memória, use `@Transient`. Se o valor precisa sobreviver entre sessões, deve ser persistido.
+
+---
+
+## 31. Soft Delete Nativo (@SoftDelete)
+
+Introduzido no Hibernate 6.4 (Spring Boot 3.3+).
+
+### Comportamento do @SoftDelete
+
+```mermaid
+stateDiagram-v2
+    [*] --> Ativo : INSERT (deleted=false)
+    Ativo --> SoftDeletado : em.remove() / collection.remove()
+    note right of SoftDeletado : UPDATE SET deleted=true
+    Ativo --> Ativo : findAll / findById
+    note right of Ativo : WHERE deleted=false (automático)
+    SoftDeletado --> SoftDeletado : Invisível para JPQL
+    SoftDeletado --> Visivel : Query nativa (sem filtro)
+```
+
+```java
+@Entity
+@SoftDelete
+public class Aluno { }
+```
+
+- `em.remove()` gera `UPDATE SET deleted = true` em vez de `DELETE`.
+- Todas as queries adicionam `WHERE deleted = false` automaticamente.
+- Funciona com `orphanRemoval` e `@ManyToMany`.
+
+### Com timestamp
+
+```java
+@Entity
+@SoftDelete(columnName = "deletado_em", converter = DeletedAtConverter.class)
+public class Aluno { }
+```
+
+```java
+public class DeletedAtConverter implements AttributeConverter<Boolean, OffsetDateTime> {
+    @Override
+    public OffsetDateTime convertToDatabaseColumn(Boolean deleted) {
+        return deleted ? OffsetDateTime.now() : null;
+    }
+    @Override
+    public Boolean convertToEntityAttribute(OffsetDateTime deletedAt) {
+        return deletedAt != null;
+    }
+}
+```
+
+### Unique constraints com soft delete — partial index
+
+```sql
+CREATE UNIQUE INDEX uq_aluno_ra_ativo ON aluno (ra) WHERE deleted = false;
+```
+
+### Consultar deletados — query nativa
+
+```java
+@Query(value = "SELECT * FROM aluno WHERE deleted = true", nativeQuery = true)
+List<Aluno> findAllDeletados();
+```
+
+---
+
+## 32. Recursos Avançados do Hibernate
 
 ### @Version — Optimistic Locking
 
@@ -2975,201 +5450,9 @@ Specification<Matricula> spec = Specification.where(comStatus(StatusMatricula.AT
 Page<Matricula> resultado = repository.findAll(spec, pageable);
 ```
 
-### @DynamicInsert — INSERT sem campos nulos (respeita DEFAULTs)
-
-```java
-@Entity
-@DynamicInsert
-public class Configuracao { }
-```
-
-Sem `@DynamicInsert`, o Hibernate inclui **todas** as colunas no INSERT — mesmo as nulas — e sobrescreve o `DEFAULT` definido no DDL:
-
-```sql
--- Sem @DynamicInsert: campo nulo sobrescreve o DEFAULT do banco
-INSERT INTO configuracao (tema, idioma, timeout) VALUES (NULL, NULL, NULL);
--- DEFAULT ignorado!
-
--- Com @DynamicInsert: campos nulos omitidos, banco aplica DEFAULT
-INSERT INTO configuracao () VALUES ();
--- DEFAULT aplicado!
-```
-
-### @ColumnDefault — declarar o DEFAULT na geração do DDL
-
-O `@ColumnDefault` do Hibernate define a cláusula `DEFAULT` da coluna no DDL gerado. É complementar ao `@DynamicInsert`:
-
-```java
-@Entity
-@DynamicInsert // necessário para que o DEFAULT seja respeitado no INSERT
-public class Configuracao extends BaseEntity {
-
-    @ColumnDefault("'escuro'")
-    @Column(nullable = false, length = 50)
-    private String tema;
-
-    @ColumnDefault("'pt-BR'")
-    @Column(nullable = false, length = 10)
-    private String idioma;
-
-    @ColumnDefault("30")
-    @Column(nullable = false)
-    private Integer timeoutMinutos;
-
-    @ColumnDefault("true")
-    @Column(nullable = false)
-    private boolean ativo;
-}
-```
-
-DDL gerado pelo Hibernate:
-
-```sql
-CREATE TABLE configuracao (
-    id               BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    tema             VARCHAR(50) NOT NULL DEFAULT 'escuro',
-    idioma           VARCHAR(10) NOT NULL DEFAULT 'pt-BR',
-    timeout_minutos  INTEGER NOT NULL DEFAULT 30,
-    ativo            BOOLEAN NOT NULL DEFAULT true,
-    criado_em        TIMESTAMPTZ NOT NULL,
-    atualizado_em    TIMESTAMPTZ NOT NULL
-);
-```
-
-Uso — os campos não setados recebem o DEFAULT do banco:
-
-```java
-var config = new Configuracao();
-// Não seta tema, idioma, timeout, ativo
-repository.save(config);
-
-// Com @DynamicInsert, o INSERT omite os campos nulos:
-// INSERT INTO configuracao (criado_em, atualizado_em) VALUES (?, ?)
-// Banco aplica: tema='escuro', idioma='pt-BR', timeout_minutos=30, ativo=true
-
-Configuracao salva = repository.findById(config.getId()).orElseThrow();
-salva.getTema();           // "escuro" (DEFAULT do banco)
-salva.getIdioma();         // "pt-BR"
-salva.getTimeoutMinutos(); // 30
-salva.isAtivo();           // true
-```
-
-#### @ColumnDefault com expressões SQL
-
-O valor do `@ColumnDefault` é uma **expressão SQL literal** — strings precisam de aspas simples internas:
-
-```java
-// String literal — aspas simples dentro da anotação
-@ColumnDefault("'pendente'")
-private String status;
-
-// Expressão SQL — função do banco
-@ColumnDefault("NOW()")
-@Column(columnDefinition = "TIMESTAMPTZ")
-private OffsetDateTime criadoEm;
-
-// Expressão SQL — cálculo
-@ColumnDefault("0.00")
-@Column(precision = 19, scale = 2)
-private BigDecimal saldo;
-
-// UUID gerado pelo banco
-@ColumnDefault("GEN_RANDOM_UUID()")
-@Column(columnDefinition = "UUID")
-private UUID codigoPublico;
-
-// Sequência específica
-@ColumnDefault("NEXTVAL('numero_protocolo_seq')")
-private Long numeroProtocolo;
-```
-
-#### @ColumnDefault vs columnDefinition com DEFAULT
-
-Ambos definem DEFAULT, mas `@ColumnDefault` é mais limpo:
-
-```java
-// @ColumnDefault — só o DEFAULT, Hibernate cuida do tipo
-@ColumnDefault("'ativo'")
-@Column(nullable = false, length = 30)
-private String status;
-
-// columnDefinition — precisa repetir o tipo inteiro
-@Column(nullable = false, columnDefinition = "VARCHAR(30) DEFAULT 'ativo'")
-private String status;
-```
-
-O `@ColumnDefault` é preferível porque não acopla a definição de tipo com o default. O `columnDefinition` sobrescreve toda a definição da coluna, o que pode causar problemas em migrações.
-
-#### Quando @ColumnDefault é útil vs desnecessário
-
-| Cenário | @ColumnDefault + @DynamicInsert | Setar no Java |
-|---|---|---|
-| Default simples e fixo | Sim — banco é a fonte de verdade | Também funciona |
-| Default com lógica SQL (`NOW()`, `GEN_RANDOM_UUID()`) | Sim — só o banco executa | Não é possível |
-| Default que pode mudar sem deploy | Sim — altera no banco via Flyway | Precisa de deploy |
-| Campos que a aplicação sempre seta | Desnecessário | Setar no construtor/setter |
-| Compatibilidade com outros clientes SQL | Sim — qualquer INSERT usa o DEFAULT | Não — só via aplicação |
-
-**Regra prática:** use `@ColumnDefault` quando o valor default é relevante para o banco (outros clientes SQL, migrações de dados, consistência). Use inicialização em Java quando o default é puramente lógica da aplicação.
-
 ---
 
-## 17. OffsetDateTime e Conversão de Timezone
-
-O PostgreSQL `timestamptz` converte tudo para UTC internamente e retorna no timezone da sessão.
-
-### Configuração recomendada — forçar UTC
-
-```yaml
-spring:
-  datasource:
-    hikari:
-      connection-init-sql: SET timezone = 'UTC'
-  jpa:
-    properties:
-      hibernate:
-        jdbc:
-          time_zone: UTC
-```
-
-### Mapeamento correto
-
-```java
-@Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ DEFAULT NOW()")
-@CreationTimestamp
-private OffsetDateTime criadoEm;
-```
-
-**Regra de ouro:** persista em UTC, converta na camada de apresentação.
-
-### Fluxo completo
-
-```mermaid
-sequenceDiagram
-    participant Java as Java (OffsetDateTime)
-    participant Hibernate as Hibernate (jdbc.time_zone=UTC)
-    participant JDBC as JDBC Driver
-    participant PG as PostgreSQL (TIMESTAMPTZ)
-
-    Note over Java: 2026-03-13T14:30:00-03:00
-
-    Java->>Hibernate: persist(entity)
-    Hibernate->>JDBC: setObject() convertido UTC
-    Note over JDBC: 2026-03-13T17:30:00+00:00
-    JDBC->>PG: INSERT
-    Note over PG: Armazena 17:30:00 UTC<br/>(offset descartado)
-
-    Java->>Hibernate: find(id)
-    Hibernate->>JDBC: executeQuery()
-    PG->>JDBC: 17:30:00+00 (timezone sessão)
-    JDBC->>Hibernate: ResultSet
-    Hibernate->>Java: OffsetDateTime
-    Note over Java: 2026-03-13T17:30:00Z<br/>(converte para usuário na apresentação)
-```
-
----
-
-## 18. Metamodel Estático do JPA
+## 33. Metamodel Estático do JPA
 
 ### Configuração
 
@@ -3216,1389 +5499,7 @@ public class SpecBuilder<T> {
 
 ---
 
-## 19. Segurança de Queries JPQL com Campos Renomeados
-
-| Tipo | Validação | Quando detecta |
-|---|---|---|
-| Derived query (`findByNota`) | Automática | Startup |
-| `@Query` JPQL | Automática | Startup |
-| `@NamedQuery` | Automática | Startup |
-| Criteria com metamodel | Compilação | Build |
-| Criteria com string | Manual | Runtime |
-| `@Query` nativa | Manual | Runtime (teste) |
-
-### Teste que valida o startup completo
-
-```java
-@SpringBootTest
-class ApplicationContextTest {
-    @Test
-    void contextDevSubirSemErros() {
-        // Se qualquer JPQL referencia campo inexistente, o contexto não sobe
-    }
-}
-```
-
----
-
-## 20. @NamedQuery — Vantagens e Limitações
-
-### Vantagens
-
-- Pré-compilação no startup.
-- Validação antecipada de campos.
-- Reutilização entre services via `entityManager.createNamedQuery()`.
-
-### Na prática com Spring Data
-
-O `@Query` no repository faz a mesma validação e fica mais próximo do uso. `@NamedQuery` é útil quando a mesma JPQL é compartilhada entre componentes que não passam pelo repository.
-
-### Prioridade de resolução do Spring Data
-
-1. `@Query` no método (maior prioridade)
-2. `@NamedQuery` com nome matching (`Entidade.nomeDoMetodo`)
-3. Derived query pelo nome do método
-
----
-
-## 21. @Modifying — flushAutomatically e clearAutomatically
-
-### flushAutomatically = true
-
-Chama `entityManager.flush()` **antes** do bulk update — persiste mudanças pendentes.
-
-### clearAutomatically = true
-
-Chama `entityManager.clear()` **depois** do bulk update — esvazia o persistence context.
-
-### Padrão seguro
-
-```java
-@Modifying(flushAutomatically = true, clearAutomatically = true)
-@Query("UPDATE Matricula m SET m.status = 'CANCELADA' WHERE m.criadoEm < :limite")
-int cancelarVencidas(@Param("limite") OffsetDateTime limite);
-```
-
-**Fluxo:** flush → execute → clear → próximas leituras buscam do banco.
-
-```mermaid
-sequenceDiagram
-    participant Service
-    participant PC as Persistence Context
-    participant DB as Banco de Dados
-
-    Service->>PC: curso.setNome("Novo") [dirty]
-    Service->>PC: cancelarVencidas(limite)
-
-    rect rgb(200, 230, 200)
-        Note over PC,DB: flushAutomatically = true
-        PC->>DB: UPDATE curso SET nome='Novo'
-    end
-
-    rect rgb(200, 200, 240)
-        Note over PC,DB: execute bulk
-        PC->>DB: UPDATE matricula SET status='CANCELADA'
-    end
-
-    rect rgb(240, 210, 200)
-        Note over PC,DB: clearAutomatically = true
-        PC->>PC: entityManager.clear()
-        Note over PC: contexto vazio
-    end
-
-    Service->>DB: findById(1L)
-    DB->>PC: dados frescos do banco
-```
-
-**Cuidado:** `clear()` descarta **todas** as entidades gerenciadas, não apenas as afetadas.
-
----
-
-## 22. Remoção Eficiente de Itens em @OneToMany
-
-### Comparação de abordagens
-
-```mermaid
-flowchart TD
-    subgraph VIA_COLECAO["Via coleção (orphanRemoval)"]
-        VC1["findById(cursoId)"] --> VC2["SELECT * FROM curso"]
-        VC2 --> VC3["getMatriculas()"]
-        VC3 --> VC4["SELECT * FROM matricula<br>WHERE curso_id = ?<br>⚠️ carrega TUDO"]
-        VC4 --> VC5["removeIf(id == X)"]
-        VC5 --> VC6["DELETE FROM matricula<br>WHERE id = X"]
-    end
-
-    subgraph DIRETO["Via repository.delete (recomendado)"]
-        D1["findById(matriculaId)"] --> D2["SELECT * FROM matricula<br>WHERE id = ?<br>✅ 1 registro"]
-        D2 --> D3["delete(matricula)"]
-        D3 --> D4["DELETE FROM matricula<br>WHERE id = ?"]
-    end
-
-    subgraph BULK["Via bulk JPQL (performance máxima)"]
-        B1["deleteByCursoAndId(...)"] --> B2["DELETE FROM matricula<br>WHERE id = ? AND curso_id = ?<br>✅ 0 SELECTs"]
-    end
-```
-
-| Abordagem | Queries | Carrega coleção | Cascade/Lifecycle |
-|---|---|---|---|
-| `collection.remove()` | SELECT all + DELETE | Sim (tudo) | Sim |
-| Bulk JPQL `DELETE` | 1 DELETE | Não | Não |
-| `repository.delete(entity)` | 1 SELECT + 1 DELETE | Não | Sim |
-| `getReference` + `remove` | 1 DELETE | Não | Sim |
-
-### Recomendação
-
-`repository.delete(entity)` — carrega só o filho, respeita lifecycle, não carrega a coleção inteira. Para performance máxima sem cascatas, bulk JPQL.
-
-### Antipattern
-
-Carregar o pai e acessar a coleção inteira só para remover um filho — evitar em coleções que podem crescer.
-
----
-
-## 23. Dígitos Verificadores com Value Objects e AttributeConverter
-
-### Value Object com validação no construtor
-
-```java
-public record Cpf(String valor) {
-    private static final int[] PESOS_PRIMEIRO = {10, 9, 8, 7, 6, 5, 4, 3, 2};
-    private static final int[] PESOS_SEGUNDO  = {11, 10, 9, 8, 7, 6, 5, 4, 3, 2};
-
-    public Cpf {
-        Objects.requireNonNull(valor, "CPF não pode ser nulo");
-        String digitos = valor.replaceAll("\\D", "");
-        if (digitos.length() != 11) throw new IllegalArgumentException("CPF deve ter 11 dígitos");
-        if (digitos.chars().distinct().count() == 1) throw new IllegalArgumentException("CPF repetidos");
-        if (!validarDigitos(digitos)) throw new IllegalArgumentException("CPF inválido: " + valor);
-        valor = digitos;
-    }
-
-    private static boolean validarDigitos(String digitos) {
-        int primeiro = Modulo11.calcularDigito(digitos, PESOS_PRIMEIRO);
-        int segundo = Modulo11.calcularDigito(digitos, PESOS_SEGUNDO);
-        return digitos.charAt(9) - '0' == primeiro && digitos.charAt(10) - '0' == segundo;
-    }
-}
-```
-
-### Módulo 11 genérico
-
-```java
-public final class Modulo11 {
-    private Modulo11() {}
-
-    public static int calcularDigito(String digitos, int[] pesos) {
-        int soma = 0;
-        for (int i = 0; i < pesos.length; i++) {
-            soma += (digitos.charAt(i) - '0') * pesos[i];
-        }
-        int resto = soma % 11;
-        return resto < 2 ? 0 : 11 - resto;
-    }
-}
-```
-
-### Bean Validation customizado
-
-```java
-@Target({ElementType.FIELD, ElementType.PARAMETER})
-@Retention(RetentionPolicy.RUNTIME)
-@Constraint(validatedBy = CpfValidator.class)
-public @interface CpfValido {
-    String message() default "CPF inválido";
-    Class<?>[] groups() default {};
-    Class<? extends Payload>[] payload() default {};
-}
-```
-
-### Arquitetura
-
-```mermaid
-flowchart LR
-    A[Request<br>String] --> B["DTO<br>@CpfValido"]
-    B --> C["new Cpf(valor)<br>Value Object validado"]
-    C --> D["Entity<br>campo Cpf"]
-    D --> E["CpfConverter<br>Cpf ↔ String"]
-    E --> F[("PostgreSQL<br>VARCHAR")]
-
-    style A fill:#f9f,stroke:#333
-    style C fill:#bfb,stroke:#333
-    style F fill:#bbf,stroke:#333
-```
-
----
-
-## 24. Libs para Validação de Documentos Brasileiros
-
-### Apache Commons Validator
-
-Possui `ModulusCheckDigit` abstrata com `MODULUS_11`, mas implementações são para ISBN, ISSN, EC Number — não para documentos brasileiros.
-
-### Caelum Stella (recomendado para produção)
-
-```xml
-<dependency>
-    <groupId>br.com.caelum.stella</groupId>
-    <artifactId>caelum-stella-core</artifactId>
-    <version>2.2.0</version>
-</dependency>
-```
-
-- Validadores prontos: `CPFValidator`, `CNPJValidator`, NIT, RENAVAM, Título Eleitoral.
-- `DigitoPara`: fluent interface genérica para Módulo 11.
-- Bean Validation: `@CPF`, `@CNPJ` (módulo `caelum-stella-bean-validation`).
-- Geração de valores válidos para testes: `generateRandomValid()`.
-
----
-
-## 25. @Column com AttributeConverter de Objetos Complexos
-
-As propriedades do `@Column` referem-se ao **tipo convertido** (String, Long no banco), não ao objeto Java.
-
-### Fluxo do AttributeConverter
-
-```mermaid
-flowchart LR
-    subgraph Java
-        VO["Value Object<br>Cnpj, Cpf, Email,<br>Dinheiro, CorHex"]
-    end
-    subgraph Converter["AttributeConverter"]
-        direction TB
-        W["convertToDatabaseColumn()<br>Cnpj → String"]
-        R["convertToEntityAttribute()<br>String → Cnpj"]
-    end
-    subgraph Banco["PostgreSQL"]
-        COL["Coluna simples<br>CHAR, VARCHAR,<br>BIGINT, NUMERIC"]
-    end
-
-    VO -->|"escrita"| W --> COL
-    COL -->|"leitura"| R --> VO
-```
-
-### @Column descreve a coluna, não o objeto
-
-```mermaid
-classDiagram
-    class Empresa {
-        -Long id
-        -String razaoSocial
-        -Cnpj cnpj
-        -Cpf cpfResponsavel
-        -Email email
-        -Dinheiro saldo
-    }
-
-    note for Empresa "@Column(length=14, columnDefinition='CHAR(14)') → cnpj<br>@Column(length=11) → cpfResponsavel<br>@Column(length=255) → email<br>@Column(columnDefinition='BIGINT') → saldo (centavos)"
-```
-
-```java
-@Column(nullable = false, unique = true, length = 14, columnDefinition = "CHAR(14)")
-private Cnpj cnpj; // persiste como CHAR(14) via CnpjConverter
-
-@Column(nullable = false, precision = 19, scale = 2)
-private Dinheiro valor; // converter para BigDecimal
-```
-
-### CHAR vs VARCHAR
-
-- **Tamanho fixo** (CPF, CNPJ): `columnDefinition = "CHAR(n)"`.
-- **Tamanho variável** (Email): `length = n` (VARCHAR padrão).
-
-### Múltiplas colunas → @Embeddable
-
-`AttributeConverter` é sempre 1 objeto → 1 coluna. Para múltiplas colunas, use `@Embeddable` com `@AttributeOverrides`.
-
-### Atributos avançados da annotation @Column
-
-Além dos atributos comuns (`name`, `nullable`, `unique`, `length`, `columnDefinition`), o `@Column` tem atributos menos utilizados mas poderosos:
-
-#### `precision` e `scale` — controle de casas decimais
-
-Aplicável a tipos numéricos (`BigDecimal`, `Double`). Mapeiam para `NUMERIC(precision, scale)` no PostgreSQL:
-
-```java
-@Entity
-public class Produto extends BaseEntity {
-
-    // NUMERIC(19,2) — até 19 dígitos total, 2 decimais → R$ 99.999.999.999.999.999,99
-    @Column(nullable = false, precision = 19, scale = 2)
-    private BigDecimal preco;
-
-    // NUMERIC(5,4) — até 5 dígitos, 4 decimais → 0.0000 a 9.9999 (taxa percentual)
-    @Column(nullable = false, precision = 5, scale = 4)
-    private BigDecimal taxaJuros;
-
-    // NUMERIC(10,6) — coordenadas geográficas
-    @Column(precision = 10, scale = 6)
-    private BigDecimal latitude;
-
-    @Column(precision = 10, scale = 6)
-    private BigDecimal longitude;
-}
-```
-
-DDL gerado:
-
-```sql
-CREATE TABLE produto (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    preco      NUMERIC(19,2) NOT NULL,
-    taxa_juros NUMERIC(5,4) NOT NULL,
-    latitude   NUMERIC(10,6),
-    longitude  NUMERIC(10,6)
-);
-```
-
-Convenções comuns para `precision` e `scale`:
-
-| Caso de uso | `precision` | `scale` | Tipo no PostgreSQL |
-|---|---|---|---|
-| Dinheiro (BRL) | 19 | 2 | `NUMERIC(19,2)` |
-| Dinheiro (crypto) | 19 | 8 | `NUMERIC(19,8)` |
-| Percentual (0-100%) | 5 | 2 | `NUMERIC(5,2)` |
-| Taxa/fator (0.0000-9.9999) | 5 | 4 | `NUMERIC(5,4)` |
-| Coordenada geográfica | 10 | 6 | `NUMERIC(10,6)` |
-| Peso/medida | 10 | 3 | `NUMERIC(10,3)` |
-
-#### `check` — constraint CHECK inline (JPA 3.2 / Hibernate 6.5+)
-
-Gera uma constraint `CHECK` diretamente na coluna, sem necessidade de Flyway:
-
-```java
-@Entity
-public class Matricula extends BaseEntity {
-
-    @Column(precision = 4, scale = 2, check = @Check(constraints = "nota >= 0 AND nota <= 10"))
-    private BigDecimal nota;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 31, check = @Check(constraints = "status IN ('ATIVA','PENDENTE','CANCELADA','TRANSFERIDA')"))
-    private StatusMatricula status;
-}
-```
-
-DDL gerado:
-
-```sql
-CREATE TABLE matricula (
-    nota   NUMERIC(4,2) CHECK (nota >= 0 AND nota <= 10),
-    status VARCHAR(31) NOT NULL CHECK (status IN ('ATIVA','PENDENTE','CANCELADA','TRANSFERIDA'))
-);
-```
-
-O `@Check` também pode ser aplicado no nível da entidade para constraints compostas:
-
-```java
-@Entity
-@Check(constraints = "data_fim > data_inicio")
-public class Reserva extends BaseEntity {
-
-    @Column(nullable = false)
-    private LocalDate dataInicio;
-
-    @Column(nullable = false)
-    private LocalDate dataFim;
-}
-```
-
-#### `options` — cláusula extra no DDL (Hibernate 6.5+)
-
-Adiciona texto literal após a definição da coluna no DDL gerado. Útil para opções específicas do banco:
-
-```java
-@Entity
-public class LogEvento extends BaseEntity {
-
-    // COMPRESSION lz4 no PostgreSQL (requer TOAST)
-    @Column(columnDefinition = "TEXT", options = "COMPRESSION lz4")
-    private String payload;
-
-    // COLLATE específico
-    @Column(length = 200, options = "COLLATE \"pt_BR.utf8\"")
-    private String descricao;
-
-    // STORAGE para controle de TOAST
-    @Column(columnDefinition = "TEXT", options = "STORAGE EXTERNAL")
-    private String dadosBrutos;
-}
-```
-
-DDL gerado:
-
-```sql
-CREATE TABLE log_evento (
-    payload      TEXT COMPRESSION lz4,
-    descricao    VARCHAR(200) COLLATE "pt_BR.utf8",
-    dados_brutos TEXT STORAGE EXTERNAL
-);
-```
-
-O `options` é concatenado diretamente após a definição da coluna — aceita qualquer texto válido para o dialeto do banco.
-
-#### `table` — coluna em @SecondaryTable
-
-Para mapear um campo em uma tabela secundária:
-
-```java
-@Entity
-@SecondaryTable(name = "aluno_detalhe")
-public class Aluno extends BaseEntity {
-
-    @Column(nullable = false)
-    private String nome;
-
-    // Campos na tabela secundária
-    @Column(table = "aluno_detalhe", length = 1000)
-    private String bio;
-
-    @Column(table = "aluno_detalhe", length = 500)
-    private String fotoUrl;
-}
-```
-
-#### `insertable` e `updatable` — campos read-only parciais
-
-```java
-@Entity
-public class Pagamento extends BaseEntity {
-
-    // Coluna discriminadora — gerenciada pelo Hibernate, read-only para a aplicação
-    @Column(name = "tipo", insertable = false, updatable = false)
-    @Enumerated(EnumType.STRING)
-    private TipoPagamento tipo;
-
-    // Campo setado apenas no INSERT, nunca alterado
-    @Column(nullable = false, updatable = false)
-    private BigDecimal valorOriginal;
-
-    // Campo setado apenas em UPDATE (via trigger ou procedure externa)
-    @Column(insertable = false)
-    private OffsetDateTime processadoEm;
-}
-```
-
-| Combinação | INSERT inclui | UPDATE inclui | Uso típico |
-|---|---|---|---|
-| `insertable=true, updatable=true` (default) | Sim | Sim | Campo normal |
-| `insertable=false, updatable=false` | Não | Não | Read-only (discriminador, campo calculado) |
-| `insertable=true, updatable=false` | Sim | Não | Valor imutável (data de criação, valor original) |
-| `insertable=false, updatable=true` | Não | Sim | Campo preenchido pelo banco, editável depois |
-
-#### Referência completa dos atributos de @Column
-
-| Atributo | Tipo | Default | Efeito |
-|---|---|---|---|
-| `name` | `String` | Nome do campo (snake_case) | Nome da coluna no DDL |
-| `nullable` | `boolean` | `true` | `NOT NULL` no DDL |
-| `unique` | `boolean` | `false` | `UNIQUE` constraint |
-| `length` | `int` | `255` | Tamanho do `VARCHAR` |
-| `precision` | `int` | `0` | Dígitos totais do `NUMERIC` |
-| `scale` | `int` | `0` | Dígitos decimais do `NUMERIC` |
-| `columnDefinition` | `String` | `""` | Sobrescreve **toda** a definição DDL |
-| `table` | `String` | `""` | Tabela da coluna (para `@SecondaryTable`) |
-| `insertable` | `boolean` | `true` | Inclui no `INSERT` |
-| `updatable` | `boolean` | `true` | Inclui no `UPDATE` |
-| `check` | `@Check` | — | Constraint `CHECK` inline (JPA 3.2+) |
-| `options` | `String` | `""` | Texto extra no DDL após a coluna (Hibernate 6.5+) |
-
----
-
-## 26. Records como @Embeddable
-
-Hibernate 6+ suporta nativamente. Usa o construtor canônico do record.
-
-### Composição de Value Objects com records
-
-```mermaid
-classDiagram
-    class Empresa {
-        -Long id
-        -String razaoSocial
-        -Cnpj cnpj
-        -Endereco endereco
-    }
-    class Endereco {
-        <<Embeddable / record>>
-        -String logradouro
-        -String cidade
-        -String uf
-        -Cep cep
-    }
-    class Cep {
-        <<Embeddable / record>>
-        -String valor
-        +formatado() String
-    }
-    class Cnpj {
-        <<Value Object / record>>
-        -String valor
-        +formatado() String
-    }
-
-    Empresa *-- Endereco : "@Embedded"
-    Empresa *-- Cnpj : "@Convert (autoApply)"
-    Endereco *-- Cep : "aninhado"
-```
-
-```mermaid
-erDiagram
-    empresa {
-        bigint id PK
-        varchar razao_social
-        char_14 cnpj UK "via CnpjConverter"
-        varchar logradouro "Endereco.logradouro"
-        varchar cidade "Endereco.cidade"
-        char_2 uf "Endereco.uf"
-        char_8 cep "Endereco > Cep.valor"
-    }
-```
-
-### Uso direto
-
-```java
-@Embeddable
-public record Endereco(
-    @Column(nullable = false, length = 200) String logradouro,
-    @Column(nullable = false, length = 100) String cidade,
-    @Column(nullable = false, length = 2, columnDefinition = "CHAR(2)") String uf,
-    @Column(nullable = false, length = 8, columnDefinition = "CHAR(8)") String cep
-) {}
-```
-
-### Composição de records aninhados
-
-```java
-@Embeddable
-public record Endereco(
-    String logradouro,
-    @AttributeOverride(name = "valor", column = @Column(name = "cep", columnDefinition = "CHAR(8)"))
-    Cep cep
-) {}
-```
-
-### @AttributeOverride — renomear e customizar colunas de @Embeddable
-
-Quando a mesma classe `@Embeddable` é usada em mais de um campo da entidade, o JPA precisa de `@AttributeOverride` para desambiguar os nomes de coluna. Sem isso, haveria conflito — duas colunas com o mesmo nome.
-
-#### O problema: dois endereços na mesma entidade
-
-```java
-@Embeddable
-public record Endereco(
-    @Column(nullable = false, length = 200) String logradouro,
-    @Column(nullable = false, length = 100) String cidade,
-    @Column(nullable = false, length = 2, columnDefinition = "CHAR(2)") String uf,
-    @Column(nullable = false, length = 8, columnDefinition = "CHAR(8)") String cep
-) {}
-```
-
-```java
-@Entity
-public class Empresa {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String razaoSocial;
-
-    // Sem @AttributeOverride → colisão de nomes de coluna!
-    @Embedded
-    private Endereco enderecoSede;
-
-    @Embedded
-    private Endereco enderecoCorrespondencia;
-}
-```
-
-O Hibernate lançaria erro: colunas `logradouro`, `cidade`, `uf`, `cep` duplicadas.
-
-#### A solução: @AttributeOverrides por campo
-
-```java
-@Entity
-public class Empresa {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String razaoSocial;
-
-    @Embedded
-    @AttributeOverrides({
-        @AttributeOverride(name = "logradouro", column = @Column(name = "sede_logradouro", nullable = false, length = 200)),
-        @AttributeOverride(name = "cidade",     column = @Column(name = "sede_cidade", nullable = false, length = 100)),
-        @AttributeOverride(name = "uf",         column = @Column(name = "sede_uf", nullable = false, columnDefinition = "CHAR(2)")),
-        @AttributeOverride(name = "cep",        column = @Column(name = "sede_cep", nullable = false, columnDefinition = "CHAR(8)"))
-    })
-    private Endereco enderecoSede;
-
-    @Embedded
-    @AttributeOverrides({
-        @AttributeOverride(name = "logradouro", column = @Column(name = "corresp_logradouro", length = 200)),
-        @AttributeOverride(name = "cidade",     column = @Column(name = "corresp_cidade", length = 100)),
-        @AttributeOverride(name = "uf",         column = @Column(name = "corresp_uf", columnDefinition = "CHAR(2)")),
-        @AttributeOverride(name = "cep",        column = @Column(name = "corresp_cep", columnDefinition = "CHAR(8)"))
-    })
-    private Endereco enderecoCorrespondencia;
-}
-```
-
-DDL gerado:
-
-```sql
-CREATE TABLE empresa (
-    id                   BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    razao_social         VARCHAR(255),
-    -- Endereço sede
-    sede_logradouro      VARCHAR(200) NOT NULL,
-    sede_cidade          VARCHAR(100) NOT NULL,
-    sede_uf              CHAR(2) NOT NULL,
-    sede_cep             CHAR(8) NOT NULL,
-    -- Endereço correspondência (nullable — pode não ter)
-    corresp_logradouro   VARCHAR(200),
-    corresp_cidade       VARCHAR(100),
-    corresp_uf           CHAR(2),
-    corresp_cep          CHAR(8)
-);
-```
-
-```mermaid
-erDiagram
-    empresa {
-        bigint id PK
-        varchar razao_social
-        varchar sede_logradouro "Endereco sede"
-        varchar sede_cidade "Endereco sede"
-        char_2 sede_uf "Endereco sede"
-        char_8 sede_cep "Endereco sede"
-        varchar corresp_logradouro "Endereco corresp"
-        varchar corresp_cidade "Endereco corresp"
-        char_2 corresp_uf "Endereco corresp"
-        char_8 corresp_cep "Endereco corresp"
-    }
-```
-
-#### Override em @Embeddable aninhado (notação com ponto)
-
-Quando o embeddable contém outro embeddable, use notação com ponto para navegar:
-
-```java
-@Embeddable
-public record Periodo(
-    @Column(nullable = false) LocalDate inicio,
-    @Column(nullable = false) LocalDate fim
-) {}
-
-@Embeddable
-public record DadosContrato(
-    @Column(nullable = false, length = 50) String numero,
-    @Column(nullable = false, precision = 19, scale = 2) BigDecimal valorMensal,
-    Periodo vigencia
-) {}
-```
-
-```java
-@Entity
-public class Contrato {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Embedded
-    @AttributeOverrides({
-        @AttributeOverride(name = "numero",             column = @Column(name = "contrato_numero")),
-        @AttributeOverride(name = "valorMensal",        column = @Column(name = "contrato_valor_mensal")),
-        @AttributeOverride(name = "vigencia.inicio",    column = @Column(name = "contrato_inicio")),
-        @AttributeOverride(name = "vigencia.fim",       column = @Column(name = "contrato_fim"))
-    })
-    private DadosContrato dados;
-}
-```
-
-A notação `vigencia.inicio` navega de `DadosContrato.vigencia` (tipo `Periodo`) até `Periodo.inicio`.
-
-#### Override em @ElementCollection com @Embeddable
-
-O `@AttributeOverride` também funciona em coleções de embeddables:
-
-```java
-@Entity
-public class Funcionario {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String nome;
-
-    @ElementCollection
-    @CollectionTable(name = "funcionario_dependente", joinColumns = @JoinColumn(name = "funcionario_id"))
-    @AttributeOverrides({
-        @AttributeOverride(name = "logradouro", column = @Column(name = "dep_logradouro", length = 200)),
-        @AttributeOverride(name = "cidade",     column = @Column(name = "dep_cidade", length = 100)),
-        @AttributeOverride(name = "uf",         column = @Column(name = "dep_uf", columnDefinition = "CHAR(2)")),
-        @AttributeOverride(name = "cep",        column = @Column(name = "dep_cep", columnDefinition = "CHAR(8)"))
-    })
-    private List<Endereco> enderecosDependentes = new ArrayList<>();
-}
-```
-
-#### Resumo de uso do @AttributeOverride
-
-| Cenário | Sintaxe do `name` | Exemplo |
-|---|---|---|
-| Campo direto do embeddable | `"campo"` | `@AttributeOverride(name = "logradouro", ...)` |
-| Embeddable aninhado | `"embeddable.campo"` | `@AttributeOverride(name = "vigencia.inicio", ...)` |
-| Aninhamento profundo | `"a.b.campo"` | `@AttributeOverride(name = "endereco.cep.valor", ...)` |
-| Em `@ElementCollection` | Mesmo padrão | `@AttributeOverride(name = "logradouro", ...)` na coleção |
-
-### Vantagens sobre classes
-
-- Imutabilidade garantida.
-- `equals/hashCode` automático por todos os campos.
-- Construtor canônico com compact constructor para validação.
-
-### Limitação
-
-Se todas as colunas do embeddable forem `NULL` no banco, o Hibernate retorna `null` (não um record com valores nulos).
-
----
-
-## 27. equals/hashCode em Entidades JPA
-
-### Ciclo de vida da entidade e impacto no equals/hashCode
-
-```mermaid
-stateDiagram-v2
-    [*] --> Transient : new Entity()
-    note right of Transient : id = null<br>hashCode deve ser ESTÁVEL
-
-    Transient --> Managed : persist()
-    note right of Managed : id = 42<br>hashCode NÃO pode mudar!
-
-    Managed --> Detached : detach() / close session
-    Detached --> Managed : merge()
-    Managed --> Removed : remove()
-    Removed --> [*]
-
-    Detached --> Detached : equals deve funcionar<br>entre sessões
-```
-
-### Abordagem recomendada: equals por id + hashCode fixo
-
-```java
-@Override
-public boolean equals(Object o) {
-    if (this == o) return true;
-    if (!(o instanceof Matricula that)) return false;
-    return id != null && id.equals(that.id);
-}
-
-@Override
-public int hashCode() {
-    return getClass().hashCode();
-}
-```
-
-- Duas entidades transient (id = null) nunca são iguais.
-- `hashCode` fixo garante consistência em `HashSet` antes e depois do `persist`.
-- Usar `instanceof` (não `getClass()`) para funcionar com proxies Hibernate.
-
-### Abordagem alternativa: natural key
-
-Quando existe chave natural imutável (atribuída antes do persist):
-
-```java
-@Override
-public boolean equals(Object o) {
-    if (this == o) return true;
-    if (!(o instanceof Aluno that)) return false;
-    return ra != null && ra.equals(that.ra);
-}
-
-@Override
-public int hashCode() {
-    return Objects.hash(ra);
-}
-```
-
-### O que NÃO fazer
-
-- `Objects.hash(id)` — muda após persist, quebra HashSet.
-- `getClass() != o.getClass()` — quebra com proxies Hibernate.
-- Usar todos os campos — quebra ao alterar qualquer atributo.
-
----
-
-## 28. equals/hashCode em Hierarquias (@MappedSuperclass)
-
-### Hierarquia com equals/hashCode centralizado
-
-```mermaid
-classDiagram
-    class BaseEntity {
-        <<MappedSuperclass>>
-        #Long id
-        #OffsetDateTime criadoEm
-        #OffsetDateTime atualizadoEm
-        +equals(Object) boolean*
-        +hashCode() int*
-    }
-    class Aluno {
-        -String nome
-        -String ra
-    }
-    class Curso {
-        -String nome
-        -Integer cargaHoraria
-    }
-    class Pagamento {
-        <<abstract>>
-        -BigDecimal valor
-        -TipoPagamento tipo
-    }
-    class PagamentoPix {
-        -String chave
-    }
-    class PagamentoCartao {
-        -String bandeira
-        -Integer parcelas
-    }
-
-    BaseEntity <|-- Aluno : herda equals/hashCode
-    BaseEntity <|-- Curso : herda equals/hashCode
-    BaseEntity <|-- Pagamento : herda equals/hashCode
-    Pagamento <|-- PagamentoPix
-    Pagamento <|-- PagamentoCartao
-
-    note for BaseEntity "equals: Hibernate.getClass() + getId()<br>hashCode: return 31 (fixo)"
-```
-
-Centralizar na classe-base com `Hibernate.getClass()` para segurança com proxies:
-
-```java
-@MappedSuperclass
-public abstract class BaseEntity implements Serializable {
-
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof BaseEntity that)) return false;
-
-        Class<?> thisType = Hibernate.getClass(this);
-        Class<?> thatType = Hibernate.getClass(that);
-        if (thisType != thatType) return false;
-
-        return getId() != null && getId().equals(that.getId());
-    }
-
-    @Override
-    public int hashCode() {
-        return 31; // constante fixa para TODA a hierarquia
-    }
-}
-```
-
-- `Hibernate.getClass()` resolve o tipo real mesmo com proxy.
-- Subclasses **não** sobrescrevem — herdam de `BaseEntity`.
-- Exceção: subclasse com natural key pode sobrescrever quando performance de Set importa.
-
----
-
-## 29. getReferenceById — Proxy sem SELECT
-
-Retorna um proxy não inicializado. SELECT só acontece ao acessar campo que não seja id.
-
-### Comparação: findById vs getReferenceById
-
-```mermaid
-sequenceDiagram
-    participant S as Service
-    participant R as Repository
-    participant DB as Banco
-
-    rect rgb(240, 210, 200)
-        Note over S,DB: findById — SELECT imediato
-        S->>R: findById(1L)
-        R->>DB: SELECT * FROM curso WHERE id = 1
-        DB->>R: {id:1, nome:"JPA", carga:40}
-        R->>S: Optional Curso (completo)
-    end
-
-    rect rgb(200, 230, 200)
-        Note over S,DB: getReferenceById — proxy sem SELECT
-        S->>R: getReferenceById(1L)
-        Note over R: Cria proxy {id:1, initialized:false}
-        R->>S: Proxy Curso (apenas id)
-        Note over S: Usa proxy como FK no INSERT
-        S->>DB: INSERT INTO matricula (curso_id, ...) VALUES (1, ...)
-        Note over S,DB: 0 SELECTs para o Curso!
-    end
-```
-
-### Uso principal: setar FK sem carregar
-
-```java
-@Transactional
-public Matricula criar(CriarMatriculaRequest request) {
-    var matricula = new Matricula();
-    matricula.setCurso(cursoRepository.getReferenceById(request.cursoId()));
-    matricula.setAluno(alunoRepository.getReferenceById(request.alunoId()));
-    return repository.save(matricula);
-    // 1 INSERT, 0 SELECTs
-}
-```
-
-### Deletar sem carregar
-
-```java
-cursoRepository.delete(cursoRepository.getReferenceById(id));
-// 1 DELETE, 0 SELECTs
-```
-
-### Quando evitar
-
-- Precisa validar existência ou acessar dados → use `findById`.
-- Fora de `@Transactional` → `LazyInitializationException` ao acessar campos.
-
-| Aspecto | findById | getReferenceById |
-|---|---|---|
-| Retorno | `Optional<T>` | `T` (proxy) |
-| SELECT imediato | Sim | Não |
-| Entidade não existe | `Optional.empty()` | Exception (no acesso) |
-
----
-
-## 30. Unique Constraints Compostas
-
-### Exemplo de constraints no modelo
-
-```mermaid
-erDiagram
-    aluno {
-        bigint id PK
-        varchar ra UK "uk_aluno_ra"
-        varchar email UK "uk_aluno_email"
-        varchar nome "uk_aluno_nome_turma (composto)"
-        bigint turma_id FK "uk_aluno_nome_turma (composto)"
-    }
-    matricula {
-        bigint id PK
-        bigint curso_id FK "uk_matricula_curso_aluno (composto)"
-        bigint aluno_id FK "uk_matricula_curso_aluno (composto)"
-        numeric nota
-        varchar status
-    }
-    turma {
-        bigint id PK
-        varchar nome
-    }
-    curso {
-        bigint id PK
-        varchar nome
-    }
-
-    turma ||--o{ aluno : "turma_id"
-    curso ||--o{ matricula : "curso_id"
-    aluno ||--o{ matricula : "aluno_id"
-```
-
-### Fluxo de validação de unicidade
-
-```mermaid
-flowchart TD
-    A[Request criar matrícula] --> B{existsByCursoIdAndAlunoId?}
-    B -->|Sim| C[MatriculaDuplicadaException<br>feedback amigável]
-    B -->|Não| D[repository.save]
-    D --> E{Constraint violation?<br>race condition}
-    E -->|Sim| F[DataIntegrityViolationException<br>Exception Handler identifica por nome]
-    E -->|Não| G[Matrícula criada com sucesso]
-
-    style C fill:#f99,stroke:#333
-    style F fill:#fc9,stroke:#333
-    style G fill:#9f9,stroke:#333
-```
-
-### @UniqueConstraint — sempre com nome legível
-
-```java
-@Table(
-    name = "matricula",
-    uniqueConstraints = @UniqueConstraint(
-        name = "uk_matricula_curso_aluno",
-        columnNames = {"curso_id", "aluno_id"}
-    )
-)
-public class Matricula { }
-```
-
-### Tratamento de violação por nome
-
-```java
-@ExceptionHandler(DataIntegrityViolationException.class)
-public ProblemDetail handleDuplicado(DataIntegrityViolationException ex) {
-    if (ex.getMostSpecificCause().getMessage().contains("uk_matricula_curso_aluno")) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Aluno já matriculado");
-    }
-    return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Registro duplicado");
-}
-```
-
-### Com soft delete — partial index via Flyway
-
-```sql
-CREATE UNIQUE INDEX uk_matricula_curso_aluno_ativo
-    ON matricula (curso_id, aluno_id) WHERE deleted = false;
-```
-
-### Case-insensitive — functional index via Flyway
-
-```sql
-CREATE UNIQUE INDEX uk_aluno_email_lower ON aluno (LOWER(email));
-```
-
-### Validação preventiva + constraint como defesa
-
-```java
-if (repository.existsByCursoIdAndAlunoId(cursoId, alunoId)) {
-    throw new MatriculaDuplicadaException(cursoId, alunoId);
-}
-```
-
-Verificação otimista — constraint é indispensável como última defesa contra race conditions.
-
----
-
-## 31. Nomeação de Foreign Keys com @ForeignKey
-
-Por padrão, o Hibernate gera nomes de FK como `FKa3b7c9d2e1` — hashes ilegíveis que dificultam debug, migrações e análise de erros de constraint violation. A annotation `@ForeignKey` resolve isso.
-
-### O problema: nomes gerados ilegíveis
-
-Sem `@ForeignKey`, o DDL gerado pelo Hibernate:
-
-```sql
-ALTER TABLE matricula
-    ADD CONSTRAINT FKa3b7c9d2e1 FOREIGN KEY (curso_id) REFERENCES curso(id);
-
-ALTER TABLE matricula
-    ADD CONSTRAINT FK7f8e2a1b9c FOREIGN KEY (aluno_id) REFERENCES aluno(id);
-```
-
-Quando uma violação ocorre, a mensagem de erro é:
-
-```
-ERROR: insert or update on table "matricula" violates foreign key constraint "FKa3b7c9d2e1"
-```
-
-Impossível saber de imediato qual relacionamento falhou.
-
-### A solução: @ForeignKey em @JoinColumn
-
-```java
-@Entity
-public class Matricula {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-        name = "curso_id",
-        nullable = false,
-        foreignKey = @ForeignKey(name = "fk_matricula_curso")
-    )
-    private Curso curso;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-        name = "aluno_id",
-        nullable = false,
-        foreignKey = @ForeignKey(name = "fk_matricula_aluno")
-    )
-    private Aluno aluno;
-
-    private BigDecimal nota;
-}
-```
-
-DDL gerado:
-
-```sql
-ALTER TABLE matricula
-    ADD CONSTRAINT fk_matricula_curso FOREIGN KEY (curso_id) REFERENCES curso(id);
-
-ALTER TABLE matricula
-    ADD CONSTRAINT fk_matricula_aluno FOREIGN KEY (aluno_id) REFERENCES aluno(id);
-```
-
-Agora a mensagem de erro é clara:
-
-```
-ERROR: insert or update on table "matricula" violates foreign key constraint "fk_matricula_curso"
-Detail: Key (curso_id)=(999) is not present in table "curso".
-```
-
-### Convenção de nomeação
-
-O padrão recomendado é `fk_{tabela_origem}_{tabela_destino}` ou `fk_{tabela_origem}_{coluna}`:
-
-| Relacionamento | Nome da FK |
-|---|---|
-| `matricula.curso_id → curso.id` | `fk_matricula_curso` |
-| `matricula.aluno_id → aluno.id` | `fk_matricula_aluno` |
-| `pedido.cliente_id → cliente.id` | `fk_pedido_cliente` |
-| `item_pedido.pedido_id → pedido.id` | `fk_item_pedido_pedido` |
-| `item_pedido.produto_id → produto.id` | `fk_item_pedido_produto` |
-
-Se houver mais de uma FK para a mesma tabela destino, use o nome da coluna para desambiguar:
-
-```java
-@Entity
-public class Transferencia {
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-        name = "conta_origem_id",
-        nullable = false,
-        foreignKey = @ForeignKey(name = "fk_transferencia_conta_origem")
-    )
-    private Conta contaOrigem;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(
-        name = "conta_destino_id",
-        nullable = false,
-        foreignKey = @ForeignKey(name = "fk_transferencia_conta_destino")
-    )
-    private Conta contaDestino;
-}
-```
-
-### @ForeignKey em @JoinTable (ManyToMany)
-
-```java
-@Entity
-public class Curso {
-
-    @ManyToMany
-    @JoinTable(
-        name = "curso_professor",
-        joinColumns = @JoinColumn(
-            name = "curso_id",
-            foreignKey = @ForeignKey(name = "fk_curso_professor_curso")
-        ),
-        inverseJoinColumns = @JoinColumn(
-            name = "professor_id",
-            foreignKey = @ForeignKey(name = "fk_curso_professor_professor")
-        )
-    )
-    private Set<Professor> professores = new HashSet<>();
-}
-```
-
-### @ForeignKey em @SecondaryTable
-
-```java
-@Entity
-@DiscriminatorValue("CARTAO")
-@SecondaryTable(
-    name = "pagamento_cartao",
-    pkJoinColumns = @PrimaryKeyJoinColumn(
-        name = "pagamento_id",
-        foreignKey = @ForeignKey(name = "fk_pagamento_cartao_pagamento")
-    )
-)
-public class PagamentoCartao extends Pagamento { }
-```
-
-### @ForeignKey em @CollectionTable (ElementCollection)
-
-```java
-@Entity
-public class Aluno {
-
-    @ElementCollection
-    @CollectionTable(
-        name = "aluno_telefone",
-        joinColumns = @JoinColumn(
-            name = "aluno_id",
-            foreignKey = @ForeignKey(name = "fk_aluno_telefone_aluno")
-        )
-    )
-    @Column(name = "telefone")
-    private Set<String> telefones = new HashSet<>();
-}
-```
-
-### @ForeignKey em herança JOINED
-
-```java
-@Entity
-@Inheritance(strategy = InheritanceType.JOINED)
-public abstract class Pagamento {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-}
-
-@Entity
-@PrimaryKeyJoinColumn(
-    name = "id",
-    foreignKey = @ForeignKey(name = "fk_pagamento_pix_pagamento")
-)
-public class PagamentoPix extends Pagamento {
-    private String chave;
-}
-```
-
-### Desabilitando FK (casos raros)
-
-Em cenários como tabelas de auditoria ou cross-database, pode ser necessário não gerar a FK:
-
-```java
-@ManyToOne(fetch = FetchType.LAZY)
-@JoinColumn(
-    name = "entidade_externa_id",
-    foreignKey = @ForeignKey(name = "none", value = ConstraintMode.NO_CONSTRAINT)
-)
-private EntidadeExterna entidade;
-```
-
-O Hibernate não gera a constraint `FOREIGN KEY` no DDL. Use com cautela — sem FK o banco não garante integridade referencial.
-
-### Estratégia global com ImplicitNamingStrategy
-
-Para não repetir `@ForeignKey` em toda entidade, crie uma naming strategy customizada:
-
-```java
-public class CustomNamingStrategy extends CamelCaseToUnderscoresNamingStrategy {
-
-    @Override
-    public Identifier determineForeignKeyName(ImplicitForeignKeyNameSource source) {
-        String tableName = source.getTableName().getText();
-        String referencedTable = source.getReferencedTableName().getText();
-        String columnName = source.getColumnNames().get(0).getText();
-
-        String name = "fk_" + tableName + "_" + referencedTable;
-
-        // Desambigua se há mais de uma FK para a mesma tabela
-        if (!columnName.equals(referencedTable + "_id")) {
-            name = "fk_" + tableName + "_" + columnName.replace("_id", "");
-        }
-
-        return Identifier.toIdentifier(name);
-    }
-}
-```
-
-Registre no `application.yml`:
-
-```yaml
-spring:
-  jpa:
-    hibernate:
-      naming:
-        implicit-strategy: com.exemplo.config.CustomNamingStrategy
-```
-
-Com isso, **todas** as FKs seguem a convenção automaticamente, sem precisar de `@ForeignKey` em cada `@JoinColumn`.
-
-### Tratamento de violação de FK no Exception Handler
-
-Assim como em unique constraints, o nome legível da FK facilita o tratamento:
-
-```java
-@ExceptionHandler(DataIntegrityViolationException.class)
-public ProblemDetail handleIntegridade(DataIntegrityViolationException ex) {
-    String message = ex.getMostSpecificCause().getMessage();
-
-    if (message.contains("fk_matricula_curso")) {
-        return ProblemDetail.forStatusAndDetail(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            "Curso informado não existe"
-        );
-    }
-    if (message.contains("fk_matricula_aluno")) {
-        return ProblemDetail.forStatusAndDetail(
-            HttpStatus.UNPROCESSABLE_ENTITY,
-            "Aluno informado não existe"
-        );
-    }
-
-    return ProblemDetail.forStatusAndDetail(
-        HttpStatus.CONFLICT,
-        "Violação de integridade referencial"
-    );
-}
-```
-
-### Modelo completo com todas as constraints nomeadas
-
-```mermaid
-erDiagram
-    curso {
-        bigint id PK
-        varchar nome
-    }
-    aluno {
-        bigint id PK
-        varchar nome
-        varchar ra UK "uk_aluno_ra"
-    }
-    matricula {
-        bigint id PK
-        bigint curso_id FK "fk_matricula_curso"
-        bigint aluno_id FK "fk_matricula_aluno"
-        numeric nota
-        varchar status
-    }
-    professor {
-        bigint id PK
-        varchar nome
-    }
-    curso_professor {
-        bigint curso_id FK "fk_curso_professor_curso"
-        bigint professor_id FK "fk_curso_professor_professor"
-    }
-    aluno_telefone {
-        bigint aluno_id FK "fk_aluno_telefone_aluno"
-        varchar telefone
-    }
-
-    curso ||--o{ matricula : "fk_matricula_curso"
-    aluno ||--o{ matricula : "fk_matricula_aluno"
-    curso ||--o{ curso_professor : "fk_curso_professor_curso"
-    professor ||--o{ curso_professor : "fk_curso_professor_professor"
-    aluno ||--o{ aluno_telefone : "fk_aluno_telefone_aluno"
-```
-
-### Resumo: onde usar @ForeignKey
-
-| Contexto | Annotation | Propriedade |
-|---|---|---|
-| `@ManyToOne` / `@OneToOne` | `@JoinColumn` | `foreignKey = @ForeignKey(name = "...")` |
-| `@ManyToMany` | `@JoinTable` → `joinColumns` / `inverseJoinColumns` | `foreignKey = @ForeignKey(name = "...")` |
-| `@ElementCollection` | `@CollectionTable` → `joinColumns` | `foreignKey = @ForeignKey(name = "...")` |
-| `@SecondaryTable` | `pkJoinColumns` → `@PrimaryKeyJoinColumn` | `foreignKey = @ForeignKey(name = "...")` |
-| Herança `JOINED` | `@PrimaryKeyJoinColumn` | `foreignKey = @ForeignKey(name = "...")` |
-| Desabilitar FK | `@JoinColumn` | `foreignKey = @ForeignKey(value = ConstraintMode.NO_CONSTRAINT)` |
-| Global (todas as FKs) | `ImplicitNamingStrategy` | Override `determineForeignKeyName()` |
-
-A regra é a mesma de unique constraints: **sempre nomeie**. O custo é uma linha extra por relacionamento. O benefício é legibilidade imediata em logs, migrações, monitoramento e exception handlers.
-
----
-
-## 32. Functions, Stored Procedures, Views e Materialized Views
+## 34. Functions, Stored Procedures, Views e Materialized Views
 
 ### Mapeamento JPA para recursos do PostgreSQL
 
@@ -5052,7 +5953,7 @@ Migrações repeatable usam checksum — o Flyway reexecuta automaticamente quan
 
 ### Configuração de variáveis de sessão PostgreSQL (para @ColumnTransformer)
 
-Para uso de `current_setting()` em `@ColumnTransformer` com criptografia, a chave precisa ser injetada na sessão JDBC. Veja a [Seção 16 — @ColumnTransformer](#16-recursos-adicionais-do-jpahibernate) para as 3 abordagens completas (`connection-init-sql`, `DataSource` wrapper com `SET LOCAL`, e aspecto transacional) com diagrama de fluxo e comparação de segurança.
+Para uso de `current_setting()` em `@ColumnTransformer` com criptografia, a chave precisa ser injetada na sessão JDBC. Veja a [Seção 32 — @ColumnTransformer](#32-recursos-avançados-do-hibernate) para as 3 abordagens completas (`connection-init-sql`, `DataSource` wrapper com `SET LOCAL`, e aspecto transacional) com diagrama de fluxo e comparação de segurança.
 
 | Recurso | Mapeamento JPA | Escrita | Refresh |
 |---|---|---|---|
@@ -5063,916 +5964,542 @@ Para uso de `current_setting()` em `@ColumnTransformer` com criptografia, a chav
 
 ---
 
-## 33. Coleções com Map vs Set em Relacionamentos JPA
+## 35. Múltiplos DataSources em um Projeto Spring Boot
 
-`Set` é a escolha padrão para coleções JPA. `Map` resolve um problema diferente: **acesso direto por chave** em vez de iteração. O `Map` não é melhor nem pior — ele se justifica quando a semântica chave-valor é natural no domínio.
+Cenário comum ao integrar bancos legados, separar leitura de escrita (primary/replica), ou conectar a bancos com tecnologias distintas (PostgreSQL + Oracle, por exemplo). Cada DataSource precisa de seu próprio `EntityManagerFactory` e `TransactionManager`.
 
-### Quando Map faz sentido
+### Estrutura de pacotes recomendada
 
-#### @MapKey — chave é um campo da entidade filha
+```
+src/main/java/com/exemplo/
+├── config/
+│   ├── PrimaryDataSourceConfig.java
+│   └── SecondaryDataSourceConfig.java
+├── primary/
+│   ├── entity/          ← entidades do banco primário
+│   └── repository/      ← repositories do banco primário
+└── secondary/
+    ├── entity/          ← entidades do banco secundário
+    └── repository/      ← repositories do banco secundário
+```
+
+Isolar entidades e repositories em pacotes separados é essencial — cada `@EnableJpaRepositories` varre um pacote específico e usa um `EntityManagerFactory` dedicado.
+
+### Configuração — `application.yml`
+
+```yaml
+spring:
+  datasource:
+    primary:
+      url: jdbc:postgresql://localhost:5432/banco_principal
+      username: ${DB_PRIMARY_USER}
+      password: ${DB_PRIMARY_PASS}
+      driver-class-name: org.postgresql.Driver
+      hikari:
+        pool-name: HikariPool-Primary
+        maximum-pool-size: 10
+    secondary:
+      url: jdbc:postgresql://localhost:5432/banco_legado
+      username: ${DB_SECONDARY_USER}
+      password: ${DB_SECONDARY_PASS}
+      driver-class-name: org.postgresql.Driver
+      hikari:
+        pool-name: HikariPool-Secondary
+        maximum-pool-size: 5
+
+  # Desabilitar autoconfigure — configuração manual abaixo
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+```
+
+### Configuração do DataSource primário
+
+O DataSource marcado com `@Primary` é o padrão para beans sem qualificador explícito.
 
 ```java
-@Entity
-public class Curso {
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+    basePackages = "com.exemplo.primary.repository",
+    entityManagerFactoryRef = "primaryEntityManagerFactory",
+    transactionManagerRef  = "primaryTransactionManager"
+)
+public class PrimaryDataSourceConfig {
 
-    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
-    @MapKey(name = "ra") // campo do Aluno via Matricula
-    private Map<String, Matricula> matriculasPorRa = new HashMap<>();
-}
-```
-
-```java
-// Com Map — O(1)
-Matricula m = curso.getMatriculasPorRa().get("2024001234");
-
-// Com Set — O(n), precisa iterar
-Matricula m = curso.getMatriculas().stream()
-    .filter(mat -> mat.getAluno().getRa().equals("2024001234"))
-    .findFirst()
-    .orElse(null);
-```
-
-#### @MapKeyColumn — chave é uma coluna da tabela (chave-valor puro)
-
-```java
-@Entity
-public class Aluno {
-
-    @ElementCollection
-    @CollectionTable(
-        name = "aluno_configuracao",
-        joinColumns = @JoinColumn(
-            name = "aluno_id",
-            foreignKey = @ForeignKey(name = "fk_aluno_configuracao_aluno")
-        )
-    )
-    @MapKeyColumn(name = "chave")
-    @Column(name = "valor")
-    private Map<String, String> configuracoes = new HashMap<>();
-}
-```
-
-```mermaid
-erDiagram
-    aluno {
-        bigint id PK
-        varchar nome
-    }
-    aluno_configuracao {
-        bigint aluno_id PK,FK "fk_aluno_configuracao_aluno"
-        varchar chave PK
-        varchar valor
-    }
-
-    aluno ||--o{ aluno_configuracao : "ElementCollection Map"
-```
-
-DDL gerado:
-
-```sql
-CREATE TABLE aluno_configuracao (
-    aluno_id  BIGINT NOT NULL REFERENCES aluno(id),
-    chave     VARCHAR(255) NOT NULL,
-    valor     VARCHAR(255),
-    PRIMARY KEY (aluno_id, chave)
-);
-```
-
-```java
-aluno.getConfiguracoes().put("tema", "escuro");
-aluno.getConfiguracoes().put("idioma", "pt-BR");
-
-String tema = aluno.getConfiguracoes().get("tema"); // "escuro"
-```
-
-#### @MapKeyEnumerated — enum como chave
-
-```java
-public enum TipoContato {
-    EMAIL, TELEFONE, CELULAR, LINKEDIN
-}
-```
-
-```java
-@Entity
-public class Aluno {
-
-    @ElementCollection
-    @CollectionTable(
-        name = "aluno_contato",
-        joinColumns = @JoinColumn(
-            name = "aluno_id",
-            foreignKey = @ForeignKey(name = "fk_aluno_contato_aluno")
-        )
-    )
-    @MapKeyEnumerated(EnumType.STRING)
-    @MapKeyColumn(name = "tipo")
-    @Column(name = "valor", nullable = false)
-    private Map<TipoContato, String> contatos = new EnumMap<>(TipoContato.class);
-}
-```
-
-```mermaid
-erDiagram
-    aluno {
-        bigint id PK
-        varchar nome
-    }
-    aluno_contato {
-        bigint aluno_id PK,FK "fk_aluno_contato_aluno"
-        varchar tipo PK "EMAIL, TELEFONE, CELULAR, LINKEDIN"
-        varchar valor "NOT NULL"
+    @Primary
+    @Bean("primaryDataSource")
+    @ConfigurationProperties("spring.datasource.primary")
+    public DataSource primaryDataSource() {
+        return DataSourceBuilder.create().type(HikariDataSource.class).build();
     }
 
-    aluno ||--o{ aluno_contato : "Map por enum"
-```
+    @Primary
+    @Bean("primaryEntityManagerFactory")
+    public LocalContainerEntityManagerFactoryBean primaryEntityManagerFactory(
+            @Qualifier("primaryDataSource") DataSource dataSource,
+            JpaProperties jpaProperties) {
 
-A semântica do `Map` garante no máximo **um valor por tipo** — unicidade na chave é automática:
+        var adapter = new HibernateJpaVendorAdapter();
+        adapter.setShowSql(false);
 
-```java
-aluno.getContatos().put(TipoContato.EMAIL, "aluno@email.com");
-aluno.getContatos().put(TipoContato.CELULAR, "+5511999999999");
-
-String email = aluno.getContatos().get(TipoContato.EMAIL);
-```
-
-#### @MapKeyJoinColumn — outra entidade como chave
-
-```java
-@Entity
-public class Aluno {
-
-    @OneToMany(mappedBy = "aluno", cascade = CascadeType.ALL, orphanRemoval = true)
-    @MapKeyJoinColumn(name = "curso_id")
-    private Map<Curso, Matricula> matriculasPorCurso = new HashMap<>();
-}
-```
-
-```java
-Matricula m = aluno.getMatriculasPorCurso().get(curso);
-BigDecimal nota = m.getNota();
-```
-
-#### @MapKeyColumn com @Embeddable — Map de Value Objects
-
-```java
-@Embeddable
-public record Avaliacao(
-    @Column(nullable = false) BigDecimal nota,
-    @Column(length = 500) String comentario,
-    @Column(nullable = false) LocalDate data
-) {}
-```
-
-```java
-@Entity
-public class Aluno {
-
-    @ElementCollection
-    @CollectionTable(
-        name = "aluno_avaliacao",
-        joinColumns = @JoinColumn(name = "aluno_id")
-    )
-    @MapKeyJoinColumn(name = "curso_id")
-    private Map<Curso, Avaliacao> avaliacoesPorCurso = new HashMap<>();
-}
-```
-
-```mermaid
-erDiagram
-    aluno {
-        bigint id PK
-        varchar nome
-    }
-    aluno_avaliacao {
-        bigint aluno_id FK
-        bigint curso_id FK "chave do Map"
-        numeric nota "NOT NULL"
-        varchar comentario
-        date data "NOT NULL"
-    }
-    curso {
-        bigint id PK
-        varchar nome
+        var factory = new LocalContainerEntityManagerFactoryBean();
+        factory.setDataSource(dataSource);
+        factory.setJpaVendorAdapter(adapter);
+        factory.setPackagesToScan("com.exemplo.primary.entity");  // ← pacote das entidades
+        factory.setPersistenceUnitName("primary");
+        factory.setJpaPropertyMap(jpaProperties.getProperties());
+        return factory;
     }
 
-    aluno ||--o{ aluno_avaliacao : "Map ElementCollection"
-    curso ||--o{ aluno_avaliacao : "MapKey"
-```
-
-### Quando Set é melhor (maioria dos casos)
-
-```java
-@OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
-private Set<Matricula> matriculas = new HashSet<>();
-```
-
-Se o acesso por chave é eventual, um método de conveniência resolve sem a complexidade do `Map`:
-
-```java
-@Entity
-public class Curso {
-
-    @OneToMany(mappedBy = "curso", cascade = CascadeType.ALL, orphanRemoval = true)
-    private Set<Matricula> matriculas = new HashSet<>();
-
-    public Optional<Matricula> findMatriculaPorRa(String ra) {
-        return matriculas.stream()
-            .filter(m -> m.getAluno().getRa().equals(ra))
-            .findFirst();
+    @Primary
+    @Bean("primaryTransactionManager")
+    public PlatformTransactionManager primaryTransactionManager(
+            @Qualifier("primaryEntityManagerFactory") EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
     }
 }
 ```
 
-Se a coleção não está carregada, uma query direta é mais eficiente que carregar todo o `Map`:
+### Configuração do DataSource secundário
 
 ```java
-@Query("SELECT m FROM Matricula m WHERE m.curso.id = :cursoId AND m.aluno.ra = :ra")
-Optional<Matricula> findByCursoAndRa(@Param("cursoId") Long cursoId, @Param("ra") String ra);
+@Configuration
+@EnableTransactionManagement
+@EnableJpaRepositories(
+    basePackages = "com.exemplo.secondary.repository",
+    entityManagerFactoryRef = "secondaryEntityManagerFactory",
+    transactionManagerRef  = "secondaryTransactionManager"
+)
+public class SecondaryDataSourceConfig {
+
+    @Bean("secondaryDataSource")
+    @ConfigurationProperties("spring.datasource.secondary")
+    public DataSource secondaryDataSource() {
+        return DataSourceBuilder.create().type(HikariDataSource.class).build();
+    }
+
+    @Bean("secondaryEntityManagerFactory")
+    public LocalContainerEntityManagerFactoryBean secondaryEntityManagerFactory(
+            @Qualifier("secondaryDataSource") DataSource dataSource,
+            JpaProperties jpaProperties) {
+
+        var adapter = new HibernateJpaVendorAdapter();
+
+        var factory = new LocalContainerEntityManagerFactoryBean();
+        factory.setDataSource(dataSource);
+        factory.setJpaVendorAdapter(adapter);
+        factory.setPackagesToScan("com.exemplo.secondary.entity");
+        factory.setPersistenceUnitName("secondary");
+        factory.setJpaPropertyMap(jpaProperties.getProperties());
+        return factory;
+    }
+
+    @Bean("secondaryTransactionManager")
+    public PlatformTransactionManager secondaryTransactionManager(
+            @Qualifier("secondaryEntityManagerFactory") EntityManagerFactory emf) {
+        return new JpaTransactionManager(emf);
+    }
+}
 ```
 
-### Problemas do Map na prática
+### Propriedades JPA por DataSource
 
-**Lazy loading não é granular.** `map.get("chave")` inicializa **toda** a coleção, não só o elemento.
+**O problema:** `spring.jpa.properties` é lido pela autoconfiguração do Spring Boot e se aplica globalmente. Com múltiplos `EntityManagerFactory` configurados manualmente, esse bloco do `application.yml` é ignorado — cada factory recebe apenas o que você passar explicitamente via `setJpaPropertyMap()`.
 
-**Chave desatualizada.** Se o campo usado como chave mudar, o mapa fica inconsistente:
+Há três abordagens para configurar as properties de forma independente por datasource.
+
+#### Abordagem 1 — Propriedades programáticas (mais simples)
+
+Defina as propriedades diretamente no método que cria o `LocalContainerEntityManagerFactoryBean`. Indicado quando os dois bancos têm configurações muito distintas.
 
 ```java
-Matricula m = matriculasPorRa.get("2024001234");
-m.getAluno().setRa("2024005678"); // mudou o RA
+@Bean("primaryEntityManagerFactory")
+public LocalContainerEntityManagerFactoryBean primaryEntityManagerFactory(
+        @Qualifier("primaryDataSource") DataSource dataSource) {
 
-matriculasPorRa.get("2024005678"); // null — Map não reindexou!
-matriculasPorRa.get("2024001234"); // encontra, mas com RA errado
+    var props = new HashMap<String, Object>();
+
+    // Dialeto e DDL
+    props.put("hibernate.dialect",        "org.hibernate.dialect.PostgreSQLDialect");
+    props.put("hibernate.hbm2ddl.auto",   "validate");   // nunca "update" em produção
+
+    // Timezone
+    props.put("hibernate.jdbc.time_zone", "UTC");
+
+    // Batch
+    props.put("hibernate.jdbc.batch_size",  "25");
+    props.put("hibernate.order_inserts",    "true");
+    props.put("hibernate.order_updates",    "true");
+
+    // Nomeação snake_case
+    props.put("hibernate.physical_naming_strategy",
+              "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy");
+
+    // Performance
+    props.put("hibernate.query.in_clause_parameter_padding", "true");
+    props.put("hibernate.query.fail_on_pagination_over_collection_fetch", "true");
+
+    // Logging (dev)
+    props.put("hibernate.format_sql",       "true");
+    props.put("hibernate.use_sql_comments", "true");
+
+    var adapter = new HibernateJpaVendorAdapter();
+    var factory = new LocalContainerEntityManagerFactoryBean();
+    factory.setDataSource(dataSource);
+    factory.setJpaVendorAdapter(adapter);
+    factory.setPackagesToScan("com.exemplo.primary.entity");
+    factory.setPersistenceUnitName("primary");
+    factory.setJpaPropertyMap(props);
+    return factory;
+}
+
+@Bean("secondaryEntityManagerFactory")
+public LocalContainerEntityManagerFactoryBean secondaryEntityManagerFactory(
+        @Qualifier("secondaryDataSource") DataSource dataSource) {
+
+    var props = new HashMap<String, Object>();
+
+    // Banco legado: dialect diferente, DDL desabilitado, sem batch
+    props.put("hibernate.dialect",        "org.hibernate.dialect.PostgreSQLDialect");
+    props.put("hibernate.hbm2ddl.auto",   "none");
+    props.put("hibernate.jdbc.time_zone", "UTC");
+    props.put("hibernate.jdbc.batch_size", "10");
+
+    // Legado pode ter nomeação diferente — desabilitar snake_case automático
+    // (deixar o nome do campo idêntico ao da coluna)
+    props.put("hibernate.physical_naming_strategy",
+              "org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl");
+
+    var adapter = new HibernateJpaVendorAdapter();
+    var factory = new LocalContainerEntityManagerFactoryBean();
+    factory.setDataSource(dataSource);
+    factory.setJpaVendorAdapter(adapter);
+    factory.setPackagesToScan("com.exemplo.secondary.entity");
+    factory.setPersistenceUnitName("secondary");
+    factory.setJpaPropertyMap(props);
+    return factory;
+}
 ```
 
-Por isso, chaves de `Map` devem ser **imutáveis** (`@NaturalId`, enums, ou campos `updatable = false`).
+#### Abordagem 2 — `application.yml` com binding customizado
 
-**Serialização JSON.** O Jackson serializa `Map` como objeto, não array:
+Mantém as configurações no YAML e usa `@ConfigurationProperties` para carregar cada bloco em um bean independente.
 
-```json
-// Set → array (padrão esperado em APIs REST)
-{ "matriculas": [ { "nota": 8.5 }, { "nota": 7.0 } ] }
+**`application.yml`:**
 
-// Map → objeto indexado (pode surpreender o frontend)
-{ "matriculasPorRa": { "2024001234": { "nota": 8.5 }, "2024005678": { "nota": 7.0 } } }
+```yaml
+# Não usar spring.jpa.properties aqui — será ignorado com config manual
+
+jpa:
+  primary:
+    ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+        format_sql: true
+        use_sql_comments: true
+        query:
+          in_clause_parameter_padding: true
+          fail_on_pagination_over_collection_fetch: true
+        physical_naming_strategy: >-
+          org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+
+  secondary:
+    ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+          batch_size: 10
+        physical_naming_strategy: >-
+          org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
 ```
 
-### Comparação direta
+**POJOs de binding:**
 
-| Aspecto | `Set` | `Map` |
+```java
+@ConfigurationProperties(prefix = "jpa.primary")
+@Component
+public class PrimaryJpaProperties {
+    private String ddlAuto;
+    private boolean showSql;
+    private Map<String, Object> properties = new HashMap<>();
+    // getters e setters
+}
+
+@ConfigurationProperties(prefix = "jpa.secondary")
+@Component
+public class SecondaryJpaProperties {
+    private String ddlAuto;
+    private boolean showSql;
+    private Map<String, Object> properties = new HashMap<>();
+    // getters e setters
+}
+```
+
+**Uso nos beans de configuração:**
+
+```java
+@Bean("primaryEntityManagerFactory")
+public LocalContainerEntityManagerFactoryBean primaryEntityManagerFactory(
+        @Qualifier("primaryDataSource") DataSource dataSource,
+        PrimaryJpaProperties primaryJpa) {
+
+    var adapter = new HibernateJpaVendorAdapter();
+    adapter.setShowSql(primaryJpa.isShowSql());
+
+    var factory = new LocalContainerEntityManagerFactoryBean();
+    factory.setDataSource(dataSource);
+    factory.setJpaVendorAdapter(adapter);
+    factory.setPackagesToScan("com.exemplo.primary.entity");
+    factory.setPersistenceUnitName("primary");
+    factory.setJpaPropertyMap(primaryJpa.getProperties());  // ← mapa do YAML
+    return factory;
+}
+```
+
+> **Atenção com nomes de chave no YAML:** o binding de `Map<String, Object>` pelo Spring converte as chaves usando relaxed binding (e.g., `jdbc.time_zone` vira `"jdbc.time_zone"` no mapa). Para Hibernate, a chave deve ser exatamente `"hibernate.jdbc.time_zone"` — use o prefixo completo diretamente como chave no YAML, ou construa o mapa achatado no código.
+
+#### Abordagem 3 — Híbrida: base global + overrides por datasource (recomendada)
+
+Reutiliza as propriedades comuns via `JpaProperties` (que lê `spring.jpa.properties`) e sobrepõe apenas o que difere por banco.
+
+**`application.yml`:**
+
+```yaml
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+        format_sql: true
+        use_sql_comments: true
+        query:
+          in_clause_parameter_padding: true
+          fail_on_pagination_over_collection_fetch: true
+        physical_naming_strategy: >-
+          org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+
+# Properties exclusivas por datasource (só o que difere)
+jpa:
+  primary:
+    ddl-auto: validate
+    dialect: org.hibernate.dialect.PostgreSQLDialect
+  secondary:
+    ddl-auto: none
+    dialect: org.hibernate.dialect.PostgreSQLDialect
+    batch-size: 10    # sobrepõe o global de 25
+    physical-naming-strategy: >-
+      org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+```
+
+**Config do primário — base + override:**
+
+```java
+@Bean("primaryEntityManagerFactory")
+public LocalContainerEntityManagerFactoryBean primaryEntityManagerFactory(
+        @Qualifier("primaryDataSource") DataSource dataSource,
+        JpaProperties jpaProperties) {                    // ← lê spring.jpa.properties
+
+    // Copia as propriedades globais e acrescenta/sobrepõe as específicas
+    var props = new HashMap<>(jpaProperties.getProperties());
+    props.put("hibernate.hbm2ddl.auto",   "validate");
+    props.put("hibernate.dialect",
+              "org.hibernate.dialect.PostgreSQLDialect");
+
+    var adapter = new HibernateJpaVendorAdapter();
+    var factory = new LocalContainerEntityManagerFactoryBean();
+    factory.setDataSource(dataSource);
+    factory.setJpaVendorAdapter(adapter);
+    factory.setPackagesToScan("com.exemplo.primary.entity");
+    factory.setPersistenceUnitName("primary");
+    factory.setJpaPropertyMap(props);
+    return factory;
+}
+
+@Bean("secondaryEntityManagerFactory")
+public LocalContainerEntityManagerFactoryBean secondaryEntityManagerFactory(
+        @Qualifier("secondaryDataSource") DataSource dataSource,
+        JpaProperties jpaProperties) {
+
+    var props = new HashMap<>(jpaProperties.getProperties());
+
+    // Overrides: o secundário tem configuração diferente do global
+    props.put("hibernate.hbm2ddl.auto",   "none");
+    props.put("hibernate.dialect",
+              "org.hibernate.dialect.PostgreSQLDialect");
+    props.put("hibernate.jdbc.batch_size", "10");          // sobrepõe o 25 global
+    props.put("hibernate.physical_naming_strategy",
+              "org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl");
+
+    var adapter = new HibernateJpaVendorAdapter();
+    var factory = new LocalContainerEntityManagerFactoryBean();
+    factory.setDataSource(dataSource);
+    factory.setJpaVendorAdapter(adapter);
+    factory.setPackagesToScan("com.exemplo.secondary.entity");
+    factory.setPersistenceUnitName("secondary");
+    factory.setJpaPropertyMap(props);
+    return factory;
+}
+```
+
+> A abordagem híbrida é a mais pragmática: evita duplicação das propriedades comuns e deixa claro no código o que é específico de cada banco.
+
+#### Propriedades que comumente diferem por datasource
+
+| Propriedade Hibernate | Primário (operacional) | Secundário (legado/leitura) |
 |---|---|---|
-| Acesso por chave | O(n) via stream | O(1) via `get()` |
-| Complexidade de mapeamento | Baixa | Média (precisa de `@MapKey*`) |
-| Semântica | Coleção de filhos | Filhos indexados por chave |
-| Unicidade | Por `equals/hashCode` | Pela chave do Map |
-| Lazy loading | Carrega tudo | Carrega tudo (mesma coisa) |
-| Serialização JSON | Array `[]` | Objeto `{}` |
-| Dirty checking | Simples | Mais complexo |
-| Chave mutável | Não se aplica | Bug silencioso |
-
-### Annotations de mapeamento por tipo de chave
-
-| Tipo da chave | Annotation | Exemplo |
-|---|---|---|
-| Campo da entidade filha | `@MapKey(name = "campo")` | `Map<String, Matricula>` por RA |
-| Coluna simples (String) | `@MapKeyColumn(name = "col")` | `Map<String, String>` configurações |
-| Enum | `@MapKeyEnumerated` + `@MapKeyColumn` | `Map<TipoContato, String>` |
-| Outra entidade | `@MapKeyJoinColumn(name = "col_id")` | `Map<Curso, Matricula>` |
-| Tipo temporal | `@MapKeyTemporal` + `@MapKeyColumn` | `Map<LocalDate, Avaliacao>` |
-
-### Recomendação prática
-
-Use `Set` como padrão para `@OneToMany` e `@ManyToMany`. Reserve `Map` para cenários onde a semântica chave-valor é natural no domínio: configurações (`Map<String, String>`), contatos por tipo (`Map<TipoContato, String>`), avaliações por curso (`Map<Curso, Avaliacao>`), ou quando o acesso indexado por chave imutável é recorrente no código.
+| `hibernate.hbm2ddl.auto` | `validate` | `none` |
+| `hibernate.dialect` | dialeto do banco principal | dialeto do banco secundário |
+| `hibernate.physical_naming_strategy` | `CamelCaseToUnderscores` | `Standard` (preserva nomes) |
+| `hibernate.jdbc.batch_size` | `25–50` | `10` ou `1` (se não usa batch) |
+| `hibernate.order_inserts` / `order_updates` | `true` | `false` (leitura) |
+| `hibernate.format_sql` | `true` (dev) | `false` |
+| `hibernate.query.in_clause_parameter_padding` | `true` | depende do banco |
+| `hibernate.generate_statistics` | `true` (dev) | `false` |
 
 ---
 
-## 34. OffsetDateTime vs ZonedDateTime na Modelagem de Entidades
+### Entidades por banco
 
-Ambos representam um instante no tempo com informação de fuso, mas com granularidades diferentes. A escolha impacta o mapeamento JPA e a portabilidade dos dados.
-
-### A diferença fundamental
-
-`OffsetDateTime` carrega um **deslocamento fixo** em relação ao UTC. `ZonedDateTime` carrega uma **região/timezone** que inclui regras de horário de verão.
+As entidades não precisam de anotação especial — o que as vincula ao DataSource é o pacote onde estão, que é varrido pelo `EntityManagerFactory` correspondente.
 
 ```java
-// OffsetDateTime — offset fixo, sem regras de DST
-OffsetDateTime odt = OffsetDateTime.of(2025, 1, 15, 14, 30, 0, 0, ZoneOffset.ofHours(-3));
-// 2025-01-15T14:30:00-03:00
+// com.exemplo.primary.entity.Aluno  ← varrido por primaryEntityManagerFactory
+@Entity
+@Table(name = "alunos")
+public class Aluno extends BaseEntity { /* ... */ }
 
-// ZonedDateTime — timezone com regras de DST
-ZonedDateTime zdt = ZonedDateTime.of(2025, 1, 15, 14, 30, 0, 0, ZoneId.of("America/Sao_Paulo"));
-// 2025-01-15T14:30:00-03:00[America/Sao_Paulo]
-```
-
-No exemplo acima, ambos resolvem para o mesmo instante. A diferença aparece quando o horário de verão entra em jogo — o `ZonedDateTime` ajusta automaticamente, o `OffsetDateTime` não sabe que existe DST.
-
-```mermaid
-classDiagram
-    class OffsetDateTime {
-        -LocalDateTime dateTime
-        -ZoneOffset offset
-        +toInstant() Instant
-        +atZoneSameInstant(ZoneId) ZonedDateTime
-    }
-    class ZonedDateTime {
-        -LocalDateTime dateTime
-        -ZoneOffset offset
-        -ZoneId zone
-        +toInstant() Instant
-        +toOffsetDateTime() OffsetDateTime
-    }
-    class ZoneOffset {
-        -int totalSeconds
-        +ofHours(int) ZoneOffset
-        +UTC ZoneOffset
-    }
-    class ZoneId {
-        -String id
-        +of(String) ZoneId
-        +getRules() ZoneRules
-    }
-    class ZoneRules {
-        +isDaylightSavings(Instant) boolean
-        +getOffset(Instant) ZoneOffset
-    }
-
-    OffsetDateTime *-- ZoneOffset : "offset fixo"
-    ZonedDateTime *-- ZoneOffset : "offset atual"
-    ZonedDateTime *-- ZoneId : "regras de timezone"
-    ZoneId --> ZoneRules : "consulta regras DST"
-
-    note for OffsetDateTime "Sabe o deslocamento<br>NÃO sabe regras de DST"
-    note for ZonedDateTime "Sabe o timezone completo<br>Ajusta DST automaticamente"
-```
-
-### O que o PostgreSQL armazena
-
-O `TIMESTAMPTZ` armazena **apenas o instante UTC**. Não guarda nem o offset nem o timezone:
-
-```sql
--- Ambos resultam no mesmo valor armazenado
-INSERT INTO evento (criado_em) VALUES ('2025-01-15T14:30:00-03:00');
-INSERT INTO evento (criado_em) VALUES ('2025-01-15T17:30:00+00:00');
-
--- PostgreSQL armazena internamente: 2025-01-15 17:30:00 UTC (nos dois casos)
-```
-
-### O problema do ZonedDateTime com JPA
-
-O Hibernate mapeia `ZonedDateTime` para `TIMESTAMPTZ`, mas a informação do timezone é **perdida** no roundtrip:
-
-```mermaid
-sequenceDiagram
-    participant Java as Java (ZonedDateTime)
-    participant Hib as Hibernate
-    participant PG as PostgreSQL
-
-    Note over Java: 14:30:00-03:00<br/>[America/Sao_Paulo]
-
-    Java->>Hib: persist(evento)
-    Hib->>PG: INSERT 17:30:00 UTC
-    Note over PG: Armazena instante UTC<br/>timezone DESCARTADO
-
-    Java->>Hib: find(id)
-    PG->>Hib: 17:30:00+00
-    Hib->>Java: ZonedDateTime
-    Note over Java: 17:30:00Z[UTC]<br/>⚠️ NÃO é mais<br/>America/Sao_Paulo!
-```
-
-```java
-// Gravação
-ZonedDateTime original = ZonedDateTime.now(ZoneId.of("America/Sao_Paulo"));
-// 2025-01-15T14:30:00-03:00[America/Sao_Paulo]
-evento.setCriadoEm(original);
-repository.save(evento);
-
-// Leitura
-Evento lido = repository.findById(id).orElseThrow();
-lido.getCriadoEm();
-// 2025-01-15T17:30:00Z[UTC]  ← timezone original PERDIDO!
-```
-
-O instante é o mesmo, mas `getCriadoEm().getZone()` retorna `UTC`, não `America/Sao_Paulo`. Qualquer lógica que dependa do timezone original vai quebrar.
-
-### OffsetDateTime — roundtrip previsível
-
-```mermaid
-sequenceDiagram
-    participant Java as Java (OffsetDateTime)
-    participant Hib as Hibernate
-    participant PG as PostgreSQL
-
-    Note over Java: 14:30:00-03:00
-
-    Java->>Hib: persist(evento)
-    Hib->>PG: INSERT 17:30:00 UTC
-    Note over PG: Armazena instante UTC
-
-    Java->>Hib: find(id)
-    PG->>Hib: 17:30:00+00
-    Hib->>Java: OffsetDateTime
-    Note over Java: 17:30:00+00:00<br/>✅ Comportamento esperado<br/>Converte para local na apresentação
-```
-
-### Quando a diferença importa: agendamentos futuros
-
-```java
-// Agendar reunião para "15h horário de São Paulo" em outubro
-// Se o Brasil reintroduzir horário de verão:
-
-// OffsetDateTime: 15:00-03:00 → sempre 15:00-03:00 (offset fixo)
-// Se DST mudar o fuso para -02:00, o horário LOCAL será 16:00
-// O instante no tempo não muda, mas o relógio local muda.
-
-// ZonedDateTime: 15:00 America/Sao_Paulo → ajusta com DST
-// Sempre 15:00 no relógio de São Paulo, independente de DST
-// O instante UTC muda conforme as regras do timezone.
-```
-
-### Mapeamento recomendado: OffsetDateTime para persistência
-
-```java
-@MappedSuperclass
-public abstract class BaseEntity {
+// com.exemplo.secondary.entity.AlunoLegado  ← varrido por secondaryEntityManagerFactory
+@Entity
+@Table(name = "tb_aluno_legado")
+public class AlunoLegado {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "cd_aluno")
     private Long id;
 
-    @CreationTimestamp
-    @Column(nullable = false, updatable = false, columnDefinition = "TIMESTAMPTZ")
-    private OffsetDateTime criadoEm;
-
-    @UpdateTimestamp
-    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
-    private OffsetDateTime atualizadoEm;
+    @Column(name = "nm_aluno")
+    private String nome;
 }
 ```
 
-### Quando precisa do timezone: persista separadamente
+### Repositories — sem mudança na interface
 
-Para agendamentos futuros que devem respeitar DST, persista o instante e o timezone como duas colunas:
+Os repositories também não precisam de anotação especial. O vínculo ao `EntityManagerFactory` correto vem do `basePackages` declarado em `@EnableJpaRepositories`.
 
 ```java
-@Entity
-public class Agendamento extends BaseEntity {
+// com.exemplo.primary.repository  ← usa primaryEntityManagerFactory automaticamente
+public interface AlunoRepository extends JpaRepository<Aluno, Long> {
+    List<Aluno> findByStatus(StatusAluno status);
+}
 
-    @Column(nullable = false, columnDefinition = "TIMESTAMPTZ")
-    private OffsetDateTime dataHoraUtc;
-
-    @Column(nullable = false, length = 50)
-    private String timezone; // "America/Sao_Paulo"
-
-    private String descricao;
-
-    // Reconstrói ZonedDateTime quando necessário (em memória)
-    public ZonedDateTime getDataHoraLocal() {
-        return dataHoraUtc.atZoneSameInstant(ZoneId.of(timezone));
-    }
-
-    // Factory method a partir de ZonedDateTime
-    public static Agendamento of(ZonedDateTime dataHoraLocal, String descricao) {
-        var agendamento = new Agendamento();
-        agendamento.dataHoraUtc = dataHoraLocal.toOffsetDateTime();
-        agendamento.timezone = dataHoraLocal.getZone().getId();
-        agendamento.descricao = descricao;
-        return agendamento;
-    }
+// com.exemplo.secondary.repository  ← usa secondaryEntityManagerFactory automaticamente
+public interface AlunoLegadoRepository extends JpaRepository<AlunoLegado, Long> {
+    List<AlunoLegado> findByNome(String nome);
 }
 ```
 
-```mermaid
-erDiagram
-    agendamento {
-        bigint id PK
-        timestamptz data_hora_utc "instante em UTC"
-        varchar timezone "America/Sao_Paulo"
-        varchar descricao
-        timestamptz criado_em
-        timestamptz atualizado_em
-    }
-```
-
-Uso:
+### Injeção nos services
 
 ```java
-// Criar agendamento para 15h em São Paulo
-ZonedDateTime reuniao = ZonedDateTime.of(
-    2025, 10, 20, 15, 0, 0, 0,
-    ZoneId.of("America/Sao_Paulo")
-);
-Agendamento ag = Agendamento.of(reuniao, "Review Sprint 42");
-repository.save(ag);
+@Service
+public class SincronizacaoService {
 
-// Leitura — reconstrói o ZonedDateTime
-Agendamento lido = repository.findById(id).orElseThrow();
-ZonedDateTime local = lido.getDataHoraLocal();
-// 2025-10-20T15:00:00-03:00[America/Sao_Paulo]  ✅ timezone preservado
-```
+    private final AlunoRepository alunoRepository;             // banco primário
+    private final AlunoLegadoRepository alunoLegadoRepository; // banco secundário
 
-O instante fica no `TIMESTAMPTZ` (otimizado para comparações, índices e ordenação) e o timezone como `VARCHAR` é preservado integralmente.
+    public SincronizacaoService(AlunoRepository alunoRepository,
+                                AlunoLegadoRepository alunoLegadoRepository) {
+        this.alunoRepository = alunoRepository;
+        this.alunoLegadoRepository = alunoLegadoRepository;
+    }
 
-### Conversão na apresentação (API REST)
+    // @Transactional usa primaryTransactionManager (o @Primary)
+    @Transactional
+    public void sincronizar() {
+        alunoLegadoRepository.findAll()
+            .stream()
+            .map(this::converter)
+            .forEach(alunoRepository::save);
+    }
 
-Para endpoints que retornam datas no timezone do usuário:
-
-```java
-public record AgendamentoResponse(
-    Long id,
-    String descricao,
-    OffsetDateTime dataHoraUtc,
-    String timezone,
-    String dataHoraLocal // formatado no fuso do agendamento
-) {
-
-    public static AgendamentoResponse of(Agendamento ag) {
-        ZonedDateTime local = ag.getDataHoraLocal();
-        return new AgendamentoResponse(
-            ag.getId(),
-            ag.getDescricao(),
-            ag.getDataHoraUtc(),
-            ag.getTimezone(),
-            local.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm (z)"))
-        );
+    // Operação no banco secundário: qualificar o TransactionManager
+    @Transactional(transactionManager = "secondaryTransactionManager")
+    public void atualizarLegado(Long id, String nome) {
+        alunoLegadoRepository.findById(id)
+            .ifPresent(a -> a.setNome(nome));
     }
 }
 ```
 
-JSON resultante:
+### EntityManager explícito via `@PersistenceContext`
 
-```json
-{
-    "id": 1,
-    "descricao": "Review Sprint 42",
-    "dataHoraUtc": "2025-10-20T18:00:00Z",
-    "timezone": "America/Sao_Paulo",
-    "dataHoraLocal": "20/10/2025 15:00 (BRT)"
+Quando necessário usar o `EntityManager` diretamente (queries nativas complexas, Criteria API), qualifique pelo `unitName`:
+
+```java
+@Repository
+public class RelatorioLegadoRepository {
+
+    @PersistenceContext(unitName = "secondary")
+    private EntityManager em;
+
+    public List<Object[]> relatorioConsolidado() {
+        return em.createNativeQuery("""
+                SELECT cd_aluno, nm_aluno, dt_matricula
+                FROM tb_aluno_legado
+                WHERE ativo = 'S'
+                ORDER BY dt_matricula DESC
+                """)
+            .getResultList();
+    }
 }
 ```
 
-### Comparação direta
+### Transações entre DataSources
 
-| Aspecto | `OffsetDateTime` | `ZonedDateTime` |
-|---|---|---|
-| Informação | Offset fixo (`-03:00`) | Timezone + regras DST |
-| Mapeamento JDBC/Hibernate | Direto para `TIMESTAMPTZ` | Direto para `TIMESTAMPTZ` |
-| Roundtrip banco → Java | Offset preservado (da sessão) | **Timezone perdido** |
-| ISO 8601 / APIs REST | Formato nativo | Precisa converter |
-| Regras de DST | Não conhece | Ajusta automaticamente |
-| Uso em JPA | Recomendado | Evitar como campo persistido |
-| Comparação/ordenação | Direto no SQL | Direto no SQL (mesmo instante) |
-
-### Resumo de decisão
+JPA não suporta transações distribuídas nativas. Se precisar de atomicidade entre dois bancos, as opções são:
 
 ```mermaid
 flowchart TD
-    A[Preciso persistir data/hora] --> B{Qual o caso de uso?}
+    T[Operação entre 2 bancos] --> Q{Necessidade}
+    Q -->|Aceitável eventual consistency| S["Saga Pattern<br>(operações independentes com compensação)"]
+    Q -->|Atomicidade crítica| X["XA / JTA<br>(Atomikos, Narayana)"]
+    Q -->|Leitura + escrita simples| R["Sem transação distribuída<br>(operar sequencialmente,<br>tratar falha manualmente)"]
 
-    B -->|"Auditoria / transações<br>(quando aconteceu)"| C[OffsetDateTime]
-    B -->|"Agendamento futuro<br>(respeitar DST)"| D["OffsetDateTime<br>+ String timezone<br>(duas colunas)"]
-    B -->|"Timezone do usuário<br>na apresentação"| E["OffsetDateTime no banco<br>Converte no DTO/Response"]
-
-    C --> F["@Column TIMESTAMPTZ<br>+ hibernate.jdbc.time_zone=UTC"]
-    D --> G["TIMESTAMPTZ + VARCHAR(50)<br>Reconstrói ZonedDateTime em memória"]
-    E --> H["getDataHoraUtc()<br>.atZoneSameInstant(fusoUsuario)"]
-
-    style C fill:#9f9,stroke:#333
-    style D fill:#9f9,stroke:#333
-    style E fill:#9f9,stroke:#333
+    style S fill:#9cf,stroke:#333
+    style X fill:#f99,stroke:#333
+    style R fill:#9f9,stroke:#333
 ```
 
-A regra é: `OffsetDateTime` para persistência, `ZonedDateTime` para lógica de apresentação e agendamento em memória. O banco de dados não é o lugar para guardar regras de timezone — essas regras mudam com legislação e o banco não as acompanha.
-
----
-
-## 35. Migração de java.util.Date para java.time em Entidades JPA
-
-A migração é direta porque o PostgreSQL já armazena os dados no formato correto — a mudança é apenas no tipo Java, sem alterar colunas no banco na maioria dos casos.
-
-### Entidade legada com java.util.Date
-
-```java
-@Entity
-public class Pedido {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private BigDecimal total;
-
-    @Temporal(TemporalType.TIMESTAMP)
-    @Column(name = "criado_em")
-    private Date criadoEm;
-
-    @Temporal(TemporalType.TIMESTAMP)
-    @Column(name = "atualizado_em")
-    private Date atualizadoEm;
-
-    @Temporal(TemporalType.DATE)
-    @Column(name = "data_entrega")
-    private Date dataEntrega;
-
-    @Temporal(TemporalType.TIME)
-    @Column(name = "hora_limite")
-    private Date horaLimite;
-}
-```
-
-### Mapeamento direto: @Temporal → java.time
-
-```mermaid
-flowchart LR
-    subgraph "java.util (legado)"
-        D1["@Temporal(TIMESTAMP)<br>Date"]
-        D2["@Temporal(DATE)<br>Date"]
-        D3["@Temporal(TIME)<br>Date"]
-    end
-
-    subgraph "Coluna PostgreSQL"
-        C1["TIMESTAMPTZ"]
-        C2["TIMESTAMP"]
-        C3["DATE"]
-        C4["TIME"]
-    end
-
-    subgraph "java.time (moderno)"
-        T1["OffsetDateTime"]
-        T2["LocalDateTime"]
-        T3["LocalDate"]
-        T4["LocalTime"]
-    end
-
-    D1 --> C1
-    D1 --> C2
-    D2 --> C3
-    D3 --> C4
-
-    C1 --> T1
-    C2 --> T2
-    C3 --> T3
-    C4 --> T4
-
-    style D1 fill:#f99,stroke:#333
-    style D2 fill:#f99,stroke:#333
-    style D3 fill:#f99,stroke:#333
-    style T1 fill:#9f9,stroke:#333
-    style T2 fill:#9f9,stroke:#333
-    style T3 fill:#9f9,stroke:#333
-    style T4 fill:#9f9,stroke:#333
-```
-
-| `@Temporal` | Tipo no banco | Substituto `java.time` |
-|---|---|---|
-| `TemporalType.TIMESTAMP` | `TIMESTAMPTZ` | `OffsetDateTime` |
-| `TemporalType.TIMESTAMP` | `TIMESTAMP` | `LocalDateTime` |
-| `TemporalType.DATE` | `DATE` | `LocalDate` |
-| `TemporalType.TIME` | `TIME` | `LocalTime` |
-
-### Passo 1: Identificar o tipo real da coluna
-
-```sql
-SELECT column_name, data_type
-FROM information_schema.columns
-WHERE table_name = 'pedido'
-  AND column_name IN ('criado_em', 'atualizado_em', 'data_entrega', 'hora_limite');
-```
-
-```
-| column_name   | data_type                  | Tipo java.time     |
-|---------------|----------------------------|--------------------|
-| criado_em     | timestamp with time zone   | OffsetDateTime     |
-| atualizado_em | timestamp with time zone   | OffsetDateTime     |
-| data_entrega  | date                       | LocalDate          |
-| hora_limite   | time without time zone     | LocalTime          |
-```
-
-### Passo 2: Substituir os tipos (zero impacto no DDL)
-
-```java
-@Entity
-public class Pedido {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private BigDecimal total;
-
-    // ANTES: @Temporal(TemporalType.TIMESTAMP) Date criadoEm
-    @Column(name = "criado_em", nullable = false, updatable = false)
-    @CreationTimestamp
-    private OffsetDateTime criadoEm;
-
-    // ANTES: @Temporal(TemporalType.TIMESTAMP) Date atualizadoEm
-    @Column(name = "atualizado_em", nullable = false)
-    @UpdateTimestamp
-    private OffsetDateTime atualizadoEm;
-
-    // ANTES: @Temporal(TemporalType.DATE) Date dataEntrega
-    @Column(name = "data_entrega")
-    private LocalDate dataEntrega;
-
-    // ANTES: @Temporal(TemporalType.TIME) Date horaLimite
-    @Column(name = "hora_limite")
-    private LocalTime horaLimite;
-}
-```
-
-O `@Temporal` é **removido** — o Hibernate 6 infere o tipo SQL a partir do tipo Java. Nenhuma migration Flyway necessária se o tipo da coluna no banco já corresponde.
-
-### Passo 3: Atualizar o código que consome a entidade
-
-#### Comparações
-
-```java
-// ANTES (java.util.Date)
-if (pedido.getCriadoEm().before(new Date())) { }
-if (pedido.getCriadoEm().after(limiteDate)) { }
-
-// DEPOIS (java.time)
-if (pedido.getCriadoEm().isBefore(OffsetDateTime.now())) { }
-if (pedido.getCriadoEm().isAfter(limite)) { }
-```
-
-#### Formatação
-
-```java
-// ANTES — não thread-safe!
-SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
-String formatted = sdf.format(pedido.getCriadoEm());
-
-// DEPOIS — imutável, thread-safe
-DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-String formatted = pedido.getCriadoEm().format(fmt);
-```
-
-#### Manipulação
-
-```java
-// ANTES
-Calendar cal = Calendar.getInstance();
-cal.setTime(pedido.getDataEntrega());
-cal.add(Calendar.DAY_OF_MONTH, 30);
-Date novaData = cal.getTime();
-
-// DEPOIS
-LocalDate novaData = pedido.getDataEntrega().plusDays(30);
-```
-
-#### Criação de instâncias
-
-```java
-// ANTES
-Date agora = new Date();
-Date dataEspecifica = new SimpleDateFormat("yyyy-MM-dd").parse("2025-06-15");
-
-// DEPOIS
-OffsetDateTime agora = OffsetDateTime.now();
-LocalDate dataEspecifica = LocalDate.of(2025, 6, 15);
-```
-
-### Caso especial: TIMESTAMP (sem tz) → OffsetDateTime
-
-Se a coluna é `timestamp without time zone` mas você quer migrar para `OffsetDateTime`, precisa de migration:
-
-```sql
--- V10__migrate_timestamp_to_timestamptz.sql
-ALTER TABLE pedido
-    ALTER COLUMN criado_em TYPE TIMESTAMPTZ
-    USING criado_em AT TIME ZONE 'America/Sao_Paulo';
-
-ALTER TABLE pedido
-    ALTER COLUMN atualizado_em TYPE TIMESTAMPTZ
-    USING atualizado_em AT TIME ZONE 'America/Sao_Paulo';
-```
-
-O `AT TIME ZONE 'America/Sao_Paulo'` diz ao PostgreSQL que os valores existentes estavam nesse fuso, e ele converte para UTC internamente. Sem o `USING`, o PostgreSQL assume UTC — o que pode estar errado se a aplicação gravava no horário local.
-
-```mermaid
-sequenceDiagram
-    participant App as Aplicação
-    participant FW as Flyway
-    participant PG as PostgreSQL
-
-    Note over App: Entidade ainda com Date
-
-    FW->>PG: ALTER COLUMN criado_em TYPE TIMESTAMPTZ<br/>USING criado_em AT TIME ZONE 'America/Sao_Paulo'
-    Note over PG: Converte valores existentes<br/>2025-01-15 14:30:00<br/>→ 2025-01-15 17:30:00 UTC
-
-    Note over App: Deploy com OffsetDateTime
-    App->>PG: SELECT criado_em FROM pedido
-    PG->>App: 2025-01-15 17:30:00+00
-    Note over App: OffsetDateTime.parse(...)
-```
-
-### Caso especial: java.sql.Date e java.sql.Timestamp
-
-```java
-// ANTES (java.sql)
-private java.sql.Date dataEntrega;
-private java.sql.Timestamp criadoEm;
-
-// DEPOIS (java.time) — mesma substituição
-private LocalDate dataEntrega;
-private OffsetDateTime criadoEm;
-```
-
-### Convivência temporária: getter legado @Deprecated
-
-Se a migração precisa ser gradual (entidade consumida por muitos services):
-
-```java
-@Entity
-public class Pedido {
-
-    @Column(name = "criado_em")
-    private OffsetDateTime criadoEm;
-
-    // Getter principal — código novo usa este
-    public OffsetDateTime getCriadoEm() {
-        return criadoEm;
-    }
-
-    // Getter para código legado que ainda espera Date
-    @Deprecated(forRemoval = true)
-    public Date getCriadoEmAsDate() {
-        return criadoEm == null ? null : Date.from(criadoEm.toInstant());
-    }
-}
-```
-
-O `@Deprecated(forRemoval = true)` sinaliza para a equipe que o getter legado será removido, e a IDE marca como strikethrough.
-
-### Tabela de conversão entre tipos (referência rápida)
-
-```java
-// ── Date → java.time ──────────────────────────────────────
-
-// Date → OffsetDateTime
-OffsetDateTime odt = date.toInstant().atOffset(ZoneOffset.UTC);
-
-// Date → LocalDateTime (assume fuso da JVM — cuidado!)
-LocalDateTime ldt = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
-
-// Date → LocalDate
-LocalDate ld = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-
-// ── java.time → Date ──────────────────────────────────────
-
-// OffsetDateTime → Date
-Date date = Date.from(odt.toInstant());
-
-// LocalDateTime → Date (assume fuso da JVM)
-Date date = Date.from(ldt.atZone(ZoneId.systemDefault()).toInstant());
-
-// LocalDate → Date (meia-noite no fuso da JVM)
-Date date = Date.from(ld.atStartOfDay(ZoneId.systemDefault()).toInstant());
-```
-
-### Checklist de migração
-
-```mermaid
-flowchart TD
-    A["1. Verificar tipo real das colunas<br>(information_schema)"] --> B{Tipo da coluna?}
-
-    B -->|TIMESTAMPTZ| C["Trocar para OffsetDateTime<br>✅ zero impacto no banco"]
-    B -->|TIMESTAMP| D{Quer timezone?}
-    B -->|DATE| E["Trocar para LocalDate<br>✅ zero impacto no banco"]
-    B -->|TIME| F["Trocar para LocalTime<br>✅ zero impacto no banco"]
-
-    D -->|Sim| G["Migration Flyway:<br>ALTER TYPE TIMESTAMPTZ<br>USING AT TIME ZONE 'fuso'<br>Depois: OffsetDateTime"]
-    D -->|Não| H["Trocar para LocalDateTime<br>✅ zero impacto no banco"]
-
-    C --> I["Remover @Temporal"]
-    E --> I
-    F --> I
-    G --> I
-    H --> I
-
-    I --> J["Atualizar comparações,<br>formatações e DTOs"]
-    J --> K["Deprecar getters legados<br>com @Deprecated forRemoval"]
-
-    style C fill:#9f9,stroke:#333
-    style E fill:#9f9,stroke:#333
-    style F fill:#9f9,stroke:#333
-    style H fill:#9f9,stroke:#333
-    style G fill:#fc9,stroke:#333
-```
-
-| Etapa | Ação | Impacto no banco |
-|---|---|---|
-| 1 | Verificar tipo real das colunas (`information_schema`) | Nenhum |
-| 2 | `TIMESTAMPTZ` → `OffsetDateTime` | Nenhum |
-| 3 | `TIMESTAMP` → `LocalDateTime` | Nenhum |
-| 4 | `DATE` → `LocalDate` | Nenhum |
-| 5 | `TIME` → `LocalTime` | Nenhum |
-| 6 | `TIMESTAMP` → `OffsetDateTime` (upgrade de coluna) | Migration: `ALTER TYPE TIMESTAMPTZ` |
-| 7 | Remover `@Temporal` | Nenhum |
-| 8 | Atualizar comparações, formatações, DTOs | Nenhum |
-| 9 | Deprecar getters legados com `Date` | Nenhum |
-
-Na grande maioria dos casos (etapas 1–5 e 7–9), a migração é puramente Java — nenhuma alteração no banco. A única situação que exige Flyway migration é quando se quer **promover** uma coluna `TIMESTAMP` para `TIMESTAMPTZ`.
+| Abordagem | Consistência | Complexidade | Recomendado |
+|---|---|---|---|
+| Operações sequenciais | Eventual | Baixa | Maioria dos casos |
+| Saga com compensação | Eventual | Média | Fluxos de negócio |
+| XA / JTA (Atomikos) | Forte | Alta | Crítico — evitar se possível |
+
+### Armadilhas comuns
+
+- **Não excluir o autoconfigure**: sem `exclude: DataSourceAutoConfiguration`, o Spring tenta criar um `DataSource` padrão com `spring.datasource.url` — que não existe nessa configuração.
+- **Esquecer `@Primary`**: sem ele, a injeção de `DataSource`, `EntityManagerFactory` ou `TransactionManager` sem qualificador explícito falhará com `NoUniqueBeanDefinitionException`.
+- **Pacotes sobrepostos**: se dois `@EnableJpaRepositories` varreram o mesmo pacote, entidades serão registradas nos dois `EntityManagerFactory`, causando erros de mapeamento duplicado.
+- **`@Transactional` sem qualificador**: por padrão usa o `primaryTransactionManager` — operations no banco secundário dentro de um método `@Transactional` sem qualificador **não** são transacionadas pelo `secondaryTransactionManager`.
+- **`ddl-auto` em múltiplos bancos**: cada `EntityManagerFactory` executa DDL separadamente. Com `ddl-auto: validate` no primário e `none` no secundário, cada banco segue sua própria política.
 
 ---
 
