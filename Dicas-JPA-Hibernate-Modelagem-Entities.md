@@ -41,6 +41,7 @@
 24. [Nomeação de Foreign Keys com @ForeignKey](#24-nomeação-de-foreign-keys-com-foreignkey)
 25. [@DynamicInsert — INSERT sem campos nulos (respeita DEFAULTs)](#25-dynamicinsert-insert-sem-campos-nulos-respeita-defaults)
 26. [@ColumnDefault — declarar o DEFAULT na geração do DDL](#26-columndefault-declarar-o-default-na-geração-do-ddl)
+26.1. [Mapeando Campos String como TEXT no PostgreSQL](#261-mapeando-campos-string-como-text-no-postgresql)
 
 **Parte 6 — Timestamps e Tipos Temporais**
 
@@ -3583,6 +3584,245 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long> {
 > **Boas práticas**: exponha apenas o UUID público nas APIs REST (nunca o `id` numérico interno). O `id` Long é mais eficiente para JOINs internos; o UUID é opaco para o cliente externo, dificultando enumeração de recursos.
 
 ---
+
+
+## 26.1. Mapeando Campos String como TEXT no PostgreSQL
+
+Por padrão, o Hibernate mapeia campos `String` como `VARCHAR(255)` no DDL — ou `VARCHAR(n)` quando `@Column(length = N)` é definido. No PostgreSQL, `TEXT` e `VARCHAR` têm performance e armazenamento idênticos; a diferença é que `TEXT` não impõe limite artificial de tamanho. Repetir `columnDefinition = "text"` em cada campo é verboso e propenso a inconsistências.
+
+```java
+// Antipadrão — repetitivo e propenso a esquecer campos
+@Column(nullable = false, columnDefinition = "text")
+private String nome;
+
+@Column(nullable = false, columnDefinition = "text")
+private String email;
+
+@Column(columnDefinition = "text")
+private String bio;
+```
+
+### Solução 1: Dialect customizado (global, recomendada)
+
+Estender `PostgreSQLDialect` e sobrescrever `columnType()` para retornar `"text"` onde o Hibernate geraria `varchar`. Afeta o DDL gerado de **todo** o projeto:
+
+```java
+import org.hibernate.dialect.PostgreSQLDialect;
+import java.sql.Types;
+
+public class PostgresTextDialect extends PostgreSQLDialect {
+
+    @Override
+    protected String columnType(int sqlTypeCode) {
+        return switch (sqlTypeCode) {
+            // Todos os tipos de string → text (sem limite de tamanho no DDL)
+            case Types.VARCHAR,
+                 Types.NVARCHAR,
+                 Types.LONGVARCHAR -> "text";
+            default -> super.columnType(sqlTypeCode);
+        };
+    }
+
+    @Override
+    protected String castType(int sqlTypeCode) {
+        return switch (sqlTypeCode) {
+            case Types.VARCHAR,
+                 Types.NVARCHAR -> "text";
+            default -> super.castType(sqlTypeCode);
+        };
+    }
+}
+```
+
+Configuração em `application.yaml`:
+
+```yaml
+spring:
+  jpa:
+    properties:
+      hibernate:
+        dialect: com.exemplo.config.PostgresTextDialect
+```
+
+DDL resultante — sem nenhuma mudança nas entidades:
+
+```sql
+-- Dialect padrão do Hibernate
+CREATE TABLE aluno (
+    nome  VARCHAR(200) NOT NULL,
+    email VARCHAR(255),
+    ra    VARCHAR(20) NOT NULL
+);
+
+-- PostgresTextDialect
+CREATE TABLE aluno (
+    nome  TEXT NOT NULL,
+    email TEXT,
+    ra    TEXT NOT NULL
+);
+```
+
+Com o dialect customizado, o atributo `length` em `@Column` **deixa de influenciar o DDL** — o tipo gerado será sempre `text`. O `length` passa a ser apenas documentação no código. Para impor limites reais de tamanho, use Bean Validation:
+
+```java
+@Entity
+public class Aluno extends BaseEntity {
+
+    // DDL: nome TEXT NOT NULL (sem limite no banco)
+    // Limite de 200 caracteres validado pela aplicação antes do INSERT
+    @Column(nullable = false)
+    @NotBlank
+    @Size(max = 200)
+    private String nome;
+
+    // DDL: ra TEXT NOT NULL
+    @Column(nullable = false)
+    @NotBlank
+    @Size(max = 20)
+    private String ra;
+
+    // DDL: email TEXT (aceita qualquer tamanho)
+    @Column
+    @Email
+    private String email;
+}
+```
+
+### Solução 2: `@JdbcTypeCode` por campo (sem alterar o dialect)
+
+Para converter campos individualmente — sem mudar o dialect global:
+
+```java
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+@Entity
+public class Curso extends BaseEntity {
+
+    // DDL: nome TEXT NOT NULL
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column(nullable = false)
+    private String nome;
+
+    // DDL: ementa TEXT
+    @JdbcTypeCode(SqlTypes.LONGVARCHAR)
+    @Column
+    private String ementa;
+
+    // DDL: carga_horaria INTEGER — não afetado
+    @Column(nullable = false)
+    private Integer cargaHoraria;
+}
+```
+
+Útil quando apenas alguns campos específicos precisam de `text` e outros devem manter `varchar`.
+
+### Solução 3: `package-info.java` com `@TypeRegistration` (escopo de pacote)
+
+Para aplicar a todos os campos `String` de um pacote sem afetar o restante do projeto:
+
+```java
+// src/main/java/com/exemplo/entities/package-info.java
+@TypeRegistration(basicClass = String.class, userType = TextUserType.class)
+package com.exemplo.entities;
+
+import org.hibernate.annotations.TypeRegistration;
+```
+
+```java
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
+import org.hibernate.usertype.UserType;
+import java.io.Serializable;
+import java.sql.*;
+
+public class TextUserType implements UserType<String> {
+
+    @Override
+    public int getSqlType() {
+        return Types.LONGVARCHAR; // → text no PostgreSQL
+    }
+
+    @Override
+    public Class<String> returnedClass() {
+        return String.class;
+    }
+
+    @Override
+    public boolean equals(String x, String y) {
+        return Objects.equals(x, y);
+    }
+
+    @Override
+    public int hashCode(String x) {
+        return Objects.hashCode(x);
+    }
+
+    @Override
+    public String nullSafeGet(ResultSet rs, int position,
+            SharedSessionContractImplementor session, Object owner)
+            throws SQLException {
+        return rs.getString(position);
+    }
+
+    @Override
+    public void nullSafeSet(PreparedStatement st, String value, int index,
+            SharedSessionContractImplementor session)
+            throws SQLException {
+        if (value == null) {
+            st.setNull(index, Types.LONGVARCHAR);
+        } else {
+            st.setString(index, value);
+        }
+    }
+
+    @Override
+    public String deepCopy(String value) {
+        return value; // String é imutável
+    }
+
+    @Override
+    public boolean isMutable() {
+        return false;
+    }
+
+    @Override
+    public Serializable disassemble(String value) {
+        return value;
+    }
+
+    @Override
+    public String assemble(Serializable cached, Object owner) {
+        return (String) cached;
+    }
+}
+```
+
+Entidades em subpacotes não são incluídas automaticamente — é necessário um `package-info.java` em cada subpacote desejado.
+
+### Comparação das abordagens
+
+| Abordagem | Escopo | Altera entidades | Complexidade |
+|---|---|---|---|
+| `columnDefinition = "text"` por campo | Campo específico | Sim — repetitivo | Baixa |
+| `@JdbcTypeCode(LONGVARCHAR)` | Campo específico | Sim — semântico | Baixa |
+| `package-info.java` + `UserType` | Pacote | Não | Alta |
+| Dialect customizado | Projeto inteiro | Não | Média |
+
+```mermaid
+flowchart TD
+    A{Escopo desejado?} -->|Todos os campos String do projeto| B["Dialect customizado\nPostgresTextDialect\n✅ Recomendado"]
+    A -->|Pacote específico| C["package-info.java\n+ TypeRegistration"]
+    A -->|Campo específico| D{"Motivo?"}
+
+    D -->|Exceção pontual| E["@JdbcTypeCode(LONGVARCHAR)"]
+    D -->|Documentação explícita| F["columnDefinition = 'text'"]
+
+    style B fill:#9f9,stroke:#333
+    style E fill:#9cf,stroke:#333
+```
+
+---
+
 
 ## Parte 6 — Timestamps e Tipos Temporais
 

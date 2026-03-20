@@ -39,6 +39,7 @@
 19. [Exclusão — Boas Práticas de DELETE](#19-exclusão-boas-práticas-de-delete)
 20. [Bulk Operations — UPDATE e DELETE em Massa](#20-bulk-operations-update-e-delete-em-massa)
 21. [Entity Listeners — Callbacks de Ciclo de Vida](#21-entity-listeners-callbacks-de-ciclo-de-vida)
+21.1. [Hibernate Event Listeners — org.hibernate.event.spi](#211-hibernate-event-listeners--orghibernateventspi)
 
 **Parte 5 — Qualidade, Performance e Segurança**
 
@@ -5148,6 +5149,426 @@ public class EntidadeSemAuditoria extends BaseEntity { }
 | `orm.xml` global | Todas as entidades | Workaround | Média | Auditoria/segurança cross-cutting |
 | Spring Data `AuditingEntityListener` | Entidades anotadas | Sim (nativo) | Baixa | `createdBy`, `modifiedBy` |
 | `@TransactionalEventListener` no service | Por operação | Sim (nativo) | Baixa | Notificações, efeitos colaterais |
+
+---
+
+
+## 21.1. Hibernate Event Listeners — `org.hibernate.event.spi`
+
+Enquanto os `@EntityListeners` do JPA interceptam callbacks de ciclo de vida da entidade, os **Hibernate Event Listeners** operam em uma camada mais baixa: interceptam as operações internas da `Session` do Hibernate antes e depois de serem executadas. Ficam nos pacotes `org.hibernate.event.spi` (interfaces) e `org.hibernate.event.internal` (implementações padrão), e permitem acessar o contexto completo da sessão — incluindo o estado anterior dos campos e o grafo de entidades no persistence context.
+
+### Posição na pilha de execução
+
+```mermaid
+flowchart TD
+    A["service.salvar(entity)"] --> B["EntityManager.merge()"]
+    B --> C["Hibernate Session<br>MergeEvent"]
+    C --> D["MergeEventListener\norg.hibernate.event.spi"]
+    D --> E["@PrePersist / @PreUpdate\n(JPA callback)"]
+    E --> F["SQL UPDATE / INSERT"]
+    F --> G["@PostPersist / @PostUpdate\n(JPA callback)"]
+    G --> H["PostUpdateEventListener\norg.hibernate.event.spi"]
+
+    style D fill:#f9a,stroke:#333
+    style H fill:#f9a,stroke:#333
+    style E fill:#9f9,stroke:#333
+    style G fill:#9f9,stroke:#333
+```
+
+### Comparação com @EntityListeners
+
+| Critério | `@EntityListeners` (JPA) | Hibernate Event Listeners |
+|---|---|---|
+| Padrão | JPA (portável) | Hibernate-specific |
+| Nível de abstração | Entidade | Sessão / persistence context |
+| Acesso à `Session` | Não | Sim (via `EventSource`) |
+| Estado anterior dos campos | Não | Sim (`PostUpdateEvent.getOldState()`) |
+| Acesso ao grafo de cópia (merge) | Não | Sim (`MergeContext`) |
+| Registrado via | `@EntityListeners` na entidade | `EventListenerRegistry` |
+| Injeção Spring nativa | Não | Não |
+| Complexidade de uso | Baixa | Alta |
+
+### Interfaces disponíveis no pacote `org.hibernate.event.spi`
+
+| Interface | `EventType` | Operação interceptada |
+|---|---|---|
+| `PersistEventListener` | `EventType.PERSIST` | `session.persist()` |
+| `MergeEventListener` | `EventType.MERGE` | `session.merge()` |
+| `DeleteEventListener` | `EventType.DELETE` | `session.remove()` |
+| `LoadEventListener` | `EventType.LOAD` | `session.find()`, lazy load |
+| `SaveOrUpdateEventListener` | `EventType.SAVE_UPDATE` | `session.saveOrUpdate()` |
+| `FlushEventListener` | `EventType.FLUSH` | `session.flush()` |
+| `FlushEntityEventListener` | `EventType.FLUSH_ENTITY` | Flush de entidade suja |
+| `PostInsertEventListener` | `EventType.POST_INSERT` | Após INSERT no banco |
+| `PostUpdateEventListener` | `EventType.POST_UPDATE` | Após UPDATE no banco |
+| `PostDeleteEventListener` | `EventType.POST_DELETE` | Após DELETE no banco |
+| `PostLoadEventListener` | `EventType.POST_LOAD` | Após carregamento de entidade |
+| `EvictEventListener` | `EventType.EVICT` | `session.evict()` (remoção do cache L1) |
+
+As implementações padrão do Hibernate ficam no pacote `org.hibernate.event.internal` — por exemplo, `DefaultMergeEventListener`, `DefaultDeleteEventListener`, `DefaultPersistEventListener`. Estender essas classes é a forma recomendada de customizar sem perder o comportamento padrão.
+
+### Registrando listeners no Spring Boot
+
+A instância dos listeners é criada manualmente e injetada no `EventListenerRegistry` após a inicialização do `EntityManagerFactory`:
+
+```java
+import jakarta.annotation.PostConstruct;
+import jakarta.persistence.EntityManagerFactory;
+import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.event.service.spi.EventListenerRegistry;
+import org.hibernate.event.spi.EventType;
+import org.springframework.stereotype.Component;
+
+@Component
+public class HibernateEventListenerConfigurer {
+
+    private final EntityManagerFactory entityManagerFactory;
+    private final AuditService auditService;
+
+    public HibernateEventListenerConfigurer(
+            EntityManagerFactory entityManagerFactory,
+            AuditService auditService) {
+        this.entityManagerFactory = entityManagerFactory;
+        this.auditService = auditService;
+    }
+
+    @PostConstruct
+    public void configure() {
+        SessionFactoryImplementor sf =
+            entityManagerFactory.unwrap(SessionFactoryImplementor.class);
+
+        EventListenerRegistry registry = sf.getServiceRegistry()
+            .getService(EventListenerRegistry.class);
+
+        // appendListeners — adiciona APÓS os listeners padrão do Hibernate
+        registry.appendListeners(EventType.MERGE,
+            new AuditMergeListener(auditService));
+
+        // prependListeners — adiciona ANTES dos listeners padrão
+        registry.prependListeners(EventType.DELETE,
+            new SoftDeleteListener());
+
+        registry.appendListeners(EventType.POST_INSERT,
+            new LogPostInsertListener());
+
+        registry.appendListeners(EventType.POST_UPDATE,
+            new LogPostUpdateListener());
+    }
+}
+```
+
+### MergeEventListener — auditoria avançada no merge
+
+O `MergeEventListener` é ativado a cada `entityManager.merge()`. Estender `DefaultMergeEventListener` permite interceptar o merge sem perder o comportamento padrão do Hibernate:
+
+```java
+import org.hibernate.HibernateException;
+import org.hibernate.event.internal.DefaultMergeEventListener;
+import org.hibernate.event.spi.MergeContext;
+import org.hibernate.event.spi.MergeEvent;
+
+public class AuditMergeListener extends DefaultMergeEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(AuditMergeListener.class);
+
+    private final AuditService auditService;
+
+    public AuditMergeListener(AuditService auditService) {
+        this.auditService = auditService;
+    }
+
+    // Chamado para o objeto raiz do merge
+    @Override
+    public void onMerge(MergeEvent event) throws HibernateException {
+        log.debug("[MERGE] Iniciando merge de: {}", event.getEntityName());
+        super.onMerge(event); // comportamento padrão — propaga o merge em cascata
+        log.debug("[MERGE] Merge concluído, resultado: {}", event.getResult());
+        auditService.registrar(event.getEntityName(), "MERGE");
+    }
+
+    // Chamado recursivamente para cada entidade do grafo de cascata
+    @Override
+    public void onMerge(MergeEvent event, MergeContext copiedAlready)
+            throws HibernateException {
+        log.debug("[MERGE] Processando grafo: {} (já copiados: {})",
+            event.getEntityName(), copiedAlready.size());
+        super.onMerge(event, copiedAlready);
+    }
+}
+```
+
+O `MergeEvent` expõe:
+
+| Método | Retorno |
+|---|---|
+| `event.getOriginal()` | Objeto passado para `merge()` (detached) |
+| `event.getResult()` | Entidade gerenciada resultante (disponível após `super.onMerge()`) |
+| `event.getEntityName()` | Nome da entidade no Hibernate |
+| `event.getId()` | Identificador da entidade |
+| `event.getSession()` | `EventSource` — extensão da `Session` com acesso interno |
+
+### DeleteEventListener — soft delete sem `@SoftDelete`
+
+```java
+import org.hibernate.HibernateException;
+import org.hibernate.event.internal.DefaultDeleteEventListener;
+import org.hibernate.event.spi.DeleteContext;
+import org.hibernate.event.spi.DeleteEvent;
+
+public class SoftDeleteListener extends DefaultDeleteEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(SoftDeleteListener.class);
+
+    @Override
+    public void onDelete(DeleteEvent event) throws HibernateException {
+        Object entity = event.getObject();
+        if (entity instanceof SoftDeletable sd) {
+            // Marca como excluído logicamente — NÃO chama super (cancela o DELETE físico)
+            sd.setDeletedAt(OffsetDateTime.now());
+            log.info("[SOFT-DELETE] {} marcado como excluído",
+                entity.getClass().getSimpleName());
+        } else {
+            super.onDelete(event); // DELETE físico para entidades não soft-deletáveis
+        }
+    }
+
+    @Override
+    public void onDelete(DeleteEvent event, DeleteContext transientEntities)
+            throws HibernateException {
+        Object entity = event.getObject();
+        if (entity instanceof SoftDeletable sd) {
+            sd.setDeletedAt(OffsetDateTime.now());
+        } else {
+            super.onDelete(event, transientEntities);
+        }
+    }
+}
+```
+
+```java
+// Interface marcadora para entidades com exclusão lógica
+public interface SoftDeletable {
+    void setDeletedAt(OffsetDateTime deletedAt);
+    OffsetDateTime getDeletedAt();
+}
+```
+
+### PersistEventListener — validação de invariantes antes do persist
+
+```java
+import org.hibernate.HibernateException;
+import org.hibernate.event.internal.DefaultPersistEventListener;
+import org.hibernate.event.spi.PersistContext;
+import org.hibernate.event.spi.PersistEvent;
+
+public class ValidationPersistListener extends DefaultPersistEventListener {
+
+    @Override
+    public void onPersist(PersistEvent event) throws HibernateException {
+        validar(event.getObject());
+        super.onPersist(event);
+    }
+
+    @Override
+    public void onPersist(PersistEvent event, PersistContext createdAlready)
+            throws HibernateException {
+        validar(event.getObject());
+        super.onPersist(event, createdAlready);
+    }
+
+    private void validar(Object entity) {
+        if (entity instanceof Aluno aluno && (aluno.getRa() == null || aluno.getRa().isBlank())) {
+            throw new HibernateException("RA do Aluno é obrigatório para persistência");
+        }
+        if (entity instanceof Matricula m && m.getCurso() == null) {
+            throw new HibernateException("Matrícula deve ter Curso associado");
+        }
+    }
+}
+```
+
+### PostUpdateEventListener — detectar quais campos mudaram
+
+Este é o listener mais poderoso para auditoria detalhada — o `PostUpdateEvent` expõe o estado **anterior** e o **novo** de todos os campos, algo que os `@EntityListeners` do JPA não oferecem:
+
+```java
+import org.hibernate.event.spi.PostUpdateEvent;
+import org.hibernate.event.spi.PostUpdateEventListener;
+import org.hibernate.persister.entity.EntityPersister;
+
+public class LogPostUpdateListener implements PostUpdateEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(LogPostUpdateListener.class);
+
+    private final AuditService auditService;
+
+    public LogPostUpdateListener(AuditService auditService) {
+        this.auditService = auditService;
+    }
+
+    @Override
+    public void onPostUpdate(PostUpdateEvent event) {
+        String[] nomesCampos = event.getPersister().getPropertyNames();
+        Object[] estadoAntigo = event.getOldState(); // valores ANTES do update
+        Object[] estadoNovo   = event.getState();    // valores DEPOIS do update
+
+        List<String> camposAlterados = new ArrayList<>();
+        for (int i = 0; i < nomesCampos.length; i++) {
+            Object anterior = estadoAntigo != null ? estadoAntigo[i] : null;
+            Object atual    = estadoNovo[i];
+            if (!Objects.equals(anterior, atual)) {
+                camposAlterados.add(nomesCampos[i] + ": " + anterior + " → " + atual);
+                log.info("[UPDATE] {}.{}: {} → {}",
+                    event.getEntityName(), nomesCampos[i], anterior, atual);
+            }
+        }
+
+        if (!camposAlterados.isEmpty()) {
+            auditService.registrarAlteracoes(
+                event.getEntityName(), event.getId(), camposAlterados);
+        }
+    }
+
+    @Override
+    public boolean requiresPostCommitHandling(EntityPersister persister) {
+        // true — executa após commit da transação (mais seguro para efeitos colaterais)
+        // false — executa quando o SQL é emitido (antes do commit)
+        return false;
+    }
+}
+```
+
+### PostInsertEventListener — log pós-INSERT
+
+```java
+import org.hibernate.event.spi.PostInsertEvent;
+import org.hibernate.event.spi.PostInsertEventListener;
+import org.hibernate.persister.entity.EntityPersister;
+
+public class LogPostInsertListener implements PostInsertEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(LogPostInsertListener.class);
+
+    @Override
+    public void onPostInsert(PostInsertEvent event) {
+        log.info("[INSERT] {} id={} campos={}",
+            event.getEntityName(),
+            event.getId(),
+            Arrays.toString(event.getState())
+        );
+    }
+
+    @Override
+    public boolean requiresPostCommitHandling(EntityPersister persister) {
+        return false;
+    }
+}
+```
+
+### LoadEventListener — interceptar carregamentos lazy e por ID
+
+```java
+import org.hibernate.HibernateException;
+import org.hibernate.event.internal.DefaultLoadEventListener;
+import org.hibernate.event.spi.LoadEvent;
+import org.hibernate.event.spi.LoadEventListener;
+
+public class CacheAwareLoadListener extends DefaultLoadEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(CacheAwareLoadListener.class);
+
+    @Override
+    public void onLoad(LoadEvent event, LoadType loadType) throws HibernateException {
+        log.debug("[LOAD] Iniciando carga de {} id={}",
+            event.getEntityClassName(), event.getEntityId());
+
+        super.onLoad(event, loadType);
+
+        if (event.getResult() != null) {
+            log.debug("[LOAD] Entidade carregada via: {}",
+                event.isAssociationFetch() ? "lazy fetch" : "find/get direto");
+        } else {
+            log.warn("[LOAD] {} id={} não encontrado",
+                event.getEntityClassName(), event.getEntityId());
+        }
+    }
+}
+```
+
+### FlushEntityEventListener — inspecionar entidades sujas no flush
+
+```java
+import org.hibernate.HibernateException;
+import org.hibernate.event.spi.FlushEntityEvent;
+import org.hibernate.event.spi.FlushEntityEventListener;
+
+public class DirtyEntityAuditListener implements FlushEntityEventListener {
+
+    private static final Logger log = LoggerFactory.getLogger(DirtyEntityAuditListener.class);
+
+    @Override
+    public void onFlushEntity(FlushEntityEvent event) throws HibernateException {
+        int[] dirtyProperties = event.getDirtyProperties();
+        if (dirtyProperties == null || dirtyProperties.length == 0) {
+            return; // entidade limpa — sem alterações
+        }
+
+        String entityName  = event.getEntityEntry().getEntityName();
+        String[] propNames = event.getEntityEntry().getPersister().getPropertyNames();
+
+        for (int idx : dirtyProperties) {
+            log.debug("[FLUSH] Campo sujo: {}.{}", entityName, propNames[idx]);
+        }
+
+        if (event.hasDirtyCollection()) {
+            log.debug("[FLUSH] Coleção suja em: {}", entityName);
+        }
+    }
+}
+```
+
+### Quando usar cada abordagem
+
+```mermaid
+flowchart TD
+    A{Qual a necessidade?} --> B{Portabilidade JPA?}
+
+    B -->|Sim| C{Acesso ao estado anterior?}
+    B -->|Não, Hibernate only| D{Operação específica?}
+
+    C -->|Não| E["@EntityListeners\n@PreUpdate / @PostUpdate"]
+    C -->|Sim| F["PostUpdateEventListener\n(getOldState vs getState)"]
+
+    D -->|Merge com cascata| G["MergeEventListener\nextend DefaultMergeEventListener"]
+    D -->|Soft delete sem anotação| H["DeleteEventListener\nextend DefaultDeleteEventListener"]
+    D -->|Interceptar lazy load| I["LoadEventListener\nextend DefaultLoadEventListener"]
+    D -->|Detectar campos sujos| J["FlushEntityEventListener"]
+    D -->|Notificação pós-commit| K["PostInsertEventListener\nrequiresPostCommitHandling = true"]
+
+    style E fill:#9f9,stroke:#333
+    style F fill:#f9a,stroke:#333
+    style G fill:#f9a,stroke:#333
+    style H fill:#f9a,stroke:#333
+```
+
+| Necessidade | Abordagem recomendada |
+|---|---|
+| Setar defaults, normalizar campos | `@PrePersist` / `@PreUpdate` inline |
+| Auditoria de criação/modificação (`createdBy`) | Spring Data `AuditingEntityListener` |
+| Notificação após commit bem-sucedido | `@TransactionalEventListener(AFTER_COMMIT)` |
+| Detectar **quais campos** mudaram (old vs new) | `PostUpdateEventListener` |
+| Soft delete sem `@SoftDelete` do Hibernate | `DeleteEventListener` |
+| Controle do grafo de cascata no merge | `MergeEventListener` |
+| Interceptar carregamentos lazy | `LoadEventListener` |
+| Inspecionar entidades sujas antes do flush | `FlushEntityEventListener` |
+| Validação de invariantes de domínio global | `PersistEventListener` |
+
+### Restrições
+
+- **Não são beans Spring** — injeção de dependência via construtor no configurer (ver registro acima).
+- **Executam dentro da transação** — operações pesadas (HTTP, email) devem ser feitas em `@TransactionalEventListener(AFTER_COMMIT)` no service.
+- **Ao não chamar `super`** nos listeners que estendem as classes `Default*`, você assume total responsabilidade pelo comportamento — isso pode quebrar o cascade, o dirty checking e o flush.
+- **`requiresPostCommitHandling`** nos `PostXxxEventListener`: retorne `true` se o listener precisar executar após o commit (ex: enviar evento para outro sistema); retorne `false` para execução no momento em que o SQL é emitido.
 
 ---
 
