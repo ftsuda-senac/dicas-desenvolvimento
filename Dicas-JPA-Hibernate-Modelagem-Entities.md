@@ -1,5 +1,6 @@
-## Sumário
+# Spring Data JPA - Modelagem de entities
 
+## Sumário
 
 **Parte 1 — Fundamentos de Entidades JPA**
 
@@ -41,7 +42,8 @@
 24. [Nomeação de Foreign Keys com @ForeignKey](#24-nomeação-de-foreign-keys-com-foreignkey)
 25. [@DynamicInsert — INSERT sem campos nulos (respeita DEFAULTs)](#25-dynamicinsert-insert-sem-campos-nulos-respeita-defaults)
 26. [@ColumnDefault — declarar o DEFAULT na geração do DDL](#26-columndefault-declarar-o-default-na-geração-do-ddl)
-26.1. [Mapeando Campos String como TEXT no PostgreSQL](#261-mapeando-campos-string-como-text-no-postgresql)
+26.1. [columnDefinition com smallint — incompatibilidade de tipo JDBC](#261-columndefinition-com-smallint-incompatibilidade-de-tipo-jdbc)
+26.2. [Mapeando Campos String como TEXT no PostgreSQL](#262-mapeando-campos-string-como-text-no-postgresql)
 
 **Parte 6 — Timestamps e Tipos Temporais**
 
@@ -3585,8 +3587,108 @@ public interface ContratoRepository extends JpaRepository<Contrato, Long> {
 
 ---
 
+## 26.1. `columnDefinition` com `smallint` — incompatibilidade de tipo JDBC
 
-## 26.1. Mapeando Campos String como TEXT no PostgreSQL
+### O problema
+
+`@Column(columnDefinition = "integer default 1")` funciona sem erros. `@Column(columnDefinition = "smallint default 1")` gera warnings nos logs mesmo que o DDL seja criado corretamente:
+
+```
+Schema-validation: wrong column type encountered in column [ativo]
+in table [configuracao]; found [int2 (Types#SMALLINT)], but expecting [int4 (Types#INTEGER)]
+```
+
+### Por que acontece
+
+O atributo `columnDefinition` controla apenas o DDL gerado (o `CREATE TABLE`). Ele **não altera** como o Hibernate faz o bind de parâmetros JDBC nem como valida o schema — isso continua sendo determinado pelo **tipo Java do campo**.
+
+```
+Java Integer  →  Hibernate espera  int4 / INTEGER  (Types#INTEGER)
+Java Short    →  Hibernate espera  int2 / SMALLINT (Types#SMALLINT)
+```
+
+Quando o campo Java é `Integer` mas `columnDefinition` declara `smallint`, há divergência entre o que o Hibernate espera (`int4`) e o que o banco reporta (`int2`). O Hibernate detecta isso na validação do schema e loga o aviso.
+
+Com `integer default 1`, os tipos coincidem (`Integer` → `int4`) e não há erro.
+
+### Soluções
+
+#### Opção 1 — ajustar o tipo Java para `Short` (recomendada quando `smallint` é necessário)
+
+Faz com que o Hibernate espere `int2`, eliminando a divergência:
+
+```java
+@Column(columnDefinition = "smallint default 1")
+private Short ordem;  // Short → SMALLINT (int2) — sem conflito
+```
+
+#### Opção 2 — separar o tipo do DEFAULT com `@ColumnDefault` (mais limpo)
+
+Deixa o Hibernate escolher o tipo da coluna com base no Java e define apenas o valor padrão:
+
+```java
+@ColumnDefault("1")
+@Column(nullable = false)
+private Short ordem;   // DDL gerado: smallint NOT NULL DEFAULT 1
+
+// Ou, se Short não for adequado, Integer:
+@ColumnDefault("1")
+@Column(nullable = false)
+private Integer ordem; // DDL gerado: integer NOT NULL DEFAULT 1
+```
+
+#### Opção 3 — `@JdbcTypeCode(SqlTypes.SMALLINT)` com `Integer` (Hibernate 6+)
+
+Instrui o Hibernate a usar `SMALLINT` no JDBC e no DDL, mantendo `Integer` como tipo Java. Elimina o conflito de schema sem mudar o tipo do campo:
+
+```java
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+@JdbcTypeCode(SqlTypes.SMALLINT)           // Hibernate usa int2 no JDBC e no DDL
+@ColumnDefault("1")
+@Column(nullable = false)
+private Integer ordem;                     // Integer no Java, smallint no banco
+```
+
+DDL gerado:
+
+```sql
+ordem  SMALLINT NOT NULL DEFAULT 1
+```
+
+O `@JdbcTypeCode` sobrescreve o mapeamento padrão `Integer → int4` e força `int2` em todo o ciclo: DDL gerado, bind de parâmetros e validação de schema — sem warnings nos logs.
+
+> **Quando usar:** quando o contrato da API ou domínio exige `Integer` como tipo Java (ex.: interoperabilidade com código legado, DTOs, bibliotecas externas) mas o banco deve persistir como `smallint` por economia de espaço.
+
+#### Opção 4 — manter `Integer` e aceitar `integer` no banco
+
+Se o domínio não exige economizar bytes, `integer` é mais compatível com Java `Integer`:
+
+```java
+@Column(columnDefinition = "integer default 1")
+private Integer ordem;  // Integer → int4 — sem conflito
+```
+
+### Comparação das opções
+
+| Opção | Tipo Java | Tipo no banco | Conflito de schema | Observação |
+|---|---|---|---|---|
+| `columnDefinition = "smallint default 1"` | `Integer` | `smallint` (int2) | **Sim** — warning nos logs | Combinação incorreta |
+| `columnDefinition = "smallint default 1"` | `Short` | `smallint` (int2) | Não | Correto; usar `Short` tem semântica própria |
+| `@JdbcTypeCode(SMALLINT)` + `@ColumnDefault` | `Integer` | `smallint` (int2) | Não | Mantém `Integer` no Java; Hibernate 6+ |
+| `@ColumnDefault("1")` | `Integer` | `integer` (int4) | Não | Mais limpo — separa tipo de default |
+| `@ColumnDefault("1")` | `Short` | `smallint` (int2) | Não | Mais limpo com tipo compacto |
+| `columnDefinition = "integer default 1"` | `Integer` | `integer` (int4) | Não | Simples; tipos coincidem |
+
+### Regra prática
+
+> Use `@ColumnDefault` em vez de embutir o `DEFAULT` no `columnDefinition`. Se precisar de `smallint` mantendo `Integer` no Java, combine `@JdbcTypeCode(SqlTypes.SMALLINT)` com `@ColumnDefault`. Se o campo é `Short`, `@ColumnDefault` é suficiente.
+
+---
+
+
+## 26.2. Mapeando Campos String como TEXT no PostgreSQL
 
 Por padrão, o Hibernate mapeia campos `String` como `VARCHAR(255)` no DDL — ou `VARCHAR(n)` quando `@Column(length = N)` é definido. No PostgreSQL, `TEXT` e `VARCHAR` têm performance e armazenamento idênticos; a diferença é que `TEXT` não impõe limite artificial de tamanho. Repetir `columnDefinition = "text"` em cada campo é verboso e propenso a inconsistências.
 

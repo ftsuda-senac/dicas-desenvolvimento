@@ -1,6 +1,6 @@
-# Spring MVC — Guia Completo: REST APIs e SSR com Thymeleaf
+# Spring MVC — Guia REST API
 
-> **Baseline principal:** Spring Boot 3.5 · Spring Framework 6.x · Java 21+ · Thymeleaf 3.x · SpringDoc OpenAPI 2.x
+> **Baseline principal:** Spring Boot 3.5 · Spring Framework 6.x · Java 21+ · SpringDoc OpenAPI 2.x
 >
 > **Notas de compatibilidade:** quando uma seção exigir Spring Boot 4 / Spring Framework 7 ou SpringDoc 3.x, isso será indicado explicitamente.
 
@@ -14,7 +14,6 @@
 1. [Arquitetura do Spring MVC](#1-arquitetura-do-spring-mvc)
     - [1.1 Ciclo de Vida de uma Requisição](#11-ciclo-de-vida-de-uma-requisição)
     - [1.2 Componentes Principais](#12-componentes-principais)
-    - [1.3 Fluxo Visual — SSR (Thymeleaf)](#13-fluxo-visual--ssr-thymeleaf)
     - [1.4 Fluxo Visual — REST API (JSON)](#14-fluxo-visual--rest-api-json)
     - [1.5 Diferença Fundamental: REST vs MVC SSR](#15-diferença-fundamental-rest-vs-mvc-ssr)
 2. [Configuração Base](#2-configuração-base)
@@ -34,125 +33,105 @@
     - [4.1 Estrutura Completa de um Controller REST](#41-estrutura-completa-de-um-controller-rest)
     - [4.2 DTOs com Records (Java 16+)](#42-dtos-com-records-java-16)
     - [4.3 Mapeamento de Método HTTP com Exemplos Práticos](#43-mapeamento-de-método-http-com-exemplos-práticos)
-5. [Controllers MVC com Thymeleaf (SSR)](#5-controllers-mvc-com-thymeleaf-ssr)
-    - [5.1 Controller MVC Clássico](#51-controller-mvc-clássico)
-    - [5.2 Form Object (Separado do Domain/DTO)](#52-form-object-separado-do-domaindto)
-    - [5.3 Templates Thymeleaf](#53-templates-thymeleaf)
-    - [5.4 Convertendo ConstraintViolationException em BindingResult](#54-convertendo-constraintviolationexception-do-service-em-bindingresult)
-    - [5.5 Atributos de Modelo Compartilhados com @ModelAttribute](#55-atributos-de-modelo-compartilhados-com-modelattribute)
-    - [5.6 @SessionAttributes e @SessionAttribute](#56-sessionattributes-e-sessionattribute)
-6. [Bean Validation — @Valid vs @Validated](#6-bean-validation--valid-vs-validated)
-    - [6.1 Diferença Conceitual](#61-diferença-conceitual)
-    - [6.2 Exemplo Prático de Grupos de Validação](#62-exemplo-prático-de-grupos-de-validação)
-    - [6.3 Validação em Serviços com @Validated](#63-validação-em-serviços-com-validated)
-    - [6.4 Cascata de Validação com @Valid](#64-cascata-de-validação-com-valid)
-    - [6.5 Constraint Customizada](#65-constraint-customizada)
-    - [6.6 Constraint com Acesso a Banco (Spring Bean)](#66-constraint-com-acesso-a-banco-spring-bean)
-    - [6.7 Atributo payload nas Constraints](#67-atributo-payload-nas-constraints)
-7. [InitBinder](#7-initbinder)
-    - [7.1 Usos Comuns](#71-usos-comuns)
-    - [7.2 PropertyEditor Customizado](#72-propertyeditor-customizado)
-    - [7.3 Validator Programático com @InitBinder](#73-validator-programático-com-initbinder)
-8. [Converters e Formatters](#8-converters-e-formatters)
-    - [8.1 Diferenças entre os Tipos](#81-diferenças-entre-os-tipos)
-    - [8.2 Converter — String para Enum Genérico](#82-converter--string-para-enum-genérico)
-    - [8.3 Converter — ID para Entidade JPA](#83-converter--id-para-entidade-jpa)
-    - [8.4 Formatter — Moeda Brasileira com Locale](#84-formatter--moeda-brasileira-com-locale)
-    - [8.5 Formatter para LocalDate Brasileiro](#85-formatter-para-localdate-brasileiro)
-    - [8.6 Registro dos Converters/Formatters](#86-registro-dos-convertersformatters)
-9. [Tratamento de Erros](#9-tratamento-de-erros)
-    - [9.1 Hierarquia de Exceções](#91-hierarquia-de-exceções)
-    - [9.2 @ControllerAdvice Global — RFC 9457 (Problem Details)](#92-controlleradvice-global--rfc-9457-problem-details)
-    - [9.3 Resposta de Erro Padrão (RFC 9457)](#93-resposta-de-erro-padrão-rfc-9457)
-    - [9.4 Tratamento de Erros em SSR (Páginas de Erro Thymeleaf)](#94-tratamento-de-erros-em-ssr-páginas-de-erro-thymeleaf)
-10. [Boas Práticas na Camada de Serviço (`@Service`)](#10-boas-práticas-na-camada-de-serviço-service)
-    - [10.1 Responsabilidades e Estrutura](#101-responsabilidades-e-estrutura)
-    - [10.2 @Transactional — Padrões e Armadilhas](#102-transactional--padrões-e-armadilhas)
-    - [10.3 Mapeamento DTO ↔ Entidade](#103-mapeamento-dto--entidade)
-    - [10.4 Validação no Service — Invariantes de Domínio](#104-validação-no-service--invariantes-de-domínio)
-    - [10.5 Tratamento de Exceções no Service](#105-tratamento-de-exceções-no-service)
-    - [10.6 Services Stateless — Evitar Estado em Campos](#106-services-stateless--evitar-estado-em-campos)
-    - [10.7 Checklist — Boas Práticas do @Service](#107-checklist--boas-práticas-do-service)
-11. [Documentação com OpenAPI / SpringDoc](#11-documentação-com-openapi--springdoc)
-    - [11.1 Configuração Principal](#111-configuração-principal)
-    - [11.2 Anotações nos Controllers e DTOs](#112-anotações-nos-controllers-e-dtos)
-    - [11.3 Ocultando Endpoints do Swagger](#113-ocultando-endpoints-do-swagger)
-12. [Recursos Avançados e Pouco Explorados](#12-recursos-avançados-e-pouco-explorados)
-    - [12.1 HandlerInterceptor — Auditoria e Métricas](#121-handlerinterceptor--auditoria-e-métricas)
-    - [12.2 @ModelAttribute Global com @ControllerAdvice](#122-modelattribute-global-com-controlleradvice)
-    - [12.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos](#123-content-negotiation--mesmo-endpoint-múltiplos-formatos)
-    - [12.4 Streaming com SseEmitter e StreamingResponseBody](#124-streaming-com-sseemitter-e-streamingresponsebody)
-    - [12.5 HandlerMethodArgumentResolver — Argumento Customizado](#125-handlermethodargumentresolver--argumento-customizado)
-    - [12.6 @RequestScope e @SessionScope Beans](#126-requestscope-e-sessionscope-beans)
-    - [12.7 Flash Attributes — Dados entre Redirects (PRG Pattern)](#127-flash-attributes--dados-entre-redirects-prg-pattern)
-    - [12.8 ResponseBodyAdvice — Interceptar Respostas Globalmente](#128-responsebodyadvice--interceptar-respostas-globalmente)
-    - [12.9 Controller Assíncrono — CompletableFuture, Callable e DeferredResult](#129-controller-assíncrono--completablefuture-callable-e-deferredresult)
-    - [12.10 API Versioning nativo — Spring Framework 7 / Spring Boot 4](#1210-api-versioning-nativo--spring-framework-7--spring-boot-4)
-    - [12.11 HttpServletRequest, HttpServletResponse e RequestContextHolder](#1211-acesso-a-recursos-do-servlet--httpservletrequest-httpservletresponse-e-requestcontextholder)
-    - [12.12 Integração com Spring Security](#1212-integração-com-spring-security)
-13. [Alternativas ao Thymeleaf](#13-alternativas-ao-thymeleaf)
-14. [Boas Práticas e Checklist](#14-boas-práticas-e-checklist)
-15. [CORS — Cross-Origin Resource Sharing](#15-cors--cross-origin-resource-sharing)
-    - [15.1 Como o CORS Funciona](#151-como-o-cors-funciona)
-    - [15.2 Configuração Global — WebMvcConfigurer](#152-configuração-global--webmvcconfigurer)
-    - [15.3 @CrossOrigin por Controller ou Método](#153-crossorigin-por-controller-ou-método)
-    - [15.4 Integração Obrigatória com Spring Security](#154-integração-obrigatória-com-spring-security)
-    - [15.5 CORS Dinâmico — Origens em Banco de Dados](#155-cors-dinâmico--origens-em-banco-de-dados)
-    - [15.6 Diagnóstico de Problemas CORS](#156-diagnóstico-de-problemas-cors)
-16. [ETag e Cache HTTP](#16-etag-e-cache-http)
-    - [16.1 Visão Geral dos Mecanismos de Cache](#161-visão-geral-dos-mecanismos-de-cache)
-    - [16.2 ShallowEtagHeaderFilter — ETag Automático](#162-shallowheaderetagfilter--etag-automático)
-    - [16.3 ResponseEntity com ETag e Last-Modified](#163-responseentity-com-etag-e-last-modified)
-    - [16.4 CacheControl — Políticas Comuns](#164-cachecontrol--políticas-comuns)
-    - [16.5 Cache HTTP em Views SSR](#165-cache-http-em-views-ssr)
-    - [16.6 Resumo: Quando Usar Cada Estratégia](#166-resumo-quando-usar-cada-estratégia)
-17. [Upload de Arquivos](#17-upload-de-arquivos)
-    - [17.1 Configuração](#171-configuração)
-    - [17.2 Controller de Upload](#172-controller-de-upload)
-    - [17.3 Service — Estratégias de Armazenamento](#173-service--estratégias-de-armazenamento)
-    - [17.4 Download de Arquivos](#174-download-de-arquivos)
-    - [17.5 Upload via Fetch API (JavaScript)](#175-upload-via-fetch-api-javascript)
-18. [Internacionalização (i18n)](#18-internacionalização-i18n)
-    - [18.1 Estratégias de Resolução de Locale](#181-estratégias-de-resolução-de-locale)
-    - [18.2 Configuração Completa](#182-configuração-completa)
-    - [18.3 Arquivos de Mensagens](#183-arquivos-de-mensagens)
-    - [18.4 i18n em Controllers REST](#184-i18n-em-controllers-rest)
-    - [18.5 i18n em Templates Thymeleaf](#185-i18n-em-templates-thymeleaf)
-    - [18.6 Controller SSR — enviando chave em vez de texto](#186-controller-ssr--enviando-chave-em-vez-de-texto)
-    - [18.7 i18n em Respostas JSON — MessageSourceAccessor](#187-i18n-em-respostas-json--messagesourceaccessor)
-    - [18.8 Timezone — Integração com i18n](#188-timezone--integração-com-i18n)
-19. [Customização do ErrorController](#19-customização-do-errorcontroller)
-    - [19.1 Como o Fluxo de Erro Funciona](#191-como-o-fluxo-de-erro-funciona)
-    - [19.2 Customizando o BasicErrorController](#192-customizando-o-basicerrorcontroller)
-    - [19.3 Templates de Erro Thymeleaf](#193-templates-de-erro-thymeleaf)
-    - [19.4 Configuração via application.yml](#194-configuração-via-applicationyml)
-20. [`@ResponseStatus` em Classes de Exceção](#20-responsestatus-em-classes-de-exceção)
-    - [20.1 Uso Básico](#201-uso-básico)
-    - [20.2 @ResponseStatus vs @ExceptionHandler — Quando Usar Cada Um](#202-responsestatus-vs-exceptionhandler--quando-usar-cada-um)
-    - [20.3 Precedência com @ControllerAdvice](#203-precedência-com-controlleradvice)
-21. [`MultiValueMap` e Form Data](#21-multivaluemap-e-form-data)
-    - [21.1 MultiValueMap — Múltiplos Valores por Chave](#211-multivaluemap--múltiplos-valores-por-chave)
-    - [21.2 Form Data com Checkboxes e multi-select](#212-form-data-com-checkboxes-multi-select)
-    - [21.3 @RequestBody com MultiValueMap (form-urlencoded)](#213-requestbody-com-multivaluemap-form-urlencoded)
-    - [21.4 LinkedMultiValueMap — Construção Programática](#214-linkedmultivaluemap--construção-programática)
-22. [`RedirectView` e `UrlBasedViewResolver`](#22-redirectview-e-urlbasedviewresolver)
-    - [22.1 RedirectView — Redirect Programático com Controle Total](#221-redirectview--redirect-programático-com-controle-total)
-    - [22.2 UrlBasedViewResolver — Configuração Avançada de View Resolution](#222-urlbasedviewresolver--configuração-avançada-de-view-resolution)
-    - [22.3 Redirect 301 Permanente — SEO e Mudança de URL](#223-redirect-301-permanente--seo-e-mudança-de-url)
-    - [22.4 Forward Interno — Compartilhamento de Handlers](#224-forward-interno--compartilhamento-de-handlers)
-23. [Testes](#23-testes)
-    - [23.1 Visão Geral — Pirâmide de Testes no Spring MVC](#231-visão-geral--pirâmide-de-testes-no-spring-mvc)
-    - [23.2 Teste Unitário — Service sem Spring](#232-teste-unitário--service-sem-spring)
-    - [23.3 @WebMvcTest — Slice Test da Camada Web](#233-webmvctest--slice-test-da-camada-web)
-    - [23.4 @WebMvcTest com Spring Security](#234-webmvctest-com-spring-security)
-    - [23.5 @SpringBootTest — Teste de Integração](#235-springboottest--teste-de-integração)
-    - [23.6 MockMvc vs RestTestClient — Comparativo](#236-mockmvc-vs-resttestclient--comparativo)
-    - [23.7 Configuração de Contexto de Teste](#237-configuração-de-contexto-de-teste)
-    - [23.8 Testando Upload, CORS e SSE](#238-testando-upload-cors-e-sse)
-24. [Tópicos Relevantes Não Cobertos Neste Documento](#24-tópicos-relevantes-não-cobertos-neste-documento)
+5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated)
+    - [5.1 Diferença Conceitual](#51-diferença-conceitual)
+    - [5.2 Exemplo Prático de Grupos de Validação](#52-exemplo-prático-de-grupos-de-validação)
+    - [5.3 Validação em Serviços com @Validated](#53-validação-em-serviços-com-validated)
+    - [5.4 Cascata de Validação com @Valid](#54-cascata-de-validação-com-valid)
+    - [5.5 Constraint Customizada](#55-constraint-customizada)
+    - [5.6 Constraint com Acesso a Banco (Spring Bean)](#56-constraint-com-acesso-a-banco-spring-bean)
+    - [5.7 Atributo payload nas Constraints](#57-atributo-payload-nas-constraints)
+6. [InitBinder](#6-initbinder)
+    - [6.1 Usos Comuns](#61-usos-comuns)
+    - [6.2 PropertyEditor Customizado](#62-propertyeditor-customizado)
+    - [6.3 Validator Programático com @InitBinder](#63-validator-programático-com-initbinder)
+7. [Converters e Formatters](#7-converters-e-formatters)
+    - [7.1 Diferenças entre os Tipos](#71-diferenças-entre-os-tipos)
+    - [7.2 Converter — String para Enum Genérico](#72-converter--string-para-enum-genérico)
+    - [7.3 Converter — ID para Entidade JPA](#73-converter--id-para-entidade-jpa)
+    - [7.4 Formatter — Moeda Brasileira com Locale](#74-formatter--moeda-brasileira-com-locale)
+    - [7.5 Formatter para LocalDate Brasileiro](#75-formatter-para-localdate-brasileiro)
+    - [7.6 Registro dos Converters/Formatters](#76-registro-dos-convertersformatters)
+8. [Tratamento de Erros](#8-tratamento-de-erros)
+    - [8.1 Hierarquia de Exceções](#81-hierarquia-de-exceções)
+    - [8.2 @ControllerAdvice Global — RFC 9457 (Problem Details)](#82-controlleradvice-global--rfc-9457-problem-details)
+    - [8.3 Resposta de Erro Padrão (RFC 9457)](#83-resposta-de-erro-padrão-rfc-9457)
+9. [Boas Práticas na Camada de Serviço (@Service)](#9-boas-práticas-na-camada-de-serviço-service)
+    - [9.1 Responsabilidades e Estrutura](#91-responsabilidades-e-estrutura)
+    - [9.2 @Transactional — Padrões e Armadilhas](#92-transactional--padrões-e-armadilhas)
+    - [9.3 Mapeamento DTO ↔ Entidade](#93-mapeamento-dto--entidade)
+    - [9.4 Validação no Service — Invariantes de Domínio](#94-validação-no-service--invariantes-de-domínio)
+    - [9.5 Tratamento de Exceções no Service](#95-tratamento-de-exceções-no-service)
+    - [9.6 Services Stateless — Evitar Estado em Campos](#96-services-stateless--evitar-estado-em-campos)
+    - [9.7 Checklist — Boas Práticas do @Service](#97-checklist--boas-práticas-do-service)
+10. [Documentação com OpenAPI / SpringDoc](#10-documentação-com-openapi--springdoc)
+    - [10.1 Configuração Principal](#101-configuração-principal)
+    - [10.2 Anotações nos Controllers e DTOs](#102-anotações-nos-controllers-e-dtos)
+    - [10.3 Ocultando Endpoints do Swagger](#103-ocultando-endpoints-do-swagger)
+11. [Recursos Avançados e Pouco Explorados](#11-recursos-avançados-e-pouco-explorados)
+    - [11.1 HandlerInterceptor — Auditoria e Métricas](#111-handlerinterceptor--auditoria-e-métricas)
+    - [11.2 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos](#112-content-negotiation--mesmo-endpoint-múltiplos-formatos)
+    - [11.3 Streaming com SseEmitter e StreamingResponseBody](#113-streaming-com-sseemitter-e-streamingresponsebody)
+    - [11.4 HandlerMethodArgumentResolver — Argumento Customizado](#114-handlermethodargumentresolver--argumento-customizado)
+    - [11.5 @RequestScope e @SessionScope Beans](#115-requestscope-e-sessionscope-beans)
+    - [11.6 Flash Attributes — Dados entre Redirects (PRG Pattern)](#116-flash-attributes--dados-entre-redirects-prg-pattern)
+    - [11.7 ResponseBodyAdvice — Interceptar Respostas Globalmente](#117-responsebodyadvice--interceptar-respostas-globalmente)
+    - [11.8 Controller Assíncrono — CompletableFuture, Callable e DeferredResult](#118-controller-assíncrono--completablefuture-callable-e-deferredresult)
+    - [11.9 API Versioning nativo — Spring Framework 7 / Spring Boot 4](#119-api-versioning-nativo--spring-framework-7--spring-boot-4)
+    - [11.10 HttpServletRequest, HttpServletResponse e RequestContextHolder](#1110-acesso-a-recursos-do-servlet--httpservletrequest-httpservletresponse-e-requestcontextholder)
+    - [11.11 Integração com Spring Security](#1111-integração-com-spring-security)
+12. [Boas Práticas e Checklist](#12-boas-práticas-e-checklist)
+13. [CORS — Cross-Origin Resource Sharing](#13-cors--cross-origin-resource-sharing)
+    - [13.1 Como o CORS Funciona](#131-como-o-cors-funciona)
+    - [13.2 Configuração Global — WebMvcConfigurer](#132-configuração-global--webmvcconfigurer)
+    - [13.3 @CrossOrigin por Controller ou Método](#133-crossorigin-por-controller-ou-método)
+    - [13.4 Integração Obrigatória com Spring Security](#134-integração-obrigatória-com-spring-security)
+    - [13.5 CORS Dinâmico — Origens em Banco de Dados](#135-cors-dinâmico--origens-em-banco-de-dados)
+    - [13.6 Diagnóstico de Problemas CORS](#136-diagnóstico-de-problemas-cors)
+14. [ETag e Cache HTTP](#14-etag-e-cache-http)
+    - [14.1 Visão Geral dos Mecanismos de Cache](#141-visão-geral-dos-mecanismos-de-cache)
+    - [14.2 ShallowEtagHeaderFilter — ETag Automático](#142-shallowheaderetagfilter--etag-automático)
+    - [14.3 ResponseEntity com ETag e Last-Modified](#143-responseentity-com-etag-e-last-modified)
+    - [14.4 CacheControl — Políticas Comuns](#144-cachecontrol--políticas-comuns)
+    - [14.5 Resumo: Quando Usar Cada Estratégia](#145-resumo-quando-usar-cada-estratégia)
+15. [Upload de Arquivos](#15-upload-de-arquivos)
+    - [15.1 Configuração](#151-configuração)
+    - [15.2 Controller de Upload](#152-controller-de-upload)
+    - [15.3 Service — Estratégias de Armazenamento](#153-service--estratégias-de-armazenamento)
+    - [15.4 Download de Arquivos](#154-download-de-arquivos)
+    - [15.5 Upload via Fetch API (JavaScript)](#155-upload-via-fetch-api-javascript)
+16. [Internacionalização (i18n)](#16-internacionalização-i18n)
+    - [16.1 Estratégias de Resolução de Locale](#161-estratégias-de-resolução-de-locale)
+    - [16.2 Configuração Completa](#162-configuração-completa)
+    - [16.3 Arquivos de Mensagens](#163-arquivos-de-mensagens)
+    - [16.4 i18n em Controllers REST](#164-i18n-em-controllers-rest)
+    - [16.5 i18n em Respostas JSON — MessageSourceAccessor](#165-i18n-em-respostas-json--messagesourceaccessor)
+    - [16.6 Timezone — Integração com i18n](#166-timezone--integração-com-i18n)
+17. [Customização do ErrorController](#17-customização-do-errorcontroller)
+    - [17.1 Como o Fluxo de Erro Funciona](#171-como-o-fluxo-de-erro-funciona)
+    - [17.2 Customizando o BasicErrorController](#172-customizando-o-basicerrorcontroller)
+    - [17.3 Configuração via application.yml](#173-configuração-via-applicationyml)
+18. [@ResponseStatus em Classes de Exceção](#18-responsestatus-em-classes-de-exceção)
+    - [18.1 Uso Básico](#181-uso-básico)
+    - [18.2 @ResponseStatus vs @ExceptionHandler — Quando Usar Cada Um](#182-responsestatus-vs-exceptionhandler--quando-usar-cada-um)
+    - [18.3 Precedência com @ControllerAdvice](#183-precedência-com-controlleradvice)
+19. [MultiValueMap e Form Data](#19-multivaluemap-e-form-data)
+    - [19.1 MultiValueMap — Múltiplos Valores por Chave](#191-multivaluemap--múltiplos-valores-por-chave)
+    - [19.2 @RequestBody com MultiValueMap (form-urlencoded)](#192-requestbody-com-multivaluemap-form-urlencoded)
+    - [19.3 LinkedMultiValueMap — Construção Programática](#193-linkedmultivaluemap--construção-programática)
+20. [Testes](#20-testes)
+    - [20.1 Visão Geral — Pirâmide de Testes no Spring MVC](#201-visão-geral--pirâmide-de-testes-no-spring-mvc)
+    - [20.2 Teste Unitário — Service sem Spring](#202-teste-unitário--service-sem-spring)
+    - [20.3 @WebMvcTest — Slice Test da Camada Web](#203-webmvctest--slice-test-da-camada-web)
+    - [20.4 @WebMvcTest com Spring Security](#204-webmvctest-com-spring-security)
+    - [20.5 @SpringBootTest — Teste de Integração](#205-springboottest--teste-de-integração)
+    - [20.6 MockMvc vs RestTestClient — Comparativo](#206-mockmvc-vs-resttestclient--comparativo)
+    - [20.7 Configuração de Contexto de Teste](#207-configuração-de-contexto-de-teste)
+    - [20.8 Testando Upload, CORS e SSE](#208-testando-upload-cors-e-sse)
+21. [Tópicos Relevantes Não Cobertos Neste Documento](#21-tópicos-relevantes-não-cobertos-neste-documento)
 ---
 
-> **Como navegar este material:** para uma primeira leitura, priorize as seções 1 a 6, 9, 10 e 23. As seções 12 a 24 funcionam melhor como consulta e aprofundamento.
+> **Como navegar este material:** para uma primeira leitura, priorize as seções 1 a 5, 8, 9 e 20. As seções 11 a 21 funcionam melhor como consulta e aprofundamento.
 
 ## Java — Recursos da Linguagem Relevantes para o Documento
 
@@ -1035,7 +1014,6 @@ boolean todos        = stream.allMatch(predicado);
 boolean algum        = stream.anyMatch(predicado);
 Map<K, List<T>> agrupado = stream.collect(Collectors.groupingBy(classificador));
 ```
-
 ## Base — Spring Framework: IoC, DI e Anotações Essenciais
 
 Esta seção apresenta os fundamentos do Spring Framework que sustentam todo o
@@ -2136,7 +2114,6 @@ public class PedidoConfirmadoListener {
 > clara e facilita os testes (mock mais simples).
 
 ---
-
 ## 1. Arquitetura do Spring MVC
 
 > **Escopo deste documento — Spring MVC (Servlet Stack)**
@@ -2237,54 +2214,6 @@ graph TB
     HA --> MC
     VC --> VR
 ```
-
-### 1.3 Fluxo Visual — SSR (Thymeleaf)
-
-O diagrama abaixo representa o ciclo completo de uma requisição SSR, com cada componente e o fluxo de dados entre eles — padrão clássico de Front Controller.
-
-```mermaid
-flowchart LR
-    Browser(["🌐 Browser<br>HTTP client"])
-
-    subgraph SERVLET ["  Servlet container (e.g. Tomcat)  "]
-        direction LR
-        DS["DispatcherServlet<br>Front controller"]
-        CTRL["@Controller<br>Handles request"]
-        VR["ViewResolver"]
-        VIEW["View template<br>Thymeleaf / JTE"]
-
-        DS -- "① delegate request" --> CTRL
-        CTRL -. "② model" .-> DS
-        DS -- "③ view name + model" --> VR
-        VR -- "④ render(model)" --> VIEW
-        VIEW -. "⑤ HTML renderizado" .-> DS
-    end
-
-    MODEL(["Service /<br>Repository<br>MODEL"])
-
-    Browser -- "HTTP request" --> DS
-    DS -- "HTML response" --> Browser
-    CTRL -- "call" --> MODEL
-    MODEL -. "data" .-> CTRL
-
-    style DS fill:#E6F1FB,stroke:#185FA5,color:#0C447C
-    style CTRL fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    style VR fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
-    style VIEW fill:#EAF3DE,stroke:#3B6D11,color:#27500A
-    style MODEL fill:#FAECE7,stroke:#993C1D,color:#4A1B0C
-    style Browser fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
-```
-
-**Passos do fluxo SSR:**
-
-| Passo | Ação |
-|-------|------|
-| ① DS → @Controller | Delega via `HandlerMapping` ao handler correto |
-| ② @Controller → DS | Retorna `ModelAndView` com dados e nome da view |
-| ③ DS → ViewResolver | Resolve o nome lógico para uma `View` concreta |
-| ④ ViewResolver → Thymeleaf | Template engine renderiza o HTML com o `Model` |
-| ⑤ View → DS | HTML pronto é enviado ao browser |
-
 ### 1.4 Fluxo Visual — REST API (JSON)
 
 Na arquitetura REST **não há ViewResolver nem template engine**. O `@RestController` retorna objetos Java serializados pelo `HttpMessageConverter` (Jackson).
@@ -2335,7 +2264,6 @@ flowchart LR
 | Redirect | `ResponseEntity` com Location | `"redirect:/caminho"` |
 
 ---
-
 ## 2. Configuração Base
 
 ### 2.1 Dependências Maven
@@ -2367,25 +2295,6 @@ auto-configuração do Spring Boot — sem nenhuma linha de código adicional:
     <artifactId>spring-boot-starter-validation</artifactId>
 </dependency>
 
-<!-- SSR com Thymeleaf -->
-<!-- ✅ Auto-configura: ThymeleafViewResolver, SpringTemplateEngine, templates em /templates/ -->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-thymeleaf</artifactId>
-</dependency>
-
-<!-- ❌ Não auto-configurado: precisa ser registrado manualmente como bean TemplateEngine -->
-<dependency>
-    <groupId>nz.net.ultraq.thymeleaf</groupId>
-    <artifactId>thymeleaf-layout-dialect</artifactId>
-</dependency>
-
-<!-- ❌ Não auto-configurado: requer declaração explícita em ThymeleafConfig -->
-<dependency>
-    <groupId>org.thymeleaf.extras</groupId>
-    <artifactId>thymeleaf-extras-springsecurity6</artifactId>
-</dependency>
-
 <!-- OpenAPI / Swagger UI -->
 <!-- ✅ Auto-configura: /api-docs e /swagger-ui.html quando no classpath -->
 <dependency>
@@ -2395,17 +2304,6 @@ auto-configuração do Spring Boot — sem nenhuma linha de código adicional:
     <version>2.8.8</version>
 </dependency>
 
-<!-- Webjars para SSR (Bootstrap, Font Awesome) -->
-<!-- ✅ Auto-configura: /webjars/** mapeado automaticamente pelo ResourceHandlerRegistry -->
-<dependency>
-    <groupId>org.webjars</groupId>
-    <artifactId>webjars-locator-lite</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.webjars</groupId>
-    <artifactId>bootstrap</artifactId>
-    <version>5.3.3</version>
-</dependency>
 ```
 
 ### 2.2 Configuração MVC Centralizada
@@ -2559,16 +2457,6 @@ spring:
       date: yyyy-MM-dd
       date-time: yyyy-MM-dd'T'HH:mm:ss
 
-  # ─── Thymeleaf — ThymeleafAutoConfiguration ──────────────────────────────────
-  thymeleaf:
-    cache: false            # ✅ Default: true — SEMPRE false em dev, true em prod
-    mode: HTML              # ✅ Default: HTML
-    encoding: UTF-8         # ✅ Default: UTF-8
-    prefix: classpath:/templates/  # ✅ Default: classpath:/templates/
-    suffix: .html           # ✅ Default: .html
-    servlet:
-      content-type: text/html;charset=UTF-8  # ✅ Default: text/html;charset=UTF-8
-
   # ─── Jackson — JacksonAutoConfiguration ──────────────────────────────────────
   jackson:
     # ✅ Default: ALWAYS (inclui nulls) — non_null é recomendado para APIs limpas
@@ -2625,7 +2513,6 @@ springdoc:
 ```
 
 ---
-
 ## 3. Anotações do Controller — Referência Rápida
 
 Esta seção apresenta as principais anotações do Spring MVC usadas em controllers,
@@ -2659,11 +2546,6 @@ breve descrição.
 @CrossOrigin(origins = "https://meusite.com")
 public class ProdutoController { ... }
 
-// SSR — retorno é nome de view (ex.: "produtos/lista")
-@Controller
-@RequestMapping("/produtos")
-@SessionAttributes("produtoForm")
-public class ProdutoMvcController { ... }
 ```
 
 ---
@@ -3117,7 +2999,6 @@ SSR (@Controller sem @ResponseBody)
 
 
 ---
-
 ## 4. Controllers REST
 
 ### 4.1 Estrutura Completa de um Controller REST
@@ -3465,982 +3346,9 @@ graph LR
 ```
 
 ---
+## 5. Bean Validation — @Valid vs @Validated
 
-## 5. Controllers MVC com Thymeleaf (SSR)
-
-> **Sintaxe alternativa HTML5 — `data-th-*`**
->
-> Todos os atributos `th:*` do Thymeleaf possuem uma forma equivalente no padrão
-> `data-th-*` (ex.: `data-th-text`, `data-th-href`, `data-th-field`), que é
-> tecnicamente válida segundo a especificação HTML5 — qualquer atributo prefixado
-> com `data-` é permitido pelo padrão e ignorado pelo browser.
->
-> ```html
-> <!-- th:* — sintaxe canônica do Thymeleaf (mais comum) -->
-> <span th:text="${produto.nome}">Nome</span>
->
-> <!-- data-th-* — equivalente 100%, aderente ao HTML5 -->
-> <span data-th-text="${produto.nome}">Nome</span>
-> ```
->
-> A diferença é apenas sintática: o comportamento em tempo de execução é idêntico.
-> A forma `th:*` é a mais usada na documentação e na comunidade; `data-th-*` é
-> preferida quando validadores HTML5 estritos (linters, ferramentas de QA) são
-> exigidos no projeto, pois `th:text` tecnicamente não é um atributo HTML válido
-> fora do namespace Thymeleaf.
-
-### 5.1 Controller MVC Clássico
-
-```java
-@Controller
-@RequestMapping("/produtos")
-@Slf4j
-public class ProdutoMvcController {
-
-    private final ProdutoService produtoService;
-    private final CategoriaService categoriaService;
-
-    public ProdutoMvcController(ProdutoService produtoService,
-                                 CategoriaService categoriaService) {
-        this.produtoService = produtoService;
-        this.categoriaService = categoriaService;
-    }
-
-    // ─── GET /produtos ────────────────────────────────────────────────────────
-    @GetMapping
-    public String listar(
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
-            @RequestParam(required = false) String busca,
-            Model model) {
-
-        var pageable = PageRequest.of(page, size, Sort.by("nome"));
-        model.addAttribute("produtos", produtoService.listar(busca, pageable));
-        model.addAttribute("busca", busca);
-        return "produtos/lista";   // → templates/produtos/lista.html
-    }
-
-    // ─── GET /produtos/novo ───────────────────────────────────────────────────
-    @GetMapping("/novo")
-    public String exibirFormulario(Model model) {
-        model.addAttribute("produto", new ProdutoForm());
-        model.addAttribute("categorias", categoriaService.listarTodas());
-        return "produtos/formulario";
-    }
-
-    // ─── POST /produtos ───────────────────────────────────────────────────────
-    @PostMapping
-    public String salvar(
-            @ModelAttribute("produto") @Valid ProdutoForm form,
-            BindingResult bindingResult,
-            Model model,
-            RedirectAttributes redirectAttrs) {
-
-        // Sempre verificar BindingResult ANTES de usar o form
-        if (bindingResult.hasErrors()) {
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            return "produtos/formulario";   // Volta ao form com erros
-        }
-
-        try {
-            produtoService.criar(form);
-            redirectAttrs.addFlashAttribute("mensagem",
-                "Produto criado com sucesso!");
-            redirectAttrs.addFlashAttribute("tipoMensagem", "success");
-            return "redirect:/produtos";
-
-        } catch (BusinessException e) {
-            bindingResult.rejectValue("sku", "produto.sku.duplicado",
-                "SKU já cadastrado no sistema");
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            return "produtos/formulario";
-        }
-    }
-
-    // ─── GET /produtos/{id}/editar ────────────────────────────────────────────
-    @GetMapping("/{id}/editar")
-    public String exibirEdicao(@PathVariable Long id, Model model) {
-        var produto = produtoService.buscarPorId(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Produto", id));
-
-        model.addAttribute("produto", ProdutoForm.from(produto));
-        model.addAttribute("categorias", categoriaService.listarTodas());
-        model.addAttribute("editando", true);
-        return "produtos/formulario";
-    }
-
-    // ─── POST /produtos/{id} (PUT simulado via _method) ───────────────────────
-    @PostMapping("/{id}")
-    public String atualizar(
-            @PathVariable Long id,
-            @ModelAttribute("produto") @Valid ProdutoForm form,
-            BindingResult bindingResult,
-            Model model,
-            RedirectAttributes redirectAttrs) {
-
-        if (bindingResult.hasErrors()) {
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            model.addAttribute("editando", true);
-            return "produtos/formulario";
-        }
-
-        produtoService.atualizar(id, form);
-        redirectAttrs.addFlashAttribute("mensagem", "Produto atualizado!");
-        redirectAttrs.addFlashAttribute("tipoMensagem", "success");
-        return "redirect:/produtos";
-    }
-
-    // ─── POST /produtos/{id}/excluir ──────────────────────────────────────────
-    @PostMapping("/{id}/excluir")
-    public String excluir(@PathVariable Long id, RedirectAttributes redirectAttrs) {
-        produtoService.excluir(id);
-        redirectAttrs.addFlashAttribute("mensagem", "Produto excluído!");
-        redirectAttrs.addFlashAttribute("tipoMensagem", "warning");
-        return "redirect:/produtos";
-    }
-}
-```
-
-### 5.2 Form Object (Separado do Domain/DTO)
-
-```java
-// Form object: representa o estado do formulário HTML, com coerção de tipos
-public class ProdutoForm {
-
-    @NotBlank(message = "Nome é obrigatório")
-    @Size(max = 200)
-    private String nome;
-
-    @NotBlank
-    @Size(max = 2000)
-    private String descricao;
-
-    // String no form para aceitar formatação do usuário (ex: "1.299,90")
-    // O Formatter/Converter fará a coerção para BigDecimal
-    @NotBlank
-    private String preco;
-
-    @NotNull
-    @Min(0)
-    private Integer estoque;
-
-    @NotNull
-    private Long categoriaId;
-
-    // Factory method para preencher a partir da entidade (para edição)
-    public static ProdutoForm from(Produto produto) {
-        var form = new ProdutoForm();
-        form.nome = produto.getNome();
-        form.descricao = produto.getDescricao();
-        form.preco = produto.getPreco().toPlainString();
-        form.estoque = produto.getEstoque();
-        form.categoriaId = produto.getCategoria().getId();
-        return form;
-    }
-
-    // Getters e Setters (necessários para binding MVC)
-    // ...
-}
-```
-
-### 5.3 Templates Thymeleaf
-
-#### Layout Base (`templates/layout/base.html`)
-
-```html
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
-      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
-      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
-      lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title layout:title-pattern="$CONTENT_TITLE - $DECORATOR_TITLE">Minha App</title>
-    <!-- CSRF token para formulários AJAX -->
-    <meta name="_csrf" th:content="${_csrf.token}">
-    <meta name="_csrf_header" th:content="${_csrf.headerName}">
-    <!-- Bootstrap via Webjars (versão resolvida automaticamente) -->
-    <link rel="stylesheet" th:href="@{/webjars/bootstrap/css/bootstrap.min.css}">
-    <link rel="stylesheet" th:href="@{/static/css/app.css}">
-</head>
-<body>
-<nav th:replace="~{layout/navbar :: navbar}"></nav>
-
-<!-- Mensagens Flash -->
-<div class="container mt-3" th:if="${mensagem}">
-    <div class="alert"
-         th:classappend="'alert-' + ${tipoMensagem ?: 'info'}"
-         th:text="${mensagem}"
-         role="alert">
-    </div>
-</div>
-
-<!-- Conteúdo da página filha -->
-<main class="container mt-4" layout:fragment="content">
-</main>
-
-<script th:src="@{/webjars/bootstrap/js/bootstrap.bundle.min.js}"></script>
-<th:block layout:fragment="scripts"></th:block>
-</body>
-</html>
-```
-
-#### Formulário de Produto (`templates/produtos/formulario.html`)
-
-```html
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
-      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
-      layout:decorate="~{layout/base}">
-<head>
-    <title th:text="${editando} ? 'Editar Produto' : 'Novo Produto'">Produto</title>
-</head>
-<body>
-<div layout:fragment="content">
-    <h1 class="mb-4" th:text="${editando} ? 'Editar Produto' : 'Novo Produto'"></h1>
-
-    <!-- Erros globais do BindingResult -->
-    <div th:if="${#fields.hasGlobalErrors()}" class="alert alert-danger">
-        <ul class="mb-0">
-            <li th:each="err : ${#fields.globalErrors()}" th:text="${err}"></li>
-        </ul>
-    </div>
-
-    <!--
-        th:action: URL dinâmica para criar ou atualizar
-        th:object: vincula o form ao @ModelAttribute "produto"
-    -->
-    <form th:action="${editando} ? @{/produtos/{id}(id=${produto.id})} : @{/produtos}"
-          th:object="${produto}"
-          method="post"
-          enctype="application/x-www-form-urlencoded"
-          novalidate>
-
-        <!-- Campo nome com exibição de erro inline -->
-        <div class="mb-3">
-            <label for="nome" class="form-label">Nome <span class="text-danger">*</span></label>
-            <input type="text"
-                   id="nome"
-                   th:field="*{nome}"
-                   th:errorclass="is-invalid"
-                   class="form-control">
-            <div class="invalid-feedback" th:errors="*{nome}"></div>
-        </div>
-
-        <!-- Preço com placeholder de formato -->
-        <div class="mb-3">
-            <label for="preco" class="form-label">Preço <span class="text-danger">*</span></label>
-            <div class="input-group">
-                <span class="input-group-text">R$</span>
-                <input type="text"
-                       id="preco"
-                       th:field="*{preco}"
-                       th:errorclass="is-invalid"
-                       class="form-control"
-                       placeholder="0,00">
-                <div class="invalid-feedback" th:errors="*{preco}"></div>
-            </div>
-        </div>
-
-        <!-- Select de categoria com opção vazia -->
-        <div class="mb-3">
-            <label for="categoriaId" class="form-label">Categoria <span class="text-danger">*</span></label>
-            <select id="categoriaId"
-                    th:field="*{categoriaId}"
-                    th:errorclass="is-invalid"
-                    class="form-select">
-                <option value="">Selecione...</option>
-                <option th:each="cat : ${categorias}"
-                        th:value="${cat.id}"
-                        th:text="${cat.nome}">
-                </option>
-            </select>
-            <div class="invalid-feedback" th:errors="*{categoriaId}"></div>
-        </div>
-
-        <!-- Estoque -->
-        <div class="mb-3">
-            <label for="estoque" class="form-label">Estoque</label>
-            <input type="number"
-                   id="estoque"
-                   th:field="*{estoque}"
-                   th:errorclass="is-invalid"
-                   class="form-control"
-                   min="0">
-            <div class="invalid-feedback" th:errors="*{estoque}"></div>
-        </div>
-
-        <!-- Descrição -->
-        <div class="mb-3">
-            <label for="descricao" class="form-label">Descrição</label>
-            <textarea id="descricao"
-                      th:field="*{descricao}"
-                      th:errorclass="is-invalid"
-                      class="form-control"
-                      rows="4">
-            </textarea>
-            <div class="invalid-feedback" th:errors="*{descricao}"></div>
-        </div>
-
-        <div class="d-flex gap-2">
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save"></i>
-                <span th:text="${editando} ? 'Atualizar' : 'Salvar'">Salvar</span>
-            </button>
-            <a th:href="@{/produtos}" class="btn btn-outline-secondary">Cancelar</a>
-        </div>
-    </form>
-</div>
-</html>
-```
-
-#### Habilitando PUT/DELETE em Formulários HTML
-
-O HTML padrão suporta apenas `GET` e `POST`. Para simular `PUT`/`DELETE`:
-
-```java
-// Em WebMvcConfig
-@Bean
-public HiddenHttpMethodFilter hiddenHttpMethodFilter() {
-    return new HiddenHttpMethodFilter();
-}
-```
-
-```html
-<!-- No template: simula PUT -->
-<form method="post" th:action="@{/produtos/{id}(id=${produto.id})}">
-    <input type="hidden" name="_method" value="PUT">
-    <!-- campos... -->
-</form>
-```
-
-### 5.4 Convertendo `ConstraintViolationException` do Service em `BindingResult`
-
-Quando um `@Service` anotado com `@Validated` lança `ConstraintViolationException`,
-essa exceção **não é capturada automaticamente** pelo mecanismo de `BindingResult`
-do Spring MVC — ela existe no service via proxy AOP, fora do ciclo de binding do
-controller. Se não tratada, propagaria como 500 ou seria capturada por um
-`@ControllerAdvice` genérico, sem vincular os erros aos campos do formulário.
-
-O objetivo desta seção é mostrar como **converter** as violações de constraint para
-erros de `BindingResult`, fazendo com que os `th:errors` e `th:errorclass` do
-Thymeleaf funcionem normalmente — sem nenhuma alteração nos templates.
-
-#### Por que isso acontece
-
-```mermaid
-flowchart LR
-    subgraph Controller["Controller"]
-        C1["@Valid @ModelAttribute<br>↓<br>BindingResult populado<br>automaticamente pelo MVC"]
-        C2["produtoService.criar(form)<br>↓<br>ConstraintViolationException<br>lançada pelo AOP Proxy<br>do @Validated"]
-    end
-    subgraph Service["Service (@Validated)"]
-        S1["proxy AOP intercepta<br>chamada ao método"]
-    end
-
-    C1 -->|"erros resolvidos<br>automaticamente"| TH["Thymeleaf<br>th:errors funciona ✓"]
-    C2 --> S1
-    S1 -->|ConstraintViolationException| C2
-    C2 -->|"sem conversão:<br>exceção propaga"| EX["500 / @ControllerAdvice<br>th:errors NÃO funciona ✗"]
-
-    style EX fill:#FCEBEB,stroke:#A32D2D,color:#501313
-    style TH fill:#EAF3DE,stroke:#3B6D11,color:#27500A
-```
-
-#### Utilitário de conversão
-
-Centralizar a conversão em um componente reutilizável evita duplicar o código em
-todos os controllers.
-
-```java
-/**
- * Converte as violações de constraint lançadas por @Validated em services
- * para erros reconhecidos pelo BindingResult — e, consequentemente, pelo Thymeleaf.
- */
-@Component
-public class ConstraintViolationConverter {
-
-    /**
-     * Transfere cada {@link ConstraintViolation} para o {@link BindingResult},
-     * vinculando-o ao campo correto do form object.
-     *
-     * O propertyPath retornado pelo violation tem o formato completo do caminho
-     * AOP: "criar.form.nome", "criar.form.preco" etc.
-     * O método extrai apenas o último nó com Kind=PROPERTY, que corresponde
-     * ao nome do campo no form: "nome", "preco" etc.
-     */
-    public void convert(ConstraintViolationException ex, BindingResult result) {
-        for (ConstraintViolation<?> violation : ex.getConstraintViolations()) {
-            String field   = extractFieldName(violation.getPropertyPath());
-            String code    = violation.getConstraintDescriptor()
-                                      .getAnnotation()
-                                      .annotationType()
-                                      .getSimpleName(); // "NotBlank", "Size", ...
-            String message = violation.getMessage();
-
-            if (field.isEmpty()) {
-                // Violação de classe (cross-field constraint) — erro global
-                result.reject(code, message);
-            } else {
-                result.rejectValue(field, code, message);
-            }
-        }
-    }
-
-    /**
-     * Extrai o nome do campo a partir do PropertyPath completo.
-     *
-     * "criar.form.nome"          → "nome"
-     * "atualizar.request.preco"  → "preco"
-     * "criar.form"               → "" (violação de classe — sem campo)
-     */
-    private String extractFieldName(Path propertyPath) {
-        Path.Node lastNode = null;
-        for (Path.Node node : propertyPath) {
-            lastNode = node;
-        }
-        if (lastNode == null) return "";
-
-        // ElementKind.PROPERTY identifica um campo do objeto;
-        // outros kinds (METHOD, PARAMETER) representam o contexto AOP
-        return lastNode.getKind() == ElementKind.PROPERTY
-                ? lastNode.getName()
-                : "";
-    }
-}
-```
-
-#### Controller usando o conversor
-
-```java
-@Controller
-@RequestMapping("/produtos")
-public class ProdutoMvcController {
-
-    private final ProdutoService               produtoService;
-    private final CategoriaService             categoriaService;
-    private final ConstraintViolationConverter cvConverter;
-
-    // ─── POST /produtos ───────────────────────────────────────────────────────
-    @PostMapping
-    public String salvar(
-            @ModelAttribute("produto") @Valid ProdutoForm form,
-            BindingResult bindingResult,              // deve vir LOGO após @ModelAttribute
-            Model model,
-            RedirectAttributes redirectAttrs) {
-
-        // 1. Erros de binding (@Valid no controller) — tratar antes do service
-        if (bindingResult.hasErrors()) {
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            return "produtos/formulario";
-        }
-
-        try {
-            produtoService.criar(form);
-            redirectAttrs.addFlashAttribute("mensagem", "Produto criado com sucesso!");
-            redirectAttrs.addFlashAttribute("tipoMensagem", "success");
-            return "redirect:/produtos";
-
-        } catch (ConstraintViolationException ex) {
-            // 2. Violações do @Validated no service → converter para BindingResult
-            cvConverter.convert(ex, bindingResult);
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            return "produtos/formulario";   // retorna ao form normalmente
-
-        } catch (BusinessException ex) {
-            // 3. Regras de negócio explícitas (ex: SKU duplicado)
-            bindingResult.rejectValue("sku", "produto.sku.duplicado", ex.getMessage());
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            return "produtos/formulario";
-        }
-    }
-
-    // ─── POST /produtos/{id} ─────────────────────────────────────────────────
-    @PostMapping("/{id}")
-    public String atualizar(
-            @PathVariable Long id,
-            @ModelAttribute("produto") @Valid ProdutoForm form,
-            BindingResult bindingResult,
-            Model model,
-            RedirectAttributes redirectAttrs) {
-
-        if (bindingResult.hasErrors()) {
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            model.addAttribute("editando", true);
-            return "produtos/formulario";
-        }
-
-        try {
-            produtoService.atualizar(id, form);
-            redirectAttrs.addFlashAttribute("mensagem", "Produto atualizado!");
-            return "redirect:/produtos";
-
-        } catch (ConstraintViolationException ex) {
-            cvConverter.convert(ex, bindingResult);
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            model.addAttribute("editando", true);
-            return "produtos/formulario";
-        }
-    }
-}
-```
-
-#### Service com `@Validated` — origem das violações
-
-```java
-@Service
-@Validated   // ativa o proxy AOP que lança ConstraintViolationException
-public class ProdutoService {
-
-    /**
-     * As constraints aqui representam invariantes de domínio que valem
-     * independentemente de onde o service é chamado (controller, job, outro service).
-     * O proxy AOP valida ANTES de entrar no corpo do método.
-     */
-    public ProdutoResponse criar(@Valid @NotNull ProdutoForm form) {
-        // Se qualquer constraint for violada, o proxy lança
-        // ConstraintViolationException antes de chegar aqui
-        return ProdutoResponse.from(produtoRepository.save(toEntity(form)));
-    }
-
-    public ProdutoResponse atualizar(Long id, @Valid @NotNull ProdutoForm form) {
-        var produto = produtoRepository.findById(id)
-                .orElseThrow(() -> new RecursoNaoEncontradoException("Produto", id));
-        update(produto, form);
-        return ProdutoResponse.from(produtoRepository.save(produto));
-    }
-}
-```
-
-#### Template Thymeleaf — sem nenhuma alteração
-
-O `BindingResult` preenchido pelo conversor é idêntico ao preenchido pelo `@Valid`
-do MVC. O Thymeleaf usa o mesmo mecanismo em ambos os casos: `th:errors`,
-`th:errorclass` e `#fields.hasErrors()` funcionam sem qualquer modificação:
-
-```html
-<!-- templates/produtos/formulario.html -->
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
-      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
-      layout:decorate="~{layout/base}">
-<body>
-<section layout:fragment="content">
-
-<form th:action="${editando} ? @{/produtos/{id}(id=${produto.id})} : @{/produtos}"
-      th:object="${produto}"
-      method="post"
-      novalidate>
-
-    <!-- ─── Erros globais (violações cross-field ou BusinessException sem campo) -->
-    <div th:if="${#fields.hasGlobalErrors()}" class="alert alert-danger">
-        <ul class="mb-0">
-            <li th:each="err : ${#fields.globalErrors()}" th:text="${err}"></li>
-        </ul>
-    </div>
-
-    <!-- ─── Campo: nome ───────────────────────────────────────────────────────
-         th:errorclass="is-invalid" é adicionado automaticamente quando
-         BindingResult tem erros para o campo "nome" — de qualquer origem:
-         @Valid no controller OU ConstraintViolationConverter do service. -->
-    <div class="mb-3">
-        <label for="nome" class="form-label">Nome *</label>
-        <input type="text" id="nome"
-               th:field="*{nome}"
-               th:errorclass="is-invalid"
-               class="form-control">
-        <div class="invalid-feedback" th:errors="*{nome}"></div>
-    </div>
-
-    <!-- ─── Campo: preco ──────────────────────────────────────────────────── -->
-    <div class="mb-3">
-        <label for="preco" class="form-label">Preço *</label>
-        <input type="text" id="preco"
-               th:field="*{preco}"
-               th:errorclass="is-invalid"
-               class="form-control" placeholder="0,00">
-        <div class="invalid-feedback" th:errors="*{preco}"></div>
-    </div>
-
-    <!-- ─── Campo: estoque ────────────────────────────────────────────────── -->
-    <div class="mb-3">
-        <label for="estoque" class="form-label">Estoque</label>
-        <input type="number" id="estoque"
-               th:field="*{estoque}"
-               th:errorclass="is-invalid"
-               class="form-control">
-        <div class="invalid-feedback" th:errors="*{estoque}"></div>
-    </div>
-
-    <!-- ─── Campo: sku ────────────────────────────────────────────────────── -->
-    <div class="mb-3">
-        <label for="sku" class="form-label">SKU</label>
-        <input type="text" id="sku"
-               th:field="*{sku}"
-               th:errorclass="is-invalid"
-               class="form-control">
-        <div class="invalid-feedback" th:errors="*{sku}"></div>
-    </div>
-
-    <!-- ─── Select: categoria ─────────────────────────────────────────────── -->
-    <div class="mb-3">
-        <label for="categoriaId" class="form-label">Categoria *</label>
-        <select id="categoriaId"
-                th:field="*{categoriaId}"
-                th:errorclass="is-invalid"
-                class="form-select">
-            <option value="">Selecione...</option>
-            <option th:each="cat : ${categorias}"
-                    th:value="${cat.id()}"
-                    th:text="${cat.nome()}">
-            </option>
-        </select>
-        <div class="invalid-feedback" th:errors="*{categoriaId}"></div>
-    </div>
-
-    <div class="d-flex gap-2 mt-4">
-        <button type="submit" class="btn btn-primary">Salvar</button>
-        <a th:href="@{/produtos}" class="btn btn-outline-secondary">Cancelar</a>
-    </div>
-</form>
-
-</section>
-</body>
-</html>
-```
-
-#### Alternativa: `@ControllerAdvice` para centralização
-
-Para evitar o bloco `try/catch` repetido em vários controllers, a exceção pode ser
-capturada em um `@ControllerAdvice`. A limitação é que o `BindingResult` **não é
-acessível** fora do escopo do controller — os erros precisam ser transportados como
-flash attribute e exibidos em um bloco genérico, sem vinculação campo a campo:
-
-```java
-@ControllerAdvice(annotations = Controller.class)
-public class ConstraintViolationMvcAdvice {
-
-    @ExceptionHandler(ConstraintViolationException.class)
-    public String handleConstraintViolation(
-            ConstraintViolationException ex,
-            HttpServletRequest request,
-            RedirectAttributes redirectAttrs) {
-
-        var erros = ex.getConstraintViolations().stream()
-                .map(v -> new FieldErrorInfo(
-                        extractFieldName(v.getPropertyPath()),
-                        v.getMessage()))
-                .toList();
-
-        redirectAttrs.addFlashAttribute("errosValidacao", erros);
-
-        // Redireciona para a URL de origem (Referer) para re-exibir o formulário
-        String referer = request.getHeader(HttpHeaders.REFERER);
-        return "redirect:" + (referer != null ? referer : "/");
-    }
-
-    private String extractFieldName(Path path) {
-        Path.Node last = null;
-        for (Path.Node n : path) last = n;
-        return (last != null && last.getKind() == ElementKind.PROPERTY)
-                ? last.getName() : "";
-    }
-
-    public record FieldErrorInfo(String campo, String mensagem) {}
-}
-```
-
-```html
-<!-- Template — exibição via lista genérica (abordagem @ControllerAdvice) -->
-<div th:if="${errosValidacao != null and !#lists.isEmpty(errosValidacao)}"
-     class="alert alert-danger">
-    <strong>Corrija os erros abaixo:</strong>
-    <ul class="mb-0 mt-1">
-        <li th:each="err : ${errosValidacao}"
-            th:text="${err.campo() != '' ? err.campo() + ': ' : ''} + ${err.mensagem()}">
-        </li>
-    </ul>
-</div>
-```
-
-#### Resumo: quando usar cada abordagem
-
-| | `try/catch` no controller | `@ControllerAdvice` |
-|---|---|---|
-| `th:errors` vinculado ao campo | ✅ Sim | ❌ Não |
-| `th:errorclass` automático | ✅ Sim | ❌ Não |
-| Form mantém valores digitados | ✅ Sim (model intacto) | ⚠️ Perde no redirect |
-| Centralização do tratamento | ❌ Repetido por controller | ✅ Um único lugar |
-| **Recomendação** | ✅ Formulários com campos | Somente lista genérica de erros |
-
-### 5.5 Atributos de Modelo Compartilhados com @ModelAttribute
-
-```java
-@Controller
-@RequestMapping("/produtos")
-public class ProdutoMvcController {
-
-    // Executado ANTES de todos os métodos do controller.
-    // Útil para dados comuns a múltiplas views (ex: listas de select).
-    @ModelAttribute("categorias")
-    public List<CategoriaResponse> categorias() {
-        return categoriaService.listarTodas();
-    }
-
-    @ModelAttribute("usuario")
-    public UsuarioInfo usuarioLogado(Authentication auth) {
-        return (UsuarioInfo) auth.getPrincipal();
-    }
-}
-```
-
----
-
-### 5.6 `@SessionAttributes` e `@SessionAttribute`
-
-#### `@SessionAttributes` — manter atributos do model na sessão
-
-`@SessionAttributes` é uma anotação de **classe** que instrui o Spring MVC a
-persistir determinados atributos do `Model` na `HttpSession` entre requisições do
-mesmo controller. É a solução nativa do Spring MVC para fluxos de múltiplas etapas
-(wizards) sem precisar manipular `HttpSession` diretamente.
-
-```java
-/**
- * Wizard de criação de pedido em três etapas.
- *
- * @SessionAttributes mantém "pedidoWizard" na sessão enquanto o fluxo
- * não for concluído ou cancelado — sem nenhum acesso direto à HttpSession.
- *
- * IMPORTANTE: funciona apenas para atributos criados pelo MESMO controller.
- * Para ler atributos de sessão criados externamente, use @SessionAttribute (singular).
- */
-@Controller
-@RequestMapping("/pedidos/novo")
-@SessionAttributes("pedidoWizard")          // ← nome(s) do(s) atributo(s) a persistir
-public class PedidoWizardController {
-
-    private final ProdutoService   produtoService;
-    private final EnderecoService  enderecoService;
-    private final PedidoService    pedidoService;
-
-    // ─── Inicializa o objeto de sessão (chamado apenas na PRIMEIRA request) ───
-    //
-    // @ModelAttribute de classe é executado antes de qualquer handler method.
-    // O Spring só chama este método se "pedidoWizard" ainda não existir no Model
-    // (nem na sessão) — evita sobrescrever o estado acumulado entre etapas.
-    @ModelAttribute("pedidoWizard")
-    public PedidoWizard inicializarWizard() {
-        return new PedidoWizard();
-    }
-
-    // ─── Etapa 1: seleção de produtos ────────────────────────────────────────
-    @GetMapping("/etapa-1")
-    public String etapa1(Model model) {
-        model.addAttribute("produtos", produtoService.listarAtivos());
-        return "pedidos/wizard/etapa1";
-    }
-
-    @PostMapping("/etapa-1")
-    public String processarEtapa1(
-            @ModelAttribute("pedidoWizard") PedidoWizard wizard, // ← vem da sessão
-            @Valid EtapaItensForm form,
-            BindingResult binding,
-            Model model) {
-
-        if (binding.hasErrors()) {
-            model.addAttribute("produtos", produtoService.listarAtivos());
-            return "pedidos/wizard/etapa1";
-        }
-
-        wizard.setItens(form.getItens());   // acumula estado no objeto de sessão
-        return "redirect:/pedidos/novo/etapa-2";
-    }
-
-    // ─── Etapa 2: endereço de entrega ────────────────────────────────────────
-    @GetMapping("/etapa-2")
-    public String etapa2(
-            @ModelAttribute("pedidoWizard") PedidoWizard wizard,
-            Model model) {
-
-        model.addAttribute("enderecos", enderecoService.listarDoCliente());
-        model.addAttribute("subtotal", wizard.calcularSubtotal());
-        return "pedidos/wizard/etapa2";
-    }
-
-    @PostMapping("/etapa-2")
-    public String processarEtapa2(
-            @ModelAttribute("pedidoWizard") PedidoWizard wizard,
-            @Valid EtapaEnderecoForm form,
-            BindingResult binding,
-            Model model) {
-
-        if (binding.hasErrors()) {
-            model.addAttribute("enderecos", enderecoService.listarDoCliente());
-            return "pedidos/wizard/etapa2";
-        }
-
-        wizard.setEnderecoEntregaId(form.getEnderecoId());
-        return "redirect:/pedidos/novo/etapa-3";
-    }
-
-    // ─── Etapa 3: resumo e confirmação ───────────────────────────────────────
-    @GetMapping("/etapa-3")
-    public String etapa3(
-            @ModelAttribute("pedidoWizard") PedidoWizard wizard,
-            Model model) {
-
-        model.addAttribute("resumo", pedidoService.calcularResumo(wizard));
-        return "pedidos/wizard/etapa3";
-    }
-
-    @PostMapping("/confirmar")
-    public String confirmar(
-            @ModelAttribute("pedidoWizard") PedidoWizard wizard,
-            SessionStatus sessionStatus,         // ← injeta o status da sessão
-            RedirectAttributes redirectAttrs) {
-
-        var pedido = pedidoService.criar(wizard);
-
-        // OBRIGATÓRIO ao final do fluxo: limpa os atributos de @SessionAttributes
-        // da sessão. Sem isso, o wizard persiste indefinidamente e interferirá
-        // na próxima tentativa de criação de pedido.
-        sessionStatus.setComplete();
-
-        redirectAttrs.addFlashAttribute("mensagem",
-                "Pedido #" + pedido.getNumero() + " criado com sucesso!");
-        return "redirect:/pedidos/" + pedido.getId();
-    }
-
-    @GetMapping("/cancelar")
-    public String cancelar(SessionStatus sessionStatus, RedirectAttributes redirectAttrs) {
-        sessionStatus.setComplete();    // limpa a sessão ao cancelar também
-        redirectAttrs.addFlashAttribute("mensagem", "Criação de pedido cancelada.");
-        return "redirect:/pedidos";
-    }
-}
-```
-
-**Form object acumulador do wizard:**
-
-```java
-/**
- * Objeto de sessão que acumula o estado entre as etapas do wizard.
- * Deve ser serializável se a sessão for distribuída (Redis, Hazelcast).
- */
-public class PedidoWizard implements Serializable {
-
-    private List<ItemWizard> itens      = new ArrayList<>();
-    private Long   enderecoEntregaId;
-    private String observacao;
-
-    public BigDecimal calcularSubtotal() {
-        return itens.stream()
-                .map(i -> i.precoUnitario().multiply(BigDecimal.valueOf(i.quantidade())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    // getters / setters
-}
-```
-
-**Template da etapa 1 — acesso ao wizard acumulado:**
-
-```html
-<!-- templates/pedidos/wizard/etapa1.html -->
-<form th:action="@{/pedidos/novo/etapa-1}" method="post">
-
-    <!-- Progresso do wizard -->
-    <div class="d-flex gap-2 mb-4">
-        <span class="badge bg-primary">1. Produtos</span>
-        <span class="badge bg-secondary">2. Endereço</span>
-        <span class="badge bg-secondary">3. Confirmação</span>
-    </div>
-
-    <!-- Lista de produtos para seleção -->
-    <div th:each="produto : ${produtos}" class="form-check mb-2">
-        <input class="form-check-input" type="checkbox"
-               th:name="'itens[' + ${produtoStat.index} + '].produtoId'"
-               th:value="${produto.id()}"
-               th:id="'prod-' + ${produto.id()}">
-        <label class="form-check-label" th:for="'prod-' + ${produto.id()}">
-            <span th:text="${produto.nome()}">Produto</span>
-            — R$ <span th:text="${produto.preco()}">0,00</span>
-        </label>
-    </div>
-
-    <!-- Botões de navegação do wizard -->
-    <div class="d-flex justify-content-between mt-4">
-        <a th:href="@{/pedidos/novo/cancelar}" class="btn btn-outline-secondary">
-            Cancelar
-        </a>
-        <button type="submit" class="btn btn-primary">
-            Próximo →
-        </button>
-    </div>
-</form>
-```
-
----
-
-#### `@SessionAttribute` (singular) — ler atributo de sessão externo
-
-`@SessionAttribute` (singular, sem `s`) é um **parâmetro de método** que lê um
-atributo já existente na `HttpSession` — tipicamente criado por outro controller,
-filtro ou interceptor. Não gerencia ciclo de vida; apenas lê.
-
-```java
-@Controller
-@RequestMapping("/checkout")
-public class CheckoutController {
-
-    /**
-     * Lê o carrinho de compras da sessão, criado pelo CarrinhoController.
-     *
-     * required = true  (default): lança exceção se o atributo não existir.
-     * required = false           : injeta null se ausente — use Optional ou null-check.
-     */
-    @GetMapping
-    public String exibir(
-            @SessionAttribute("carrinho") CarrinhoSession carrinho,
-            Model model) {
-
-        model.addAttribute("itens",    carrinho.getItens());
-        model.addAttribute("subtotal", carrinho.calcularTotal());
-        return "checkout/resumo";
-    }
-
-    @GetMapping("/pagamento")
-    public String pagamento(
-            @SessionAttribute(value = "carrinho", required = false) CarrinhoSession carrinho,
-            Model model) {
-
-        if (carrinho == null || carrinho.estaVazio()) {
-            return "redirect:/carrinho";
-        }
-        model.addAttribute("total", carrinho.calcularTotal());
-        return "checkout/pagamento";
-    }
-}
-```
-
-#### Comparativo: `@SessionAttributes` vs `@SessionAttribute` vs `@SessionScope`
-
-| | `@SessionAttributes` | `@SessionAttribute` | `@SessionScope` |
-|---|---|---|---|
-| Nível | Classe do controller | Parâmetro de método | Bean Spring |
-| Cria atributo na sessão | ✅ Via `@ModelAttribute` | ❌ Apenas lê | ✅ Auto-gerenciado |
-| Escopo | Mesmo controller | Qualquer controller | Toda a aplicação |
-| Finalização | `SessionStatus.setComplete()` | N/A | Fim da sessão HTTP |
-| Uso típico | Wizards / multi-step forms | Ler dado de sessão externo | Carrinho, preferências |
-| Serialização necessária | Se sessão distribuída | Se sessão distribuída | Se sessão distribuída |
-
----
-
-## 6. Bean Validation — @Valid vs @Validated
-
-### 6.1 Diferença Conceitual
+### 5.1 Diferença Conceitual
 
 ```mermaid
 graph TB
@@ -4461,7 +3369,7 @@ graph TB
     VA1 --> VA2 --> VA3 --> VA4
 ```
 
-### 6.2 Exemplo Prático de Grupos de Validação
+### 5.2 Exemplo Prático de Grupos de Validação
 
 ```java
 // ─── Definição de grupos ──────────────────────────────────────────────────────
@@ -4540,7 +3448,7 @@ public class ClienteController {
 }
 ```
 
-### 6.3 Validação em Serviços com @Validated
+### 5.3 Validação em Serviços com @Validated
 
 ```java
 // Habilitar validação de método em Services
@@ -4567,7 +3475,7 @@ public class ClienteService {
 }
 ```
 
-### 6.4 Cascata de Validação com @Valid
+### 5.4 Cascata de Validação com @Valid
 
 ```java
 public class PedidoRequest {
@@ -4591,7 +3499,7 @@ public class EnderecoRequest {
 }
 ```
 
-### 6.5 Constraint Customizada
+### 5.5 Constraint Customizada
 
 ```java
 // ─── Anotação ─────────────────────────────────────────────────────────────────
@@ -4634,7 +3542,7 @@ public class CpfValidator implements ConstraintValidator<CPF, String> {
 }
 ```
 
-### 6.6 Constraint com Acesso a Banco (Spring Bean)
+### 5.6 Constraint com Acesso a Banco (Spring Bean)
 
 ```java
 @Target(FIELD)
@@ -4666,7 +3574,7 @@ public class EmailUnicoValidator implements ConstraintValidator<EmailUnico, Stri
 
 ---
 
-### 6.7 Atributo `payload` nas Constraints
+### 5.7 Atributo `payload` nas Constraints
 
 O atributo `payload` presente em toda anotação de constraint (`Class<? extends Payload>[]`)
 é uma extensão point da especificação Jakarta Bean Validation: permite **anexar
@@ -4903,112 +3811,6 @@ public class ValidationAuditLogger {
     }
 }
 ```
-
-#### 5. `payload` em SSR — separar erros por severidade no Thymeleaf
-
-```java
-// ─── Extensão do ConstraintViolationConverter (seção 4.4) para leitura do payload ─
-@Component
-public class ConstraintViolationConverter {
-
-    /**
-     * Versão que separa erros bloqueantes de avisos no BindingResult.
-     * Erros (Severity.Error) → rejectValue → bloqueiam o envio do form.
-     * Avisos (Severity.Warning) → adicionados ao Model como lista separada
-     * para exibição não-bloqueante no template.
-     */
-    public List<FieldWarning> convertWithSeverity(
-            ConstraintViolationException ex,
-            BindingResult result) {
-
-        var warnings = new ArrayList<FieldWarning>();
-
-        for (ConstraintViolation<?> v : ex.getConstraintViolations()) {
-            var payloads = v.getConstraintDescriptor().getPayload();
-            String field = extractFieldName(v.getPropertyPath());
-            String code  = v.getConstraintDescriptor().getAnnotation()
-                             .annotationType().getSimpleName();
-
-            boolean isWarning = payloads.stream()
-                    .anyMatch(Severity.Warning.class::isAssignableFrom);
-
-            if (isWarning) {
-                warnings.add(new FieldWarning(field, v.getMessage()));
-            } else {
-                // Severity.Error ou sem payload → rejeita o campo normalmente
-                if (field.isEmpty()) result.reject(code, v.getMessage());
-                else                 result.rejectValue(field, code, v.getMessage());
-            }
-        }
-        return warnings; // controller adiciona ao Model para exibição no template
-    }
-
-    public record FieldWarning(String campo, String mensagem) {}
-}
-```
-
-```java
-// ─── Controller usando a separação de severidade ──────────────────────────────
-@PostMapping
-public String salvar(
-        @ModelAttribute("produto") @Valid ProdutoForm form,
-        BindingResult bindingResult,
-        Model model,
-        RedirectAttributes redirectAttrs) {
-
-    if (bindingResult.hasErrors()) {
-        model.addAttribute("categorias", categoriaService.listarTodas());
-        return "produtos/formulario";
-    }
-
-    try {
-        produtoService.criar(form);
-        redirectAttrs.addFlashAttribute("mensagem", "Produto criado com sucesso!");
-        return "redirect:/produtos";
-
-    } catch (ConstraintViolationException ex) {
-        var warnings = cvConverter.convertWithSeverity(ex, bindingResult);
-
-        if (bindingResult.hasErrors()) {
-            // Há erros bloqueantes — retorna ao form
-            model.addAttribute("warnings",   warnings);
-            model.addAttribute("categorias", categoriaService.listarTodas());
-            return "produtos/formulario";
-        } else {
-            // Apenas avisos — persiste e notifica
-            redirectAttrs.addFlashAttribute("warnings", warnings);
-            redirectAttrs.addFlashAttribute("mensagem", "Produto criado com avisos.");
-            return "redirect:/produtos";
-        }
-    }
-}
-```
-
-```html
-<!-- Template: exibição de avisos não-bloqueantes separados dos erros ──────── -->
-
-<!-- Bloco de avisos (Severity.Warning) — exibido mesmo quando o form foi salvo -->
-<div th:if="${warnings != null and !#lists.isEmpty(warnings)}"
-     class="alert alert-warning">
-    <strong>Atenção:</strong>
-    <ul class="mb-0 mt-1">
-        <li th:each="w : ${warnings}"
-            th:text="${w.campo() != '' ? w.campo() + ': ' : ''} + ${w.mensagem()}">
-        </li>
-    </ul>
-</div>
-
-<!-- Erros bloqueantes: exibidos normalmente via th:errors (sem mudança) -->
-<div class="mb-3">
-    <label for="descricao" class="form-label">Descrição</label>
-    <textarea id="descricao" th:field="*{descricao}"
-              th:errorclass="is-invalid"
-              class="form-control" rows="3"></textarea>
-    <!-- "Descrição muito curta" virá como warning, não como th:errors -->
-    <div class="invalid-feedback" th:errors="*{descricao}"></div>
-</div>
-```
-
 #### Resumo dos casos de uso do `payload`
 
 | Caso de uso | Payload | Quem consome |
@@ -5020,12 +3822,11 @@ public String salvar(
 | Classificação para monitoramento | `Payload` de domínio próprio | Métricas, alertas |
 
 ---
-
-## 7. InitBinder
+## 6. InitBinder
 
 `@InitBinder` é executado antes do binding de cada request no controller. Permite registrar editores, formatters e configurações de binding específicas por controller.
 
-### 7.1 Usos Comuns
+### 6.1 Usos Comuns
 
 ```java
 @Controller
@@ -5071,7 +3872,7 @@ public class ProdutoMvcController {
 }
 ```
 
-### 7.2 PropertyEditor Customizado
+### 6.2 PropertyEditor Customizado
 
 ```java
 /**
@@ -5105,7 +3906,7 @@ public class BigDecimalBrazilianEditor extends PropertyEditorSupport {
 }
 ```
 
-### 7.3 Validator Programático com @InitBinder
+### 6.3 Validator Programático com @InitBinder
 
 ```java
 @Component
@@ -5141,10 +3942,9 @@ public class ProdutoFormValidator implements Validator {
 ```
 
 ---
+## 7. Converters e Formatters
 
-## 8. Converters e Formatters
-
-### 8.1 Diferenças entre os Tipos
+### 7.1 Diferenças entre os Tipos
 
 ```mermaid
 graph TB
@@ -5170,7 +3970,7 @@ graph TB
 | Uso ideal | Conversão de tipos | Apresentação de dados | Legado / @InitBinder |
 | Registro | `FormatterRegistry` | `FormatterRegistry` | `WebDataBinder` |
 
-### 8.2 Converter — String para Enum Genérico
+### 7.2 Converter — String para Enum Genérico
 
 ```java
 /**
@@ -5196,7 +3996,7 @@ public class StringToEnumConverterFactory
 }
 ```
 
-### 8.3 Converter — ID para Entidade JPA
+### 7.3 Converter — ID para Entidade JPA
 
 ```java
 /**
@@ -5223,7 +4023,7 @@ public class IdToCategoriaConverter implements Converter<Long, Categoria> {
 }
 ```
 
-### 8.4 Formatter — Moeda Brasileira com Locale
+### 7.4 Formatter — Moeda Brasileira com Locale
 
 ```java
 /**
@@ -5256,7 +4056,7 @@ public class BrazilianMoneyFormatter implements Formatter<BigDecimal> {
 }
 ```
 
-### 8.5 Formatter para LocalDate Brasileiro
+### 7.5 Formatter para LocalDate Brasileiro
 
 ```java
 @Component
@@ -5289,7 +4089,7 @@ public class BrazilianDateFormatter implements Formatter<LocalDate> {
 }
 ```
 
-### 8.6 Registro dos Converters/Formatters
+### 7.6 Registro dos Converters/Formatters
 
 ```java
 @Configuration
@@ -5318,10 +4118,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
 ```
 
 ---
+## 8. Tratamento de Erros
 
-## 9. Tratamento de Erros
-
-### 9.1 Hierarquia de Exceções
+### 8.1 Hierarquia de Exceções
 
 ```mermaid
 graph TB
@@ -5334,7 +4133,7 @@ graph TB
     RuntimeException --> VE[ValidationException<br/>400 - Bean Validation]
 ```
 
-### 9.2 @ControllerAdvice Global — RFC 9457 (Problem Details)
+### 8.2 @ControllerAdvice Global — RFC 9457 (Problem Details)
 
 ```java
 /**
@@ -5446,7 +4245,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 }
 ```
 
-### 9.3 Resposta de Erro Padrão (RFC 9457)
+### 8.3 Resposta de Erro Padrão (RFC 9457)
 
 ```json
 {
@@ -5462,39 +4261,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   }
 }
 ```
-
-### 9.4 Tratamento de Erros em SSR (Páginas de Erro Thymeleaf)
-
-```java
-// Para controllers @Controller (SSR), use @ControllerAdvice sem "Rest"
-@ControllerAdvice(annotations = Controller.class)
-public class MvcExceptionHandler {
-
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public String handleNotFound(ResourceNotFoundException ex, Model model) {
-        model.addAttribute("mensagem", ex.getMessage());
-        model.addAttribute("codigo", 404);
-        return "erros/404";   // → templates/erros/404.html
-    }
-
-    @ExceptionHandler(AccessDeniedException.class)
-    public String handleForbidden(AccessDeniedException ex, Model model) {
-        model.addAttribute("mensagem", "Você não tem permissão para acessar este recurso.");
-        return "erros/403";
-    }
-}
-```
-
----
-
-## 10. Boas Práticas na Camada de Serviço (`@Service`)
+## 9. Boas Práticas na Camada de Serviço (`@Service`)
 
 A camada de serviço é o coração da aplicação: concentra as regras de negócio,
 coordena operações entre repositórios e garante a consistência dos dados. Esta
 seção consolida os padrões e armadilhas mais importantes do `@Service` no
 ecossistema Spring Boot.
 
-### 10.1 Responsabilidades e Estrutura
+### 9.1 Responsabilidades e Estrutura
 
 ```java
 // ─── Responsabilidades de um @Service bem definido ────────────────────────────
@@ -5548,7 +4322,7 @@ public class SmsNotificacaoService implements NotificacaoService {
 }
 ```
 
-### 10.2 `@Transactional` — Padrões e Armadilhas
+### 9.2 `@Transactional` — Padrões e Armadilhas
 
 #### 10.2.1 Padrão `readOnly` + escrita explícita
 
@@ -5768,7 +4542,7 @@ public class RelatorioService {
 }
 ```
 
-### 10.3 Mapeamento DTO ↔ Entidade
+### 9.3 Mapeamento DTO ↔ Entidade
 
 ```java
 // ─── Opção 1: método factory estático no Record (simples, sem dependência) ────
@@ -5826,7 +4600,7 @@ public class ProdutoService {
 }
 ```
 
-### 10.4 Validação no Service — Invariantes de Domínio
+### 9.4 Validação no Service — Invariantes de Domínio
 
 ```java
 // O @Valid no controller valida o formato do input (Bean Validation).
@@ -5878,7 +4652,7 @@ public class PedidoService {
 }
 ```
 
-### 10.5 Tratamento de Exceções no Service
+### 9.5 Tratamento de Exceções no Service
 
 ```java
 // ─── Hierarquia de exceções de domínio ────────────────────────────────────────
@@ -5960,7 +4734,7 @@ public class ClienteService {
 }
 ```
 
-### 10.6 Services Stateless — Evitar Estado em Campos
+### 9.6 Services Stateless — Evitar Estado em Campos
 
 ```java
 // @Service é um singleton — a MESMA instância atende TODAS as requisições.
@@ -6005,7 +4779,7 @@ public class RequestContext {
 }
 ```
 
-### 10.7 Checklist — Boas Práticas do `@Service`
+### 9.7 Checklist — Boas Práticas do `@Service`
 
 | Prática | Justificativa |
 |---|---|
@@ -6023,10 +4797,9 @@ public class RequestContext {
 
 
 ---
+## 10. Documentação com OpenAPI / SpringDoc
 
-## 11. Documentação com OpenAPI / SpringDoc
-
-### 11.1 Configuração Principal
+### 10.1 Configuração Principal
 
 ```java
 @Configuration
@@ -6080,7 +4853,7 @@ public class OpenApiConfig {
 }
 ```
 
-### 11.2 Anotações nos Controllers e DTOs
+### 10.2 Anotações nos Controllers e DTOs
 
 ```java
 // ─── Controller com documentação completa ─────────────────────────────────────
@@ -6150,7 +4923,7 @@ public record ProdutoCreateRequest(
 ) {}
 ```
 
-### 11.3 Ocultando Endpoints do Swagger
+### 10.3 Ocultando Endpoints do Swagger
 
 ```java
 // Ocultar endpoint específico
@@ -6166,10 +4939,9 @@ public List<ProdutoResponse> listar(
 ```
 
 ---
+## 11. Recursos Avançados e Pouco Explorados
 
-## 12. Recursos Avançados e Pouco Explorados
-
-### 12.1 HandlerInterceptor — Auditoria e Métricas
+### 11.1 HandlerInterceptor — Auditoria e Métricas
 
 ```java
 @Component
@@ -6222,40 +4994,7 @@ public class AuditInterceptor implements HandlerInterceptor {
     }
 }
 ```
-
-### 12.2 @ModelAttribute Global com @ControllerAdvice
-
-```java
-/**
- * Adiciona dados comuns a todos os models de todos os controllers SSR.
- * Útil para dados de navegação, usuário logado, configurações.
- */
-@ControllerAdvice(annotations = Controller.class)
-public class GlobalModelAttributeAdvice {
-
-    private final AppConfigService configService;
-
-    @ModelAttribute("appConfig")
-    public AppConfig appConfig() {
-        return configService.getConfig();
-    }
-
-    @ModelAttribute("usuarioLogado")
-    public Optional<UsuarioInfo> usuarioLogado(Authentication authentication) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return Optional.empty();
-        }
-        return Optional.ofNullable((UsuarioInfo) authentication.getPrincipal());
-    }
-
-    @ModelAttribute("anoAtual")
-    public int anoAtual() {
-        return LocalDate.now().getYear();
-    }
-}
-```
-
-### 12.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos
+### 11.2 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos
 
 ```java
 @RestController
@@ -6297,7 +5036,7 @@ public class RelatorioController {
 }
 ```
 
-### 12.4 Streaming com SseEmitter e StreamingResponseBody
+### 11.3 Streaming com SseEmitter e StreamingResponseBody
 
 ```java
 @RestController
@@ -6347,7 +5086,7 @@ public class EventoController {
 }
 ```
 
-### 12.5 HandlerMethodArgumentResolver — Argumento Customizado
+### 11.4 HandlerMethodArgumentResolver — Argumento Customizado
 
 ```java
 /**
@@ -6390,7 +5129,7 @@ public ResponseEntity<PerfilResponse> meuPerfil(@CurrentUser UsuarioInfo usuario
 }
 ```
 
-### 12.6 @RequestScope e @SessionScope Beans
+### 11.5 @RequestScope e @SessionScope Beans
 
 ```java
 // Bean scoped por request — contexto da requisição corrente
@@ -6430,7 +5169,7 @@ public class CarrinhoController {
 }
 ```
 
-### 12.7 Flash Attributes — Dados entre Redirects (PRG Pattern)
+### 11.6 Flash Attributes — Dados entre Redirects (PRG Pattern)
 
 ```java
 /**
@@ -6453,7 +5192,7 @@ public String processarFormulario(RedirectAttributes redirectAttrs) {
 }
 ```
 
-### 12.8 ResponseBodyAdvice — Interceptar Respostas Globalmente
+### 11.7 ResponseBodyAdvice — Interceptar Respostas Globalmente
 
 ```java
 /**
@@ -6505,7 +5244,7 @@ public record ApiEnvelope<T>(
 
 ---
 
-### 12.9 Controller Assíncrono — `CompletableFuture`, `Callable` e `DeferredResult`
+### 11.8 Controller Assíncrono — `CompletableFuture`, `Callable` e `DeferredResult`
 
 O Spring MVC suporta retornos assíncronos no controller sem bloquear a thread do
 Servlet. O container libera a thread imediatamente e a resposta é enviada quando o
@@ -6855,7 +5594,7 @@ class ProdutoAsyncControllerIT {
 
 ---
 
-### 12.10 API Versioning nativo — Spring Framework 7 / Spring Boot 4
+### 11.9 API Versioning nativo — Spring Framework 7 / Spring Boot 4
 
 O Spring Framework 7 (base do Spring Boot 4) introduziu suporte nativo a
 versionamento de API por meio da classe `ApiVersionRequestMappingHandlerMapping`
@@ -7018,7 +5757,7 @@ public GroupedOpenApi v2Api() {
 
 ---
 
-### 12.11 Acesso a Recursos do Servlet — `HttpServletRequest`, `HttpServletResponse` e `RequestContextHolder`
+### 11.10 Acesso a Recursos do Servlet — `HttpServletRequest`, `HttpServletResponse` e `RequestContextHolder`
 
 O Spring MVC expõe os objetos do Servlet diretamente como parâmetros de método
 nos controllers. Para camadas mais internas (services, componentes) que não têm
@@ -7235,8 +5974,7 @@ public class RequestContextTaskDecorator implements TaskDecorator {
 ```
 
 ---
-
-### 12.12 Integração com Spring Security
+### 11.11 Integração com Spring Security
 
 #### Recuperando o usuário autenticado no Controller
 
@@ -7429,174 +6167,6 @@ public class PedidoService {
     }
 }
 ```
-
-#### Thymeleaf + Spring Security — templates seguros
-
-Para usar as expressões de segurança no Thymeleaf, o artefato
-`thymeleaf-extras-springsecurity6` deve estar no classpath. O namespace
-`sec:` fica disponível automaticamente após a detecção da dependência.
-
-```xml
-<!-- pom.xml — necessário para o namespace sec: no Thymeleaf -->
-<!-- ✅ Auto-configurado pelo ThymeleafSecurityDialect quando no classpath -->
-<dependency>
-    <groupId>org.thymeleaf.extras</groupId>
-    <artifactId>thymeleaf-extras-springsecurity6</artifactId>
-    <!-- Versão gerenciada pelo Spring Boot BOM — não declare explicitamente -->
-</dependency>
-```
-
-```html
-<!-- templates/fragmentos/navbar.html -->
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
-      xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
-<body>
-
-<!-- ─── Exibição condicional por autenticação ─────────────────────────────── -->
-<nav>
-    <!-- Bloco visível apenas para usuários NÃO autenticados -->
-    <div sec:authorize="!isAuthenticated()">
-        <a th:href="@{/login}" class="btn btn-outline-primary">Entrar</a>
-        <a th:href="@{/cadastro}" class="btn btn-primary">Cadastrar</a>
-    </div>
-
-    <!-- Bloco visível apenas para usuários autenticados -->
-    <div sec:authorize="isAuthenticated()">
-        <!-- Exibe o username (retorno de Authentication.getName()) -->
-        <span>Olá, <strong sec:authentication="name">Usuário</strong>!</span>
-
-        <!-- Exibe propriedade do principal customizado via SpEL -->
-        <span sec:authentication="principal.nome">Nome</span>
-
-        <!-- Exibe o e-mail (username configurado no UserDetailsService) -->
-        <span sec:authentication="principal.username">e-mail</span>
-
-        <!-- Avatar com iniciais do nome -->
-        <span th:text="${#strings.substring(#authentication.principal.nome, 0, 1)}">A</span>
-
-        <!-- Logout com CSRF token obrigatório -->
-        <form th:action="@{/logout}" method="post">
-            <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
-            <button type="submit" class="btn btn-link">Sair</button>
-        </form>
-    </div>
-</nav>
-
-<!-- ─── Controle por role ──────────────────────────────────────────────────── -->
-<aside>
-    <!-- Visível apenas para ADMIN -->
-    <a sec:authorize="hasRole('ADMIN')" th:href="@{/admin}">Painel Admin</a>
-
-    <!-- Visível para ADMIN ou GERENTE -->
-    <a sec:authorize="hasAnyRole('ADMIN', 'GERENTE')" th:href="@{/relatorios}">
-        Relatórios
-    </a>
-
-    <!-- Visível para quem tem permissão específica (não role) -->
-    <button sec:authorize="hasAuthority('PRODUTO_EDITAR')"
-            th:onclick="|window.location='${@{/produtos/novo}}'|">
-        Novo Produto
-    </button>
-</aside>
-
-<!-- ─── Acesso a propriedades do principal em templates ───────────────────── -->
-<div sec:authorize="isAuthenticated()" class="user-info">
-    <!-- authentication.principal devolve o objeto UserDetails (ou customizado) -->
-    <p>
-        <span class="label">Nome:</span>
-        <span sec:authentication="principal.nome">-</span>
-    </p>
-    <p>
-        <span class="label">E-mail:</span>
-        <span sec:authentication="principal.username">-</span>
-    </p>
-    <p>
-        <span class="label">Perfis:</span>
-        <!-- Lista de GrantedAuthority como string separado por vírgula -->
-        <span th:text="${#authentication.principal.authorities}">-</span>
-    </p>
-</div>
-
-<!-- ─── Expressões SpEL avançadas ─────────────────────────────────────────── -->
-<!-- hasPermission() requer PermissionEvaluator customizado -->
-<button sec:authorize="hasPermission(#pedido, 'cancelar')">Cancelar pedido</button>
-
-<!-- Checar role E estar em rota específica -->
-<a sec:authorize="hasRole('ADMIN') and isFullyAuthenticated()">Área restrita</a>
-
-<!-- ─── Uso no controlador SSR para popular model com dados do usuário ─────── -->
-<!--
-    No controller, você pode adicionar dados do usuário ao model explicitamente:
-
-    @GetMapping("/dashboard")
-    public String dashboard(@AuthenticationPrincipal UsuarioPrincipal principal,
-                             Model model) {
-        model.addAttribute("usuario", principal);
-        return "dashboard";
-    }
-
-    Ou usar @ModelAttribute global no @ControllerAdvice para disponibilizar
-    o usuário em TODAS as views sem repetição:
-
-    @ControllerAdvice
-    public class SecurityModelAdvice {
-        @ModelAttribute("usuarioLogado")
-        public UsuarioPrincipal usuarioLogado(
-                @AuthenticationPrincipal UsuarioPrincipal principal) {
-            return principal;  // null quando não autenticado
-        }
-    }
-
-    Então no template: th:text="${usuarioLogado?.nome}"
--->
-</body>
-</html>
-```
-
-#### @ControllerAdvice global para dados de segurança nas views SSR
-
-```java
-// ─── Disponibiliza dados do usuário em TODAS as views Thymeleaf ───────────────
-//
-// Alternativa ao sec:authentication do Thymeleaf quando se precisa de
-// propriedades do domínio que não estão na interface UserDetails.
-//
-@ControllerAdvice
-public class SecurityModelAdvice {
-
-    /**
-     * Injeta o usuário autenticado no model de TODAS as requisições MVC.
-     * Retorna null se não autenticado — templates usam ${usuarioLogado?.nome}.
-     */
-    @ModelAttribute("usuarioLogado")
-    public UsuarioPrincipal usuarioLogado(
-            @AuthenticationPrincipal UsuarioPrincipal principal) {
-        return principal;
-    }
-
-    /** Disponibiliza a lista de roles para lógica condicional nos templates. */
-    @ModelAttribute("roles")
-    public Set<String> roles(Authentication authentication) {
-        if (authentication == null) return Set.of();
-        return authentication.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toSet());
-    }
-}
-```
-
-```html
-<!-- Uso nas views sem nenhum @sec adicional ──────────────────────────────── -->
-<div th:if="${usuarioLogado != null}">
-    <p th:text="${usuarioLogado.nome}">Nome</p>
-    <p th:text="${usuarioLogado.email}">Email</p>
-
-    <!-- roles vem do @ModelAttribute("roles") -->
-    <a th:if="${roles.contains('ROLE_ADMIN')}" th:href="@{/admin}">Admin</a>
-</div>
-```
-
 #### Diagrama — fluxo de resolução do usuário autenticado
 
 ```mermaid
@@ -7636,112 +6206,9 @@ flowchart TD
 ```
 
 ---
+## 12. Boas Práticas e Checklist
 
-## 13. Alternativas ao Thymeleaf
-
-### 13.1 Comparativo de Engines de Template
-
-```mermaid
-graph TB
-    subgraph "Engines SSR para Spring MVC"
-        TH["Thymeleaf 3.x<br/>★★★★★<br/>HTML válido, dialeto rico,<br/>integração Spring perfeita"]
-        FM["FreeMarker<br/>★★★★☆<br/>Alto desempenho,<br/>sintaxe própria (*.ftlh)"]
-        MU["Mustache<br/>★★★☆☆<br/>Logic-less, simples,<br/>portável entre linguagens"]
-        JTE["JTE (Java Template Engine)<br/>★★★★☆<br/>Type-safe, compilado,<br/>excelente performance"]
-    end
-```
-
-### 13.2 FreeMarker
-
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-freemarker</artifactId>
-</dependency>
-```
-
-```yaml
-spring:
-  freemarker:
-    template-loader-path: classpath:/templates/
-    suffix: .ftlh
-    charset: UTF-8
-    cache: false
-    settings:
-      number_format: ",##0.##"
-      date_format: dd/MM/yyyy
-```
-
-```html
-<!-- templates/produtos/lista.ftlh -->
-<#list produtos as produto>
-    <p>${produto.nome} — R$ ${produto.preco?string("0.00")}</p>
-</#list>
-
-<!-- Macro reutilizável (equivale a fragment do Thymeleaf) -->
-<#macro campo label nome>
-    <div class="mb-3">
-        <label>${label}</label>
-        <input type="text" name="${nome}" value="${(form[nome])!}">
-    </div>
-</#macro>
-<@campo label="Nome" nome="nome"/>
-```
-
-### 13.3 JTE (Java Template Engine) — Recomendado para Performance
-
-JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de compilação e desempenho superior ao Thymeleaf.
-
-```xml
-<dependency>
-    <groupId>gg.jte</groupId>
-    <artifactId>jte-spring-boot-starter-3</artifactId>
-    <version>3.1.12</version>
-</dependency>
-```
-
-```java
-// src/main/jte/produtos/lista.jte
-@import br.com.app.dto.ProdutoResponse
-@import java.util.List
-
-@param List<ProdutoResponse> produtos
-@param String busca
-
-<!DOCTYPE html>
-<html>
-<body>
-<h1>Produtos</h1>
-@for(var produto : produtos)
-    <div class="card">
-        <h3>${produto.nome()}</h3>   <%-- Erro de compilação se campo não existir! --%>
-        <p>R$ ${produto.preco()}</p>
-    </div>
-@endfor
-
-@if(produtos.isEmpty())
-    <p>Nenhum produto encontrado.</p>
-@endif
-</body>
-</html>
-```
-
-### 13.4 Quando Usar Cada Template Engine
-
-| Cenário | Recomendação |
-|---|---|
-| Projeto Spring Boot padrão | **Thymeleaf** — melhor ecossistema, Spring Security integrado |
-| Alta performance / muitas requests | **JTE** — compilado, type-safe |
-| Templates de e-mail | **Thymeleaf** — dialeto rico para HTML de e-mail |
-| Equipe com Java forte, sem UX | **JTE** — erros em tempo de compilação |
-| Templates portáveis (Java + Node) | **Mustache** |
-| Geração de documentos (PDF, XML) | **FreeMarker** — mais controle sobre output |
-
----
-
-## 14. Boas Práticas e Checklist
-
-### 14.1 Diagrama de Fluxo de Decisão
+### 12.1 Diagrama de Fluxo de Decisão
 
 ```mermaid
 flowchart TD
@@ -7772,7 +6239,7 @@ flowchart TD
     N --> O[@WebMvcTest + @SpringBootTest<br/>RestTestClient ou REST Assured]
 ```
 
-### 14.2 Checklist — REST Controllers
+### 12.2 Checklist — REST Controllers
 
 - [ ] Usar `@RestController` (combina `@Controller` + `@ResponseBody`)
 - [ ] Versionamento de API na URL: `/api/v1/...`
@@ -7785,19 +6252,7 @@ flowchart TD
 - [ ] Documentar com `@Tag`, `@Operation`, `@ApiResponse`
 - [ ] Tratar erros com `@RestControllerAdvice` e `ProblemDetail` (RFC 9457)
 - [ ] CORS configurado explicitamente (nunca `*` em produção)
-
-### 14.3 Checklist — SSR Controllers
-
-- [ ] Usar `@Controller` (não `@RestController`)
-- [ ] Criar Form Objects separados das entidades/DTOs
-- [ ] Sempre checar `bindingResult.hasErrors()` ANTES de usar o form
-- [ ] Usar `RedirectAttributes.addFlashAttribute()` para mensagens pós-redirect (PRG)
-- [ ] Usar `@ModelAttribute` para dados comuns (select options, etc.)
-- [ ] Configurar `HiddenHttpMethodFilter` para PUT/DELETE em forms HTML
-- [ ] Aplicar `StringTrimmerEditor` via `@InitBinder`
-- [ ] Definir `setAllowedFields` para prevenir mass assignment
-
-### 14.4 Checklist — Validação
+### 12.3 Checklist — Validação
 
 - [ ] Bean Validation nas camadas Controller E Service (`@Validated`)
 - [ ] Usar grupos de validação para criar/atualizar com regras diferentes
@@ -7806,7 +6261,7 @@ flowchart TD
 - [ ] Mensagens de erro externalizadas em `messages.properties`
 - [ ] `@EmailUnico`, `@CpfUnico` com acesso ao repositório via Spring
 
-### 14.5 Anti-patterns a Evitar
+### 12.4 Anti-patterns a Evitar
 
 ```java
 // ❌ Expondo entidade JPA diretamente
@@ -7871,7 +6326,7 @@ public void init(WebDataBinder binder) {
 }
 ```
 
-### 14.6 Mensagens de Validação i18n — Integração com messages.properties
+### 12.5 Mensagens de Validação i18n — Integração com messages.properties
 
 Por padrão o Bean Validation resolve mensagens no arquivo
 `ValidationMessages.properties` (padrão Jakarta) ou dentro das próprias
@@ -7981,10 +6436,9 @@ spring:
     cache-duration: 1s          # 0 = sem cache (útil em desenvolvimento)
     use-code-as-default-message: false  # false = lança exceção se chave não existir
 ```
+## 13. CORS — Cross-Origin Resource Sharing
 
-## 15. CORS — Cross-Origin Resource Sharing
-
-### 15.1 Como o CORS Funciona
+### 13.1 Como o CORS Funciona
 
 ```mermaid
 sequenceDiagram
@@ -8003,7 +6457,7 @@ sequenceDiagram
 **Requisições "simples"** (sem preflight): `GET`, `HEAD`, `POST` com `Content-Type: application/x-www-form-urlencoded`, `multipart/form-data` ou `text/plain`.
 Qualquer outro método ou Content-Type (incluindo `application/json`) dispara o preflight.
 
-### 15.2 Configuração Global — `WebMvcConfigurer`
+### 13.2 Configuração Global — `WebMvcConfigurer`
 
 ```java
 @Configuration
@@ -8054,7 +6508,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 }
 ```
 
-### 15.3 `@CrossOrigin` por Controller ou Método
+### 13.3 `@CrossOrigin` por Controller ou Método
 
 ```java
 // ─── Nível de classe: aplica a TODOS os métodos do controller ─────────────────
@@ -8094,7 +6548,7 @@ public class RelatorioController {
 > divergências entre controllers. `@CrossOrigin` é útil quando um endpoint
 > específico precisa de política diferente da global.
 
-### 15.4 Integração Obrigatória com Spring Security
+### 13.4 Integração Obrigatória com Spring Security
 
 > ⚠️ **Armadilha comum:** configurar CORS no `WebMvcConfigurer` **não é suficiente**
 > quando Spring Security está presente. O `SecurityFilterChain` intercepta a
@@ -8147,7 +6601,7 @@ public class SecurityConfig {
 }
 ```
 
-### 15.5 CORS Dinâmico — Origens em Banco de Dados
+### 13.5 CORS Dinâmico — Origens em Banco de Dados
 
 ```java
 /**
@@ -8183,7 +6637,7 @@ public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
 }
 ```
 
-### 15.6 Diagnóstico de Problemas CORS
+### 13.6 Diagnóstico de Problemas CORS
 
 ```yaml
 # application-dev-local.yml — habilitar log do CorsFilter para diagnóstico
@@ -8202,10 +6656,9 @@ logging:
 | `exposedHeaders` não visível no browser | Header não listado em `exposedHeaders` | Adicionar o header à lista de expostos |
 
 ---
+## 14. ETag e Cache HTTP
 
-## 16. ETag e Cache HTTP
-
-### 16.1 Visão Geral dos Mecanismos de Cache
+### 14.1 Visão Geral dos Mecanismos de Cache
 
 ```mermaid
 flowchart LR
@@ -8226,7 +6679,7 @@ flowchart LR
     CC -->|"max-age: skip revalidação"| SKIP["Resposta do cache local<br>sem ir ao servidor"]
 ```
 
-### 16.2 `ShallowEtagHeaderFilter` — ETag Automático
+### 14.2 `ShallowEtagHeaderFilter` — ETag Automático
 
 O `ShallowEtagHeaderFilter` calcula o hash MD5 do body da resposta e adiciona o
 header `ETag` automaticamente. Nas requisições seguintes com `If-None-Match`,
@@ -8259,7 +6712,7 @@ public class CacheConfig {
 # O filtro deve ser registrado explicitamente como acima.
 ```
 
-### 16.3 `ResponseEntity` com ETag e Last-Modified
+### 14.3 `ResponseEntity` com ETag e Last-Modified
 
 Para evitar execução desnecessária do controller, use `WebRequest.checkNotModified()`
 — retorna `true` e define o status 304 antes de qualquer processamento:
@@ -8342,7 +6795,7 @@ public class ProdutoController {
 }
 ```
 
-### 16.4 `CacheControl` — Políticas Comuns
+### 14.4 `CacheControl` — Políticas Comuns
 
 ```java
 @RestController
@@ -8408,41 +6861,7 @@ public class CatalogoController {
     }
 }
 ```
-
-### 16.5 Cache HTTP em Views SSR
-
-```java
-// Para páginas Thymeleaf com dados relativamente estáveis
-@Controller
-@RequestMapping("/catalogo")
-public class CatalogoMvcController {
-
-    @GetMapping("/vitrine")
-    public String vitrine(Model model, HttpServletResponse response) {
-        // Adiciona headers de cache à resposta HTML
-        response.setHeader(HttpHeaders.CACHE_CONTROL,
-                "public, max-age=300, must-revalidate");
-
-        model.addAttribute("produtos", catalogoService.destaques());
-        return "catalogo/vitrine";
-    }
-}
-```
-
-```yaml
-# application.yml — Cache-Control para recursos estáticos (auto-configurado pelo Boot)
-spring:
-  web:
-    resources:
-      cache:
-        period: 3600          # segundos — padrão 0 (sem cache)
-        cachecontrol:
-          max-age: 3600
-          cache-public: true
-          must-revalidate: true
-```
-
-### 16.6 Resumo: Quando Usar Cada Estratégia
+### 14.5 Resumo: Quando Usar Cada Estratégia
 
 | Recurso | Estratégia recomendada | Headers |
 |---|---|---|
@@ -8454,10 +6873,9 @@ spring:
 | API paginada | ETag por página + `max-age` curto | `ETag: "page-0-hash"` |
 
 ---
+## 15. Upload de Arquivos
 
-## 17. Upload de Arquivos
-
-### 17.1 Configuração
+### 15.1 Configuração
 
 ```yaml
 # application.yml — MultipartAutoConfiguration (✅ auto-configurado pelo Boot)
@@ -8471,7 +6889,7 @@ spring:
       location: /tmp/uploads    # ✅ Default: diretório temporário do SO
 ```
 
-### 17.2 Controller de Upload
+### 15.2 Controller de Upload
 
 ```java
 @RestController
@@ -8550,7 +6968,7 @@ public class ArquivoController {
 }
 ```
 
-### 17.3 Service — Estratégias de Armazenamento
+### 15.3 Service — Estratégias de Armazenamento
 
 ```java
 @Service
@@ -8615,7 +7033,7 @@ public class ArquivoService {
 }
 ```
 
-### 17.4 Download de Arquivos
+### 15.4 Download de Arquivos
 
 ```java
 @GetMapping("/{nomeArquivo:.+}")
@@ -8650,7 +7068,7 @@ public ResponseEntity<Resource> download(@PathVariable String nomeArquivo) {
 }
 ```
 
-### 17.5 Upload via Fetch API (JavaScript)
+### 15.5 Upload via Fetch API (JavaScript)
 
 #### Upload simples com arquivo único
 
@@ -8851,10 +7269,9 @@ public class GlobalExceptionHandler {
 ```
 
 ---
+## 16. Internacionalização (i18n)
 
-## 18. Internacionalização (i18n)
-
-### 18.1 Estratégias de Resolução de Locale
+### 16.1 Estratégias de Resolução de Locale
 
 ```mermaid
 flowchart TD
@@ -8870,7 +7287,7 @@ flowchart TD
     LR -->|LocaleChangeInterceptor| CTRL["Controller / Template"]
 ```
 
-### 18.2 Configuração Completa
+### 16.2 Configuração Completa
 
 ```java
 @Configuration
@@ -8956,7 +7373,7 @@ spring:
     fallback-to-system-locale: true  # tenta locale do SO se não encontrar o arquivo
 ```
 
-### 18.3 Arquivos de Mensagens
+### 16.3 Arquivos de Mensagens
 
 ```
 src/main/resources/
@@ -9040,7 +7457,7 @@ br.com.app.validation.cpf.invalido=CPF inválido
 br.com.app.validation.email.unico=E-mail já cadastrado
 ```
 
-### 18.4 i18n em Controllers REST
+### 16.4 i18n em Controllers REST
 
 ```java
 @RestController
@@ -9098,99 +7515,7 @@ public class GlobalExceptionHandler {
     }
 }
 ```
-
-### 18.5 i18n em Templates Thymeleaf
-
-```html
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
-      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
-      layout:decorate="~{layout/base}">
-<body>
-<section layout:fragment="content">
-
-<!-- ─── #{chave} — resolve mensagem do MessageSource para o locale atual ─────
-     Equivalente a messageSource.getMessage("produto.criado", null, locale)     -->
-<h1 th:text="#{app.nav.produtos}">Produtos</h1>
-
-<!-- ─── #{chave(param1, param2)} — mensagem com parâmetros ──────────────────
-     Equivale ao {0}, {1} nos arquivos .properties                              -->
-<p th:text="#{paginacao.total(${page.number * page.size + 1},
-                               ${page.number * page.size + page.numberOfElements},
-                               ${page.totalElements})}">
-    Mostrando 1 a 20 de 150 registros
-</p>
-
-<!-- ─── Mensagem flash localizada ────────────────────────────────────────────
-     O controller envia a chave (não o texto) como flash attribute             -->
-<div th:if="${mensagemChave}" class="alert alert-success">
-    <!-- Resolve a chave com parâmetros opcionais -->
-    <span th:text="${mensagemArgs != null}
-                    ? #{__${mensagemChave}__(__${mensagemArgs}__)}
-                    : #{__${mensagemChave}__}">
-    </span>
-</div>
-
-<!-- ─── Labels de formulário com fallback ────────────────────────────────────
-     #{chave,default='texto'} — exibe o default se a chave não existir         -->
-<label th:text="#{form.campo.nome,default='Nome'}">Nome</label>
-
-<!-- ─── Seletor de idioma ────────────────────────────────────────────────────
-     LocaleChangeInterceptor intercepta o parâmetro lang e altera o locale     -->
-<div class="dropdown">
-    <button class="btn btn-sm btn-outline-secondary dropdown-toggle">
-        Idioma
-    </button>
-    <ul class="dropdown-menu">
-        <li><a class="dropdown-item" th:href="@{/(lang=pt-BR)}">🇧🇷 Português</a></li>
-        <li><a class="dropdown-item" th:href="@{/(lang=en)}">🇺🇸 English</a></li>
-        <li><a class="dropdown-item" th:href="@{/(lang=es)}">🇪🇸 Español</a></li>
-    </ul>
-</div>
-
-<!-- ─── Formatação de data/número com o locale atual ─────────────────────────
-     Thymeleaf usa automaticamente o locale resolvido pelo LocaleResolver       -->
-<td th:text="${#temporals.format(produto.criadoEm, 'dd/MM/yyyy HH:mm')}"></td>
-<td th:text="${#numbers.formatDecimal(produto.preco, 1, 'POINT', 2, 'COMMA')}"></td>
-
-<!-- ─── Acesso programático ao locale atual ──────────────────────────────────
-     #locale é o objeto java.util.Locale resolvido para a requisição atual      -->
-<span th:text="${#locale.language}">pt</span>
-<span th:text="${#locale.country}">BR</span>
-<span th:text="${#locale}">pt_BR</span>
-
-</section>
-</body>
-</html>
-```
-
-### 18.6 Controller SSR — enviando chave em vez de texto
-
-```java
-// Padrão recomendado para SSR: o controller envia CHAVES, o template resolve
-@Controller
-@RequestMapping("/produtos")
-public class ProdutoMvcController {
-
-    @PostMapping
-    public String salvar(@ModelAttribute @Valid ProdutoForm form,
-                         BindingResult binding,
-                         RedirectAttributes redirectAttrs) {
-        if (binding.hasErrors()) return "produtos/formulario";
-
-        var produto = produtoService.criar(form);
-
-        // Envia a CHAVE da mensagem e os argumentos separados
-        // O template Thymeleaf resolve com o locale do usuário
-        redirectAttrs.addFlashAttribute("mensagemChave", "produto.criado");
-        redirectAttrs.addFlashAttribute("mensagemArgs", produto.getNome());
-
-        return "redirect:/produtos";
-    }
-}
-```
-
-### 18.7 i18n em Respostas JSON — `MessageSourceAccessor`
+### 16.5 i18n em Respostas JSON — `MessageSourceAccessor`
 
 ```java
 /**
@@ -9228,7 +7553,7 @@ public class NotificacaoService {
 }
 ```
 
-### 18.8 Timezone — Integração com i18n
+### 16.6 Timezone — Integração com i18n
 
 ```java
 // LocaleContextHolder carrega Locale E TimeZone — útil para formatação
@@ -9251,7 +7576,7 @@ public class DateTimeFormatter {
 ```
 
 
-### 18.9 `LocaleContextHolder` — acesso ao Locale fora do Controller
+### 16.7 `LocaleContextHolder` — acesso ao Locale fora do Controller
 
 `LocaleContextHolder` é um utilitário estático do Spring que armazena o **Locale e o
 TimeZone da requisição atual** em uma variável `ThreadLocal`. O `DispatcherServlet`
@@ -9441,15 +7766,14 @@ public class ContextoUsuarioHelper {
 
 
 ---
-
-## 19. Customização do `ErrorController`
+## 17. Customização do ErrorController
 
 O Spring Boot registra automaticamente um `BasicErrorController` que serve o
 endpoint `/error` — ponto de chegada de todos os erros não tratados por um
 `@ControllerAdvice` (ex.: 404 gerado antes do `DispatcherServlet`, exceções em
 filtros, erros de Tomcat). Esta seção cobre como personalizar esse comportamento.
 
-### 19.1 Como o Fluxo de Erro Funciona
+### 17.1 Como o Fluxo de Erro Funciona
 
 ```mermaid
 flowchart LR
@@ -9467,7 +7791,7 @@ flowchart LR
 > A regra prática é: `@ControllerAdvice` para a esmagadora maioria dos casos;
 > `ErrorController` apenas para erros que **escapam** do `DispatcherServlet`.
 
-### 19.2 Customizando o `BasicErrorController`
+### 17.2 Customizando o `BasicErrorController`
 
 #### Abordagem 1 — `ErrorAttributes` customizado
 
@@ -9583,42 +7907,7 @@ public class AppErrorController implements ErrorController {
     }
 }
 ```
-
-### 19.3 Templates de Erro Thymeleaf
-
-O Spring Boot resolve automaticamente templates em `templates/error/` pelo
-código de status — sem nenhuma configuração adicional.
-
-```
-src/main/resources/templates/
-└── error/
-    ├── 400.html   ← Bad Request
-    ├── 403.html   ← Forbidden
-    ├── 404.html   ← Not Found
-    ├── 500.html   ← Internal Server Error
-    └── error.html ← fallback genérico (qualquer outro status)
-```
-
-```html
-<!-- templates/error/404.html -->
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org"
-      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
-      layout:decorate="~{layout/base}">
-<body>
-<section layout:fragment="content" class="text-center py-5">
-    <h1 class="display-1 fw-bold text-muted">404</h1>
-    <h2 class="mb-3">Página não encontrada</h2>
-    <p class="text-muted mb-4">
-        O endereço <code th:text="${path}"></code> não existe ou foi movido.
-    </p>
-    <a th:href="@{/}" class="btn btn-primary">Voltar ao início</a>
-</section>
-</body>
-</html>
-```
-
-### 19.4 Configuração via `application.yml`
+### 17.3 Configuração via `application.yml`
 
 ```yaml
 server:
@@ -9635,14 +7924,13 @@ server:
 ```
 
 ---
-
-## 20. `@ResponseStatus` em Classes de Exceção
+## 18. `@ResponseStatus` em Classes de Exceção
 
 `@ResponseStatus` aplicado diretamente a uma classe de exceção instrui o Spring
 MVC a retornar um HTTP status específico sempre que essa exceção for lançada —
 sem necessidade de um `@ExceptionHandler` dedicado.
 
-### 20.1 Uso Básico
+### 18.1 Uso Básico
 
 ```java
 // ─── Exceção com status fixo ──────────────────────────────────────────────────
@@ -9686,7 +7974,7 @@ public ResponseEntity<ProdutoResponse> criar(@RequestBody @Valid ProdutoRequest 
 }
 ```
 
-### 20.2 `@ResponseStatus` vs `@ExceptionHandler` — Quando Usar Cada Um
+### 18.2 `@ResponseStatus` vs `@ExceptionHandler` — Quando Usar Cada Um
 
 ```java
 // ─── @ResponseStatus: adequado para exceções simples ─────────────────────────
@@ -9718,7 +8006,7 @@ public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) 
 }
 ```
 
-### 20.3 Precedência com `@ControllerAdvice`
+### 18.3 Precedência com `@ControllerAdvice`
 
 Quando uma exceção tem `@ResponseStatus` **e** existe um `@ExceptionHandler`
 compatível no `@ControllerAdvice`, o **`@ExceptionHandler` vence** — a anotação
@@ -9747,10 +8035,9 @@ public ProblemDetail handle(RecursoNaoEncontradoException ex, HttpServletRequest
 | Exceção sem `@ResponseStatus` + `@ExceptionHandler` | `@ExceptionHandler` |
 
 ---
+## 19. `MultiValueMap` e Form Data
 
-## 21. `MultiValueMap` e Form Data
-
-### 21.1 `MultiValueMap` — Múltiplos Valores por Chave
+### 19.1 `MultiValueMap` — Múltiplos Valores por Chave
 
 `MultiValueMap<K, V>` é uma extensão de `Map` do Spring que associa **uma ou mais
 valores** a cada chave. É o tipo usado internamente pelo MVC para representar
@@ -9790,118 +8077,7 @@ public class MultiValueMapController {
     }
 }
 ```
-
-### 21.2 Form Data com Checkboxes (`multi-select`)
-
-O caso de uso mais comum de `MultiValueMap` em SSR é o binding de checkboxes e
-selects múltiplos em um form HTML — onde cada checkbox marcado envia o mesmo
-nome de campo com valores diferentes.
-
-```java
-// ─── Form object com lista para binding de checkboxes ─────────────────────────
-public class FiltroProdutoForm {
-
-    // Lista recebe um valor por checkbox marcado
-    private List<Long> categoriaIds = new ArrayList<>();
-
-    // Lista de Strings para checkboxes de tags
-    private List<String> tags = new ArrayList<>();
-
-    // Integer para select múltiplo de estoque mínimo
-    private Integer estoqueMinimo;
-
-    // getters/setters necessários para o binding MVC
-    public List<Long> getCategoriaIds()          { return categoriaIds; }
-    public void setCategoriaIds(List<Long> ids)  { this.categoriaIds = ids; }
-    public List<String> getTags()                { return tags; }
-    public void setTags(List<String> tags)       { this.tags = tags; }
-    // ...
-}
-
-@Controller
-@RequestMapping("/produtos")
-public class ProdutoMvcController {
-
-    @GetMapping("/filtrar")
-    public String exibirFiltro(Model model) {
-        model.addAttribute("filtro",     new FiltroProdutoForm());
-        model.addAttribute("categorias", categoriaService.listarTodas());
-        model.addAttribute("tagsDisponiveis", tagService.listarTodas());
-        return "produtos/filtro";
-    }
-
-    @PostMapping("/filtrar")
-    public String aplicarFiltro(
-            @ModelAttribute("filtro") FiltroProdutoForm filtro,
-            Model model) {
-        // filtro.getCategoriaIds() contém os IDs das checkboxes marcadas
-        // filtro.getTags() contém as tags selecionadas
-        model.addAttribute("produtos",
-                produtoService.filtrar(filtro.getCategoriaIds(), filtro.getTags(),
-                                       filtro.getEstoqueMinimo()));
-        model.addAttribute("categorias", categoriaService.listarTodas());
-        model.addAttribute("tagsDisponiveis", tagService.listarTodas());
-        return "produtos/filtro";
-    }
-}
-```
-
-```html
-<!-- templates/produtos/filtro.html -->
-<form th:action="@{/produtos/filtrar}" th:object="${filtro}" method="post">
-
-    <!-- ─── Checkboxes — cada checkbox tem o mesmo "name" ─────────────────────
-         th:field gera name="categoriaIds" e value="${cat.id()}" para cada item.
-         O MVC coleta todos os valores marcados na lista categoriaIds do form.  -->
-    <fieldset class="mb-3">
-        <legend class="fw-semibold">Categorias</legend>
-        <div th:each="cat : ${categorias}" class="form-check form-check-inline">
-            <input type="checkbox"
-                   th:field="*{categoriaIds}"
-                   th:value="${cat.id()}"
-                   class="form-check-input"
-                   th:id="'cat-' + ${cat.id()}">
-            <label class="form-check-label"
-                   th:for="'cat-' + ${cat.id()}"
-                   th:text="${cat.nome()}">Categoria</label>
-        </div>
-    </fieldset>
-
-    <!-- ─── Checkboxes de Strings ─────────────────────────────────────────────
-         Para listas de String, th:field gera value igual ao texto da tag.     -->
-    <fieldset class="mb-3">
-        <legend class="fw-semibold">Tags</legend>
-        <div th:each="tag : ${tagsDisponiveis}" class="form-check form-check-inline">
-            <input type="checkbox"
-                   th:field="*{tags}"
-                   th:value="${tag}"
-                   class="form-check-input"
-                   th:id="'tag-' + ${tag}">
-            <label class="form-check-label"
-                   th:for="'tag-' + ${tag}"
-                   th:text="${tag}">Tag</label>
-        </div>
-    </fieldset>
-
-    <!-- ─── Select múltiplo ───────────────────────────────────────────────────
-         multiple="true" permite selecionar vários itens com Ctrl/Cmd+clique.
-         O binding é idêntico ao dos checkboxes — lista de valores.            -->
-    <div class="mb-3">
-        <label class="form-label fw-semibold">Selecionar categorias (alternativa)</label>
-        <select th:field="*{categoriaIds}" class="form-select" multiple size="4">
-            <option th:each="cat : ${categorias}"
-                    th:value="${cat.id()}"
-                    th:text="${cat.nome()}">
-            </option>
-        </select>
-        <small class="text-muted">Ctrl/Cmd + clique para selecionar múltiplos</small>
-    </div>
-
-    <button type="submit" class="btn btn-primary">Filtrar</button>
-</form>
-```
-
-### 21.3 `@RequestBody` com `MultiValueMap` (form-urlencoded)
+### 19.2 `@RequestBody` com `MultiValueMap` (form-urlencoded)
 
 ```java
 // Para receber form data (application/x-www-form-urlencoded) via REST
@@ -9917,7 +8093,7 @@ public ResponseEntity<String> receberFormData(
 }
 ```
 
-### 21.4 `LinkedMultiValueMap` — Construção Programática
+### 19.3 `LinkedMultiValueMap` — Construção Programática
 
 ```java
 // Construção manual de MultiValueMap — útil em testes ou ao montar requests
@@ -9938,171 +8114,9 @@ restClient.get()
 ```
 
 ---
+## 20. Testes
 
-## 22. `RedirectView` e `UrlBasedViewResolver`
-
-### 22.1 `RedirectView` — Redirect Programático com Controle Total
-
-```java
-@Controller
-@RequestMapping("/legacy")
-public class LegacyRedirectController {
-
-    // ─── String de redirect — forma mais simples (preferível na maioria dos casos)
-    @GetMapping("/produtos")
-    public String redirectSimples() {
-        return "redirect:/api/v1/produtos";  // 302 por padrão
-    }
-
-    // ─── RedirectView — quando precisar de controle fino ─────────────────────
-    @GetMapping("/produto/{id}")
-    public RedirectView redirectComControle(@PathVariable Long id) {
-        var rv = new RedirectView();
-
-        rv.setUrl("/produtos/" + id);
-
-        // Status code: 301 (permanente) ou 302 (temporário, default)
-        rv.setStatusCode(HttpStatus.MOVED_PERMANENTLY);
-
-        // false = preserva o contexto da app no path (recomendado: true)
-        rv.setContextRelative(true);
-
-        // false = não expõe os atributos do model como query params
-        rv.setExposeModelAttributes(false);
-
-        return rv;
-    }
-
-    // ─── RedirectView com query params via Model ──────────────────────────────
-    //
-    // Atributos adicionados ao Model (com exposeModelAttributes=true, default)
-    // são automaticamente anexados como query params na URL de destino
-    @PostMapping("/busca-legada")
-    public RedirectView redirectComParams(@RequestParam String q, Model model) {
-        model.addAttribute("query",  q);        // → /busca?query=valor
-        model.addAttribute("origem", "legacy"); // → /busca?query=valor&origem=legacy
-
-        var rv = new RedirectView("/busca");
-        rv.setExposeModelAttributes(true);      // default: true
-        return rv;
-    }
-
-    // ─── ModelAndView com RedirectView ────────────────────────────────────────
-    @GetMapping("/painel")
-    public ModelAndView redirectMav() {
-        var rv  = new RedirectView("/admin/dashboard", true); // contextRelative=true
-        var mav = new ModelAndView(rv);
-        mav.addObject("source", "legacy_painel");
-        return mav;
-    }
-}
-```
-
-### 22.2 `UrlBasedViewResolver` — Configuração Avançada de View Resolution
-
-O Spring Boot auto-configura o `ThymeleafViewResolver`, que tem precedência sobre
-o `UrlBasedViewResolver`. Este é relevante quando se usa FreeMarker, Mustache,
-JSP ou uma engine customizada onde o resolver precisa ser configurado manualmente.
-
-```java
-@Configuration
-public class ViewResolverConfig {
-
-    // ─── Encadeamento de resolvers por ordem de precedência ───────────────────
-    //
-    // O Spring MVC tenta cada resolver em ordem (menor order = maior prioridade).
-    // O primeiro que retornar uma View não-nula é usado.
-
-    // 1. Thymeleaf: order=1 (auto-configurado pelo Boot com mais alta prioridade)
-    //    Resolve: qualquer nome sem prefixo especial
-
-    // 2. Redirects e Forwards: sempre resolvidos antes de qualquer ViewResolver
-    //    "redirect:/rota"  → RedirectView (302)
-    //    "redirect:301:/rota" → RedirectView (301) — Spring 6+
-    //    "forward:/rota"   → InternalResourceView (forward interno)
-
-    // 3. Resolver customizado para relatórios PDF (exemplo)
-    @Bean
-    public ViewResolver pdfViewResolver() {
-        var resolver = new UrlBasedViewResolver();
-        resolver.setOrder(2);                     // após Thymeleaf
-        resolver.setViewClass(PdfView.class);     // view customizada
-        resolver.setPrefix("classpath:/relatorios/");
-        resolver.setSuffix(".jrxml");             // JasperReports, por exemplo
-        // Só resolve nomes com prefixo "pdf:" no controller:
-        // return "pdf:relatorio-vendas";
-        return resolver;
-    }
-
-    // ─── InternalResourceViewResolver (JSP — legado) ─────────────────────────
-    // Necessário apenas em projetos que ainda usam JSP
-    // @Bean
-    // public InternalResourceViewResolver jspViewResolver() {
-    //     var resolver = new InternalResourceViewResolver();
-    //     resolver.setOrder(3);
-    //     resolver.setPrefix("/WEB-INF/views/");
-    //     resolver.setSuffix(".jsp");
-    //     return resolver;
-    // }
-}
-```
-
-### 22.3 Redirect 301 Permanente — SEO e Mudança de URL
-
-```java
-@Controller
-public class SeoRedirectController {
-
-    // ─── Redirect 301 via String (Spring 6+) ─────────────────────────────────
-    @GetMapping("/blog/{slug}")
-    public String blogPost(@PathVariable String slug) {
-        return "redirect:301:/artigos/" + slug;   // sintaxe Spring 6+
-    }
-
-    // ─── Redirect 301 via RedirectView (Spring 5 e anterior) ─────────────────
-    @GetMapping("/noticias/{id}")
-    public RedirectView noticiaLegada(@PathVariable Long id) {
-        var rv = new RedirectView("/conteudo/noticias/" + id);
-        rv.setStatusCode(HttpStatus.MOVED_PERMANENTLY);
-        return rv;
-    }
-
-    // ─── Redirects em massa via addViewControllers (WebMvcConfigurer) ─────────
-    // Para redirects estáticos sem lógica, prefira addViewControllers (seção 2.2)
-    // em vez de um controller dedicado — mais performático e sem instância de bean
-}
-```
-
-### 22.4 Forward Interno — Compartilhamento de Handlers
-
-```java
-@Controller
-@RequestMapping("/compatibilidade")
-public class ForwardController {
-
-    // Forward: transfere a requisição para outro handler INTERNAMENTE
-    // O browser não sabe que houve um forward — a URL não muda
-    // Diferente do redirect, o request original é preservado (incluindo body e attrs)
-    @GetMapping("/produto-antigo/{codigo}")
-    public String forwardParaNovo(@PathVariable String codigo,
-                                   HttpServletRequest request) {
-        // Preserva o código como atributo para o handler destino
-        request.setAttribute("codigoLegado", codigo);
-        return "forward:/api/v1/produtos/por-codigo/" + codigo;
-    }
-
-    // Forward com prefixo explícito — equivalente ao return "forward:..."
-    @GetMapping("/rota-alternativa")
-    public ModelAndView forwardMav() {
-        return new ModelAndView("forward:/rota-principal");
-    }
-}
-```
----
-
-## 23. Testes
-
-### 23.1 Visão Geral — Pirâmide de Testes no Spring MVC
+### 20.1 Visão Geral — Pirâmide de Testes no Spring MVC
 
 ```mermaid
 graph TB
@@ -10204,7 +8218,7 @@ import org.junit.api.params.provider.ValueSource;
 
 ---
 
-### 23.2 Teste Unitário — Service sem Spring
+### 20.2 Teste Unitário — Service sem Spring
 
 O teste mais rápido: instancia a classe diretamente, injeta mocks via construtor.
 Não carrega nenhum contexto Spring.
@@ -10516,12 +8530,12 @@ class PedidoControllerIT {
 
 ---
 
-### 23.3 `@WebMvcTest` — Slice Test da Camada Web
+### 20.3 `@WebMvcTest` — Slice Test da Camada Web
 
 Carrega apenas o slice MVC (controllers, filters, converters, security web).
 **Não carrega** services, repositories nem o banco — estes devem ser mockados.
 
-#### 23.3.1 REST Controller com `RestTestClient` (Spring Boot 4)
+#### 20.3.1 REST Controller com `RestTestClient` (Spring Boot 4)
 
 > **Nota:** no baseline Spring Boot 3.5 deste documento, prefira `MockMvc` ou um cliente equivalente. O `RestTestClient` é tratado aqui como recurso nativo da stack Spring Boot 4 / Spring Framework 7.
 
@@ -10619,92 +8633,7 @@ class ProdutoControllerTest {
     }
 }
 ```
-
-#### 23.3.2 Controller MVC SSR com Thymeleaf
-
-```java
-@WebMvcTest(ProdutoMvcController.class)
-@DisplayName("ProdutoMvcController — slice SSR")
-class ProdutoMvcControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean private ProdutoService   produtoService;
-    @MockitoBean private CategoriaService categoriaService;
-
-    @BeforeEach
-    void setUp() {
-        when(categoriaService.listarTodas()).thenReturn(List.of(
-                new CategoriaResponse(1L, "TI"),
-                new CategoriaResponse(2L, "Eletrônicos")
-        ));
-    }
-
-    @Test
-    @DisplayName("GET /produtos → view lista com atributos corretos")
-    void listar_ReturnsListViewWithModel() throws Exception {
-        var page = new PageImpl<>(List.of(
-                new ProdutoResponse(1L, "Notebook", new BigDecimal("3499.99"),
-                        "TI", LocalDateTime.now(), LocalDateTime.now())
-        ));
-        when(produtoService.listar(any(), any())).thenReturn(page);
-
-        mockMvc.perform(get("/produtos"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("produtos/lista"))        // verifica a view
-                .andExpect(model().attributeExists("produtos"))  // verifica o model
-                .andExpect(model().attribute("produtos", page))
-                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
-                .andExpect(xpath("//table").exists());           // verifica o HTML
-    }
-
-    @Test
-    @DisplayName("GET /produtos/novo → view formulário com form vazio")
-    void exibirFormulario_ReturnsFormView() throws Exception {
-        mockMvc.perform(get("/produtos/novo"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("produtos/formulario"))
-                .andExpect(model().attributeExists("produtoForm"))
-                .andExpect(model().attributeExists("categorias"));
-    }
-
-    @Test
-    @DisplayName("POST /produtos → redireciona após criação válida (PRG)")
-    void salvar_ValidForm_RedirectsWithFlash() throws Exception {
-        var produto = new Produto(1L, "Notebook", new BigDecimal("3499.99"));
-        when(produtoService.criar(any())).thenReturn(produto);
-        when(produtoService.nomeJaExiste(any())).thenReturn(false);
-
-        mockMvc.perform(post("/produtos")
-                        .with(csrf())                          // CSRF obrigatório com Spring Security
-                        .param("nome",        "Notebook")
-                        .param("preco",       "3499.99")
-                        .param("categoriaId", "1"))
-                .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrlPattern("/produtos/*"))
-                .andExpect(flash().attributeExists("mensagem")); // verifica flash attribute
-    }
-
-    @Test
-    @DisplayName("POST /produtos → retorna form com erros quando inválido")
-    void salvar_InvalidForm_ReturnsFormWithErrors() throws Exception {
-        mockMvc.perform(post("/produtos")
-                        .with(csrf())
-                        .param("nome", "")      // nome vazio — viola @NotBlank
-                        .param("preco", "")
-                        .param("categoriaId", "1"))
-                .andExpect(status().isOk())
-                .andExpect(view().name("produtos/formulario"))
-                .andExpect(model().hasErrors())
-                .andExpect(model().attributeHasFieldErrors("produtoForm", "nome", "preco"));
-    }
-}
-```
-
----
-
-### 23.4 `@WebMvcTest` com Spring Security
+### 20.4 `@WebMvcTest` com Spring Security
 
 ```java
 // Por padrão, @WebMvcTest aplica a configuração de Security do projeto.
@@ -10775,7 +8704,7 @@ class PedidoControllerSecurityTest {
 
 ---
 
-### 23.5 `@SpringBootTest` — Teste de Integração
+### 20.5 `@SpringBootTest` — Teste de Integração
 
 Carrega o contexto Spring completo. Use com `Testcontainers` para banco real.
 
@@ -10885,7 +8814,7 @@ class ProdutoControllerIT {
 
 ---
 
-### 23.6 `MockMvc` vs `RestTestClient` — Comparativo
+### 20.6 `MockMvc` vs `RestTestClient` — Comparativo
 
 > **Nota:** na comparação abaixo, a disponibilidade do `RestTestClient` sem dependência extra refere-se ao Spring Boot 4.
 
@@ -10928,7 +8857,7 @@ restTestClient.get()
 
 ---
 
-### 23.7 Configuração de Contexto de Teste
+### 20.7 Configuração de Contexto de Teste
 
 ```java
 // ─── @TestConfiguration — beans extras apenas nos testes ─────────────────────
@@ -10987,7 +8916,7 @@ class IntegracaoComEfeitos { /* ... */ }
 
 ---
 
-### 23.8 Testando Upload, CORS e SSE
+### 20.8 Testando Upload, CORS e SSE
 
 ```java
 @WebMvcTest(ArquivoController.class)
@@ -11053,12 +8982,11 @@ class EventoControllerTest {
 ```
 
 ---
-
-## 24. Tópicos Relevantes Não Cobertos Neste Documento
+## 21. Tópicos Relevantes Não Cobertos Neste Documento
 
 Assuntos relacionados ao Spring MVC ainda ausentes neste documento, ordenados por relevância prática.
 
-### 24.1 Tópicos Ausentes — Alta Relevância
+### 21.1 Tópicos Ausentes — Alta Relevância
 
 **1. HTTP Interface — `@HttpExchange`**
 Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao Feign) usando interfaces anotadas com `@GetExchange`, `@PostExchange` etc., resolvidos por `HttpServiceProxyFactory`. Direto ao território do Spring MVC e completamente ausente.
@@ -11066,18 +8994,18 @@ Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao
 **2. HATEOAS**
 `spring-hateoas`, `EntityModel<T>`, `CollectionModel<T>`, `WebMvcLinkBuilder`, representação HAL. Ausente por completo, apesar de ser parte oficial do ecossistema Spring MVC para APIs hipermídia.
 
-### 24.2 Tópicos Ausentes — Relevância Moderada
+### 21.2 Tópicos Ausentes — Relevância Moderada
 
 **3. Endpoints funcionais — `RouterFunction` / WebMvc.fn**
 Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `WebMvcConfigurer.addRouterFunctions()`. Não substitui `@Controller` no dia a dia mas é relevante para cenários de roteamento dinâmico ou bibliotecas internas.
 
-### 24.3 Tópicos Ausentes — Relevância Menor mas Notáveis
+### 21.3 Tópicos Ausentes — Relevância Menor mas Notáveis
 
 **4. `WebMvcTest` + `MockMvcRestDocumentation`** — geração de documentação a partir dos testes (Spring REST Docs)
 
 **5. Virtual Threads — seção dedicada** — mencionado em vários lugares, mas sem consolidar os impactos no MVC (thread locals, `@Async`, `SecurityContextHolder`, `TransactionSynchronizationManager`)
 
-### 24.4 Resumo por Prioridade
+### 21.4 Resumo por Prioridade
 
 | Prioridade | Tópico | Justificativa |
 |---|---|---|
@@ -11088,7 +9016,6 @@ Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `We
 | 🟢 Baixa | Virtual Threads | Merece consolidação dos impactos no MVC e em contexto assíncrono |
 
 ---
-
 ## Referências e Créditos
 
 ### Documentação Oficial
@@ -11099,12 +9026,8 @@ Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `We
 | Spring Boot Web Reference | https://docs.spring.io/spring-boot/reference/web/servlet.html |
 | Spring Framework 7 — API Versioning | https://docs.spring.io/spring-framework/reference/web/webmvc-versioning.html |
 | Spring Security Reference | https://docs.spring.io/spring-security/reference/ |
-| Thymeleaf Documentation | https://www.thymeleaf.org/documentation.html |
-| Thymeleaf Layout Dialect | https://ultraq.github.io/thymeleaf-layout-dialect/ |
-| Thymeleaf + Spring Security | https://github.com/thymeleaf/thymeleaf-extras-springsecurity |
 | SpringDoc OpenAPI | https://springdoc.org/ |
 | Jakarta Bean Validation 3.0 | https://beanvalidation.org/3.0/ |
-| JTE — Java Template Engine | https://jte.gg/ |
 | JUnit 5 User Guide | https://junit.org/junit5/docs/current/user-guide/ |
 | Mockito Documentation | https://site.mockito.org/ |
 | Testcontainers for Java | https://java.testcontainers.org/ |
@@ -11139,3 +9062,4 @@ Este documento foi elaborado de forma colaborativa entre:
 - **[Claude Sonnet 4.6](https://www.anthropic.com/claude)** (Anthropic) — modelo de linguagem utilizado para geração, estruturação e revisão do conteúdo técnico ao longo de toda a conversa.
 
 > *Documento gerado para Spring Boot 3.5 / 4.0 com Java 21+ · Spring Framework 6.x / 7.x · Thymeleaf 3.x · SpringDoc OpenAPI 2.x / 3.x*
+

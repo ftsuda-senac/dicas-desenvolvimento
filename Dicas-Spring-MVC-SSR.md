@@ -1,158 +1,36 @@
-# Spring MVC — Guia Completo: REST APIs e SSR com Thymeleaf
+# Spring MVC — Guia SSR com Thymeleaf
 
-> **Baseline principal:** Spring Boot 3.5 · Spring Framework 6.x · Java 21+ · Thymeleaf 3.x · SpringDoc OpenAPI 2.x
->
-> **Notas de compatibilidade:** quando uma seção exigir Spring Boot 4 / Spring Framework 7 ou SpringDoc 3.x, isso será indicado explicitamente.
-
----
+> Derivado de **Dicas-Spring-MVC-REST-SSR.md** — contém apenas o conteúdo referente
+> a SSR (Server-Side Rendering) com Thymeleaf.
 
 ## Sumário
 
-- [Java — Recursos da Linguagem Relevantes para o Documento](#java--recursos-da-linguagem-relevantes-para-o-documento)
+- [Java — Recursos da Linguagem](#java--recursos-da-linguagem-relevantes-para-o-documento)
 - [Base — Spring Framework: IoC, DI e Anotações Essenciais](#base--spring-framework-ioc-di-e-anotações-essenciais)
+- [1. Arquitetura do Spring MVC](#1-arquitetura-do-spring-mvc)
+- [2. Configuração Base](#2-configuração-base)
+- [3. Anotações do Controller — Referência Rápida](#3-anotações-do-controller--referência-rápida)
+- [4. Controllers MVC com Thymeleaf (SSR)](#4-controllers-mvc-com-thymeleaf-ssr)
+- [5. Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated)
+- [6. InitBinder](#6-initbinder)
+- [7. Converters e Formatters](#7-converters-e-formatters)
+- [8. Tratamento de Erros](#8-tratamento-de-erros)
+- [9. Boas Práticas na Camada de Serviço (@Service)](#9-boas-práticas-na-camada-de-serviço-service)
+- [10. Recursos Avançados](#10-recursos-avançados)
+- [11. Alternativas ao Thymeleaf](#11-alternativas-ao-thymeleaf)
+- [12. Boas Práticas e Checklist](#12-boas-práticas-e-checklist)
+- [13. Cache HTTP em Views SSR](#13-cache-http-em-views-ssr)
+- [14. Upload de Arquivos](#14-upload-de-arquivos)
+- [15. Internacionalização (i18n)](#15-internacionalização-i18n)
+- [16. Customização do ErrorController](#16-customização-do-errorcontroller)
+- [17. @ResponseStatus em Classes de Exceção](#17-responsestatus-em-classes-de-exceção)
+- [18. MultiValueMap e Form Data](#18-multivaluemap-e-form-data)
+- [19. RedirectView e UrlBasedViewResolver](#19-redirectview-e-urlbasedviewresolver)
+- [20. Testes](#20-testes)
+- [21. Tópicos Relevantes Não Cobertos Neste Documento](#21-tópicos-relevantes-não-cobertos-neste-documento)
+- [Referências e Créditos](#referências-e-créditos)
 
-1. [Arquitetura do Spring MVC](#1-arquitetura-do-spring-mvc)
-    - [1.1 Ciclo de Vida de uma Requisição](#11-ciclo-de-vida-de-uma-requisição)
-    - [1.2 Componentes Principais](#12-componentes-principais)
-    - [1.3 Fluxo Visual — SSR (Thymeleaf)](#13-fluxo-visual--ssr-thymeleaf)
-    - [1.4 Fluxo Visual — REST API (JSON)](#14-fluxo-visual--rest-api-json)
-    - [1.5 Diferença Fundamental: REST vs MVC SSR](#15-diferença-fundamental-rest-vs-mvc-ssr)
-2. [Configuração Base](#2-configuração-base)
-    - [2.1 Dependências Maven](#21-dependências-maven)
-    - [2.2 Configuração MVC Centralizada](#22-configuração-mvc-centralizada)
-    - [2.3 application.yml — Configuração Recomendada](#23-applicationyml--configuração-recomendada)
-3. [Anotações do Controller — Referência Rápida](#3-anotações-do-controller--referência-rápida)
-    - [3.1 Anotações de Classe — Definição do Controller](#31-anotações-de-classe--definição-do-controller)
-    - [3.2 Anotações de Método — Mapeamento de Requisições](#32-anotações-de-método--mapeamento-de-requisições)
-    - [3.3 Anotações de Método — Controle da Resposta](#33-anotações-de-método--controle-da-resposta)
-    - [3.4 Anotações de Parâmetro — Captura de Dados da Requisição](#34-anotações-de-parâmetro--captura-de-dados-da-requisição)
-    - [3.5 Anotações de Parâmetro — Objetos Especiais do Spring MVC](#35-anotações-de-parâmetro--objetos-especiais-do-spring-mvc)
-    - [3.6 Anotações de Classe/Método — @ControllerAdvice](#36-anotações-de-classemétodo--controlleradvice)
-    - [3.7 Visão Consolidada — Contexto por Anotação](#37-visão-consolidada--contexto-por-anotação)
-    - [3.8 Tipos de Retorno dos Métodos de Controller](#38-tipos-de-retorno-dos-métodos-de-controller)
-4. [Controllers REST](#4-controllers-rest)
-    - [4.1 Estrutura Completa de um Controller REST](#41-estrutura-completa-de-um-controller-rest)
-    - [4.2 DTOs com Records (Java 16+)](#42-dtos-com-records-java-16)
-    - [4.3 Mapeamento de Método HTTP com Exemplos Práticos](#43-mapeamento-de-método-http-com-exemplos-práticos)
-5. [Controllers MVC com Thymeleaf (SSR)](#5-controllers-mvc-com-thymeleaf-ssr)
-    - [5.1 Controller MVC Clássico](#51-controller-mvc-clássico)
-    - [5.2 Form Object (Separado do Domain/DTO)](#52-form-object-separado-do-domaindto)
-    - [5.3 Templates Thymeleaf](#53-templates-thymeleaf)
-    - [5.4 Convertendo ConstraintViolationException em BindingResult](#54-convertendo-constraintviolationexception-do-service-em-bindingresult)
-    - [5.5 Atributos de Modelo Compartilhados com @ModelAttribute](#55-atributos-de-modelo-compartilhados-com-modelattribute)
-    - [5.6 @SessionAttributes e @SessionAttribute](#56-sessionattributes-e-sessionattribute)
-6. [Bean Validation — @Valid vs @Validated](#6-bean-validation--valid-vs-validated)
-    - [6.1 Diferença Conceitual](#61-diferença-conceitual)
-    - [6.2 Exemplo Prático de Grupos de Validação](#62-exemplo-prático-de-grupos-de-validação)
-    - [6.3 Validação em Serviços com @Validated](#63-validação-em-serviços-com-validated)
-    - [6.4 Cascata de Validação com @Valid](#64-cascata-de-validação-com-valid)
-    - [6.5 Constraint Customizada](#65-constraint-customizada)
-    - [6.6 Constraint com Acesso a Banco (Spring Bean)](#66-constraint-com-acesso-a-banco-spring-bean)
-    - [6.7 Atributo payload nas Constraints](#67-atributo-payload-nas-constraints)
-7. [InitBinder](#7-initbinder)
-    - [7.1 Usos Comuns](#71-usos-comuns)
-    - [7.2 PropertyEditor Customizado](#72-propertyeditor-customizado)
-    - [7.3 Validator Programático com @InitBinder](#73-validator-programático-com-initbinder)
-8. [Converters e Formatters](#8-converters-e-formatters)
-    - [8.1 Diferenças entre os Tipos](#81-diferenças-entre-os-tipos)
-    - [8.2 Converter — String para Enum Genérico](#82-converter--string-para-enum-genérico)
-    - [8.3 Converter — ID para Entidade JPA](#83-converter--id-para-entidade-jpa)
-    - [8.4 Formatter — Moeda Brasileira com Locale](#84-formatter--moeda-brasileira-com-locale)
-    - [8.5 Formatter para LocalDate Brasileiro](#85-formatter-para-localdate-brasileiro)
-    - [8.6 Registro dos Converters/Formatters](#86-registro-dos-convertersformatters)
-9. [Tratamento de Erros](#9-tratamento-de-erros)
-    - [9.1 Hierarquia de Exceções](#91-hierarquia-de-exceções)
-    - [9.2 @ControllerAdvice Global — RFC 9457 (Problem Details)](#92-controlleradvice-global--rfc-9457-problem-details)
-    - [9.3 Resposta de Erro Padrão (RFC 9457)](#93-resposta-de-erro-padrão-rfc-9457)
-    - [9.4 Tratamento de Erros em SSR (Páginas de Erro Thymeleaf)](#94-tratamento-de-erros-em-ssr-páginas-de-erro-thymeleaf)
-10. [Boas Práticas na Camada de Serviço (`@Service`)](#10-boas-práticas-na-camada-de-serviço-service)
-    - [10.1 Responsabilidades e Estrutura](#101-responsabilidades-e-estrutura)
-    - [10.2 @Transactional — Padrões e Armadilhas](#102-transactional--padrões-e-armadilhas)
-    - [10.3 Mapeamento DTO ↔ Entidade](#103-mapeamento-dto--entidade)
-    - [10.4 Validação no Service — Invariantes de Domínio](#104-validação-no-service--invariantes-de-domínio)
-    - [10.5 Tratamento de Exceções no Service](#105-tratamento-de-exceções-no-service)
-    - [10.6 Services Stateless — Evitar Estado em Campos](#106-services-stateless--evitar-estado-em-campos)
-    - [10.7 Checklist — Boas Práticas do @Service](#107-checklist--boas-práticas-do-service)
-11. [Documentação com OpenAPI / SpringDoc](#11-documentação-com-openapi--springdoc)
-    - [11.1 Configuração Principal](#111-configuração-principal)
-    - [11.2 Anotações nos Controllers e DTOs](#112-anotações-nos-controllers-e-dtos)
-    - [11.3 Ocultando Endpoints do Swagger](#113-ocultando-endpoints-do-swagger)
-12. [Recursos Avançados e Pouco Explorados](#12-recursos-avançados-e-pouco-explorados)
-    - [12.1 HandlerInterceptor — Auditoria e Métricas](#121-handlerinterceptor--auditoria-e-métricas)
-    - [12.2 @ModelAttribute Global com @ControllerAdvice](#122-modelattribute-global-com-controlleradvice)
-    - [12.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos](#123-content-negotiation--mesmo-endpoint-múltiplos-formatos)
-    - [12.4 Streaming com SseEmitter e StreamingResponseBody](#124-streaming-com-sseemitter-e-streamingresponsebody)
-    - [12.5 HandlerMethodArgumentResolver — Argumento Customizado](#125-handlermethodargumentresolver--argumento-customizado)
-    - [12.6 @RequestScope e @SessionScope Beans](#126-requestscope-e-sessionscope-beans)
-    - [12.7 Flash Attributes — Dados entre Redirects (PRG Pattern)](#127-flash-attributes--dados-entre-redirects-prg-pattern)
-    - [12.8 ResponseBodyAdvice — Interceptar Respostas Globalmente](#128-responsebodyadvice--interceptar-respostas-globalmente)
-    - [12.9 Controller Assíncrono — CompletableFuture, Callable e DeferredResult](#129-controller-assíncrono--completablefuture-callable-e-deferredresult)
-    - [12.10 API Versioning nativo — Spring Framework 7 / Spring Boot 4](#1210-api-versioning-nativo--spring-framework-7--spring-boot-4)
-    - [12.11 HttpServletRequest, HttpServletResponse e RequestContextHolder](#1211-acesso-a-recursos-do-servlet--httpservletrequest-httpservletresponse-e-requestcontextholder)
-    - [12.12 Integração com Spring Security](#1212-integração-com-spring-security)
-13. [Alternativas ao Thymeleaf](#13-alternativas-ao-thymeleaf)
-14. [Boas Práticas e Checklist](#14-boas-práticas-e-checklist)
-15. [CORS — Cross-Origin Resource Sharing](#15-cors--cross-origin-resource-sharing)
-    - [15.1 Como o CORS Funciona](#151-como-o-cors-funciona)
-    - [15.2 Configuração Global — WebMvcConfigurer](#152-configuração-global--webmvcconfigurer)
-    - [15.3 @CrossOrigin por Controller ou Método](#153-crossorigin-por-controller-ou-método)
-    - [15.4 Integração Obrigatória com Spring Security](#154-integração-obrigatória-com-spring-security)
-    - [15.5 CORS Dinâmico — Origens em Banco de Dados](#155-cors-dinâmico--origens-em-banco-de-dados)
-    - [15.6 Diagnóstico de Problemas CORS](#156-diagnóstico-de-problemas-cors)
-16. [ETag e Cache HTTP](#16-etag-e-cache-http)
-    - [16.1 Visão Geral dos Mecanismos de Cache](#161-visão-geral-dos-mecanismos-de-cache)
-    - [16.2 ShallowEtagHeaderFilter — ETag Automático](#162-shallowheaderetagfilter--etag-automático)
-    - [16.3 ResponseEntity com ETag e Last-Modified](#163-responseentity-com-etag-e-last-modified)
-    - [16.4 CacheControl — Políticas Comuns](#164-cachecontrol--políticas-comuns)
-    - [16.5 Cache HTTP em Views SSR](#165-cache-http-em-views-ssr)
-    - [16.6 Resumo: Quando Usar Cada Estratégia](#166-resumo-quando-usar-cada-estratégia)
-17. [Upload de Arquivos](#17-upload-de-arquivos)
-    - [17.1 Configuração](#171-configuração)
-    - [17.2 Controller de Upload](#172-controller-de-upload)
-    - [17.3 Service — Estratégias de Armazenamento](#173-service--estratégias-de-armazenamento)
-    - [17.4 Download de Arquivos](#174-download-de-arquivos)
-    - [17.5 Upload via Fetch API (JavaScript)](#175-upload-via-fetch-api-javascript)
-18. [Internacionalização (i18n)](#18-internacionalização-i18n)
-    - [18.1 Estratégias de Resolução de Locale](#181-estratégias-de-resolução-de-locale)
-    - [18.2 Configuração Completa](#182-configuração-completa)
-    - [18.3 Arquivos de Mensagens](#183-arquivos-de-mensagens)
-    - [18.4 i18n em Controllers REST](#184-i18n-em-controllers-rest)
-    - [18.5 i18n em Templates Thymeleaf](#185-i18n-em-templates-thymeleaf)
-    - [18.6 Controller SSR — enviando chave em vez de texto](#186-controller-ssr--enviando-chave-em-vez-de-texto)
-    - [18.7 i18n em Respostas JSON — MessageSourceAccessor](#187-i18n-em-respostas-json--messagesourceaccessor)
-    - [18.8 Timezone — Integração com i18n](#188-timezone--integração-com-i18n)
-19. [Customização do ErrorController](#19-customização-do-errorcontroller)
-    - [19.1 Como o Fluxo de Erro Funciona](#191-como-o-fluxo-de-erro-funciona)
-    - [19.2 Customizando o BasicErrorController](#192-customizando-o-basicerrorcontroller)
-    - [19.3 Templates de Erro Thymeleaf](#193-templates-de-erro-thymeleaf)
-    - [19.4 Configuração via application.yml](#194-configuração-via-applicationyml)
-20. [`@ResponseStatus` em Classes de Exceção](#20-responsestatus-em-classes-de-exceção)
-    - [20.1 Uso Básico](#201-uso-básico)
-    - [20.2 @ResponseStatus vs @ExceptionHandler — Quando Usar Cada Um](#202-responsestatus-vs-exceptionhandler--quando-usar-cada-um)
-    - [20.3 Precedência com @ControllerAdvice](#203-precedência-com-controlleradvice)
-21. [`MultiValueMap` e Form Data](#21-multivaluemap-e-form-data)
-    - [21.1 MultiValueMap — Múltiplos Valores por Chave](#211-multivaluemap--múltiplos-valores-por-chave)
-    - [21.2 Form Data com Checkboxes e multi-select](#212-form-data-com-checkboxes-multi-select)
-    - [21.3 @RequestBody com MultiValueMap (form-urlencoded)](#213-requestbody-com-multivaluemap-form-urlencoded)
-    - [21.4 LinkedMultiValueMap — Construção Programática](#214-linkedmultivaluemap--construção-programática)
-22. [`RedirectView` e `UrlBasedViewResolver`](#22-redirectview-e-urlbasedviewresolver)
-    - [22.1 RedirectView — Redirect Programático com Controle Total](#221-redirectview--redirect-programático-com-controle-total)
-    - [22.2 UrlBasedViewResolver — Configuração Avançada de View Resolution](#222-urlbasedviewresolver--configuração-avançada-de-view-resolution)
-    - [22.3 Redirect 301 Permanente — SEO e Mudança de URL](#223-redirect-301-permanente--seo-e-mudança-de-url)
-    - [22.4 Forward Interno — Compartilhamento de Handlers](#224-forward-interno--compartilhamento-de-handlers)
-23. [Testes](#23-testes)
-    - [23.1 Visão Geral — Pirâmide de Testes no Spring MVC](#231-visão-geral--pirâmide-de-testes-no-spring-mvc)
-    - [23.2 Teste Unitário — Service sem Spring](#232-teste-unitário--service-sem-spring)
-    - [23.3 @WebMvcTest — Slice Test da Camada Web](#233-webmvctest--slice-test-da-camada-web)
-    - [23.4 @WebMvcTest com Spring Security](#234-webmvctest-com-spring-security)
-    - [23.5 @SpringBootTest — Teste de Integração](#235-springboottest--teste-de-integração)
-    - [23.6 MockMvc vs RestTestClient — Comparativo](#236-mockmvc-vs-resttestclient--comparativo)
-    - [23.7 Configuração de Contexto de Teste](#237-configuração-de-contexto-de-teste)
-    - [23.8 Testando Upload, CORS e SSE](#238-testando-upload-cors-e-sse)
-24. [Tópicos Relevantes Não Cobertos Neste Documento](#24-tópicos-relevantes-não-cobertos-neste-documento)
 ---
-
-> **Como navegar este material:** para uma primeira leitura, priorize as seções 1 a 6, 9, 10 e 23. As seções 12 a 24 funcionam melhor como consulta e aprofundamento.
 
 ## Java — Recursos da Linguagem Relevantes para o Documento
 
@@ -1035,6 +913,7 @@ boolean todos        = stream.allMatch(predicado);
 boolean algum        = stream.anyMatch(predicado);
 Map<K, List<T>> agrupado = stream.collect(Collectors.groupingBy(classificador));
 ```
+
 
 ## Base — Spring Framework: IoC, DI e Anotações Essenciais
 
@@ -2137,6 +2016,7 @@ public class PedidoConfirmadoListener {
 
 ---
 
+
 ## 1. Arquitetura do Spring MVC
 
 > **Escopo deste documento — Spring MVC (Servlet Stack)**
@@ -2285,44 +2165,6 @@ flowchart LR
 | ④ ViewResolver → Thymeleaf | Template engine renderiza o HTML com o `Model` |
 | ⑤ View → DS | HTML pronto é enviado ao browser |
 
-### 1.4 Fluxo Visual — REST API (JSON)
-
-Na arquitetura REST **não há ViewResolver nem template engine**. O `@RestController` retorna objetos Java serializados pelo `HttpMessageConverter` (Jackson).
-
-```mermaid
-flowchart LR
-    Client(["📱 API Client<br>browser / mobile / SPA"])
-
-    subgraph SERVLET ["  Servlet container (e.g. Tomcat)  "]
-        direction LR
-        DS["DispatcherServlet<br>Front controller"]
-        RC["@RestController<br>@ResponseBody"]
-        MC["MessageConverter<br>Jackson — JSON/XML"]
-
-        DS -- "① delegate" --> RC
-        RC -. "② DTO / ResponseEntity" .-> DS
-        DS -- "③ Java object" --> MC
-        MC -. "④ JSON serializado" .-> DS
-    end
-
-    MODEL(["Service /<br>Repository<br>MODEL"])
-
-    Client -- "JSON request" --> DS
-    DS -- "JSON response" --> Client
-    RC -- "call" --> MODEL
-    MODEL -. "data" .-> RC
-
-    note["HandlerMapping<br>resolve a rota"]
-    DS -.-> note
-
-    style DS fill:#E6F1FB,stroke:#185FA5,color:#0C447C
-    style RC fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    style MC fill:#FAEEDA,stroke:#BA7517,color:#412402
-    style MODEL fill:#FAECE7,stroke:#993C1D,color:#4A1B0C
-    style Client fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
-    style note fill:#F1EFE8,stroke:#B4B2A9,color:#444441
-```
-
 ### 1.5 Diferença Fundamental: REST vs MVC SSR
 
 | Aspecto | REST (`@RestController`) | SSR (`@Controller` + Thymeleaf) |
@@ -2335,6 +2177,8 @@ flowchart LR
 | Redirect | `ResponseEntity` com Location | `"redirect:/caminho"` |
 
 ---
+
+
 
 ## 2. Configuração Base
 
@@ -2625,6 +2469,8 @@ springdoc:
 ```
 
 ---
+
+
 
 ## 3. Anotações do Controller — Referência Rápida
 
@@ -3118,355 +2964,9 @@ SSR (@Controller sem @ResponseBody)
 
 ---
 
-## 4. Controllers REST
 
-### 4.1 Estrutura Completa de um Controller REST
 
-```java
-@RestController
-@RequestMapping("/api/v1/produtos")
-@Validated                           // Habilita validação de parâmetros (Path, Query)
-@Tag(name = "Produtos", description = "Gerenciamento de produtos")
-@Slf4j
-public class ProdutoController {
-
-    private final ProdutoService produtoService;
-
-    public ProdutoController(ProdutoService produtoService) {
-        this.produtoService = produtoService;
-    }
-
-    // ─── VERSÃO A: parâmetros individuais explícitos ─────────────────────────
-    //
-    // Vantagem: cada parâmetro fica visível no Swagger individualmente.
-    // Desvantagem: assinatura longa; paginação construída manualmente.
-    //
-    // GET /api/v1/produtos?page=0&size=20&sort=nome,asc&busca=notebook
-    @GetMapping
-    @Operation(summary = "Listar produtos — parâmetros individuais")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Lista paginada"),
-        @ApiResponse(responseCode = "400", description = "Parâmetros inválidos",
-            content = @Content(schema = @Schema(implementation = ProblemDetail.class)))
-    })
-    public ResponseEntity<Page<ProdutoResponse>> listar(
-            @RequestParam(defaultValue = "0") @Min(0) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
-            @RequestParam(defaultValue = "nome") String sort,
-            @RequestParam(required = false) String busca,
-            @RequestParam(required = false) BigDecimal precoMin,
-            @RequestParam(required = false) BigDecimal precoMax) {
-
-        var pageable = PageRequest.of(page, size, Sort.by(sort));
-        var filtros = new ProdutoFiltros(busca, precoMin, precoMax);
-        return ResponseEntity.ok(produtoService.listar(filtros, pageable));
-    }
-
-    // ─── VERSÃO B: filtros agrupados em record + Pageable do Spring Data ──────
-    //
-    // Vantagem: assinatura limpa; Pageable integrado com Spring Data (page, size,
-    //   sort resolvidos automaticamente pelo PageableHandlerMethodArgumentResolver).
-    // @ParameterObject: SpringDoc "explode" os campos do record no Swagger UI,
-    //   evitando que apareça como um único objeto JSON opaco.
-    //
-    // GET /api/v1/produtos/busca?busca=notebook&precoMin=100&page=0&size=20&sort=nome,asc
-    @GetMapping("/busca")
-    @Operation(summary = "Listar produtos — filtros agrupados em record + Pageable")
-    public ResponseEntity<Page<ProdutoResponse>> listarComFiltros(
-            @ParameterObject @Valid ProdutoFiltros filtros,  // campos "explodidos" no Swagger
-            @ParameterObject Pageable pageable) {            // page, size, sort como params individuais
-
-        return ResponseEntity.ok(produtoService.listar(filtros, pageable));
-    }
-
-    // ─── VERSÃO C: validação de elementos dentro do genérico (TYPE_USE) ───────
-    //
-    // Jakarta Bean Validation 2.0+ suporta anotações em TYPE_USE, permitindo
-    // validar cada elemento de uma coleção sem necessidade de @Valid em cascata.
-    //
-    // GET /api/v1/produtos/por-tags?tags=notebook&tags=dell
-    @GetMapping("/por-tags")
-    @Operation(summary = "Buscar produtos por lista de tags")
-    public ResponseEntity<List<ProdutoResponse>> listarPorTags(
-            @RequestParam @NotEmpty List<@NotBlank @Size(max = 50) String> tags) {
-            //                             ↑ anotação dentro do diamante
-            //   @NotEmpty  = a lista em si não pode ser vazia
-            //   @NotBlank  = cada String da lista não pode ser blank
-            //   @Size(max) = cada String da lista deve ter no máximo 50 chars
-        return ResponseEntity.ok(produtoService.listarPorTags(tags));
-    }
-}
-```
-
-#### Pageable automático
-
-O `spring-boot-starter-data-jpa` registra automaticamente o `PageableHandlerMethodArgumentResolver` via `SpringDataWebAutoConfiguration`. Não é necessário nenhum código extra para resolver `Pageable` em controllers.
-
-Para customizar os defaults **globalmente** via `application.yml`:
-
-```yaml
-spring:
-  data:
-    web:
-      pageable:
-        default-page-size: 20
-        max-page-size: 100
-        one-indexed-parameters: false  # página começa em 0 (padrão)
-```
-
-Ou programaticamente via `WebMvcConfigurer` (mais verboso, raramente necessário):
-
-```java
-@Configuration
-public class PageableConfig implements WebMvcConfigurer {
-    @Override
-    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
-        var resolver = new PageableHandlerMethodArgumentResolver();
-        resolver.setMaxPageSize(100);
-        resolver.setFallbackPageable(PageRequest.of(0, 20));
-        resolvers.add(resolver);
-    }
-}
-```
-
-#### `@PageableDefault` — defaults por endpoint
-
-Use `@PageableDefault` para sobrescrever os defaults globais em um endpoint específico, sem alterar a configuração global. O cliente ainda pode sobrescrever via query string (`?size=30&sort=id,asc`); a anotação só se aplica quando o parâmetro não é enviado.
-
-| Atributo    | Descrição                                      | Padrão Spring |
-|-------------|------------------------------------------------|---------------|
-| `size`      | Tamanho da página                              | `20`          |
-| `page`      | Número da página inicial                       | `0`           |
-| `sort`      | Campo(s) de ordenação padrão                   | —             |
-| `direction` | Direção da ordenação (`ASC` ou `DESC`)         | `ASC`         |
-
-```java
-// Ordenação ascendente por nome, 10 itens por página
-@GetMapping
-public ResponseEntity<Page<ProdutoResponse>> listar(
-        @PageableDefault(size = 10, sort = "nome") Pageable pageable) {
-    return ResponseEntity.ok(produtoService.listar(pageable));
-}
-
-// Ordenação descendente por preço, 5 itens por página
-@GetMapping("/destaques")
-public ResponseEntity<Page<ProdutoResponse>> destaques(
-        @PageableDefault(size = 5, sort = "preco", direction = Sort.Direction.DESC)
-        Pageable pageable) {
-    return ResponseEntity.ok(produtoService.listarDestaques(pageable));
-}
-```
-
-#### Objeto customizado para query parameters (`@ParameterObject`)
-
-Em vez de declarar cada query parameter como argumento separado no método, agrupe-os em um `record` e anote com `@ParameterObject`. O Spring resolve cada campo como se fosse um `@RequestParam` individual. O SpringDoc/Swagger "explode" os campos no Swagger UI automaticamente.
-
-**1. Definição do record de filtros:**
-
-```java
-public record ProdutoFiltros(
-
-    @RequestParam(required = false)
-    String busca,                    // ?busca=notebook
-
-    @RequestParam(required = false)
-    @DecimalMin("0.0")
-    BigDecimal precoMin,             // ?precoMin=100.00
-
-    @RequestParam(required = false)
-    @DecimalMin("0.0")
-    BigDecimal precoMax              // ?precoMax=5000.00
-
-) {}
-```
-
-**2. Uso no controller — assinatura limpa, sem `@RequestParam` espalhados:**
-
-```java
-// GET /api/v1/produtos?busca=notebook&precoMin=100&page=0&size=10&sort=nome,asc
-@GetMapping
-public ResponseEntity<Page<ProdutoResponse>> listar(
-        @ParameterObject @Valid ProdutoFiltros filtros,
-        @ParameterObject @PageableDefault(size = 10, sort = "nome") Pageable pageable) {
-
-    return ResponseEntity.ok(produtoService.listar(filtros, pageable));
-}
-```
-
-| Anotação           | Papel                                                              |
-|--------------------|--------------------------------------------------------------------|
-| `@ParameterObject` | Instrui o SpringDoc a expor os campos individualmente no Swagger   |
-| `@Valid`           | Dispara o Bean Validation nos campos do record                     |
-| `@PageableDefault` | Define valores padrão de paginação quando não enviados pelo cliente |
-
-```java
-// Continuação de ProdutoController...
-
-    // ─── GET /api/v1/produtos/{id} ───────────────────────────────────────────
-    @GetMapping("/{id}")
-    @Operation(summary = "Buscar produto por ID")
-    public ResponseEntity<ProdutoResponse> buscarPorId(
-            @PathVariable @Positive Long id) {
-
-        return produtoService.buscarPorId(id)
-                .map(ResponseEntity::ok)
-                .orElseThrow(() -> new ResourceNotFoundException("Produto", id));
-    }
-
-    // ─── POST /api/v1/produtos ────────────────────────────────────────────────
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "Criar produto")
-    public ResponseEntity<ProdutoResponse> criar(
-            @RequestBody @Valid ProdutoCreateRequest request,
-            UriComponentsBuilder uriBuilder) {
-
-        var produto = produtoService.criar(request);
-        var location = uriBuilder
-                .path("/api/v1/produtos/{id}")
-                .buildAndExpand(produto.id())
-                .toUri();
-
-        return ResponseEntity.created(location).body(produto);
-    }
-
-    // ─── PUT /api/v1/produtos/{id} ────────────────────────────────────────────
-    @PutMapping("/{id}")
-    @Operation(summary = "Atualizar produto completamente")
-    public ResponseEntity<ProdutoResponse> atualizar(
-            @PathVariable @Positive Long id,
-            @RequestBody @Valid ProdutoUpdateRequest request) {
-
-        return ResponseEntity.ok(produtoService.atualizar(id, request));
-    }
-
-    // ─── PATCH /api/v1/produtos/{id} ──────────────────────────────────────────
-    @PatchMapping("/{id}")
-    @Operation(summary = "Atualizar produto parcialmente")
-    public ResponseEntity<ProdutoResponse> atualizarParcial(
-            @PathVariable @Positive Long id,
-            @RequestBody @Validated(ProdutoUpdateRequest.PatchGroup.class) ProdutoUpdateRequest request) {
-
-        return ResponseEntity.ok(produtoService.atualizarParcial(id, request));
-    }
-
-    // ─── DELETE /api/v1/produtos/{id} ─────────────────────────────────────────
-    @DeleteMapping("/{id}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "Excluir produto")
-    public void excluir(@PathVariable @Positive Long id) {
-        produtoService.excluir(id);
-    }
-
-    // ─── POST /api/v1/produtos/importar (upload) ──────────────────────────────
-    @PostMapping(value = "/importar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "Importar produtos via CSV")
-    public ResponseEntity<ImportacaoResult> importar(
-            @RequestPart("arquivo") @NotNull MultipartFile arquivo,
-            @RequestPart(value = "config", required = false) ImportacaoConfig config) {
-
-        return ResponseEntity.accepted()
-                .body(produtoService.importarAsync(arquivo, config));
-    }
-
-    // ─── GET /api/v1/produtos/{id}/exportar (download) ───────────────────────
-    @GetMapping("/{id}/exportar")
-    public ResponseEntity<Resource> exportar(@PathVariable Long id) {
-        var resource = produtoService.gerarPdf(id);
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"produto-" + id + ".pdf\"")
-                .body(resource);
-    }
-}
-```
-
-### 4.2 DTOs com Records (Java 16+)
-
-```java
-// ─── Request DTO com validações ───────────────────────────────────────────────
-public record ProdutoCreateRequest(
-
-    @NotBlank(message = "{produto.nome.obrigatorio}")
-    @Size(min = 2, max = 200, message = "{produto.nome.tamanho}")
-    String nome,
-
-    @NotBlank
-    @Size(max = 2000)
-    String descricao,
-
-    @NotNull
-    @DecimalMin(value = "0.01", message = "{produto.preco.minimo}")
-    @Digits(integer = 10, fraction = 2)
-    BigDecimal preco,
-
-    @NotNull
-    @Min(0)
-    Integer estoque,
-
-    @NotNull
-    @Positive
-    Long categoriaId,
-
-    // Validação condicional com grupos
-    @NotBlank(groups = PatchGroup.class)
-    String sku
-
-) {
-    // Interface de grupo para validação parcial (PATCH)
-    public interface PatchGroup {}
-}
-
-// ─── Response DTO ─────────────────────────────────────────────────────────────
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public record ProdutoResponse(
-    Long id,
-    String nome,
-    String descricao,
-    BigDecimal preco,
-    Integer estoque,
-    String sku,
-    CategoriaResponse categoria,
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-    LocalDateTime criadoEm,
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-    LocalDateTime atualizadoEm
-) {}
-```
-
-### 4.3 Mapeamento de Método HTTP com Exemplos Práticos
-
-```mermaid
-graph LR
-    subgraph "Métodos HTTP e Semântica"
-        GET["GET /recursos<br/>GET /recursos/{id}<br/>→ Leitura, idempotente, cacheável"]
-        POST["POST /recursos<br/>→ Cria novo recurso<br/>Retorna 201 + Location"]
-        PUT["PUT /recursos/{id}<br/>→ Substitui completamente<br/>Idempotente"]
-        PATCH["PATCH /recursos/{id}<br/>→ Atualização parcial<br/>JSON Merge Patch"]
-        DELETE["DELETE /recursos/{id}<br/>→ Remove recurso<br/>Retorna 204"]
-    end
-
-    subgraph "Códigos de Status"
-        s200["200 OK — Sucesso geral"]
-        s201["201 Created — Criado com Location"]
-        s204["204 No Content — Sem corpo"]
-        s400["400 Bad Request — Dados inválidos"]
-        s404["404 Not Found — Não encontrado"]
-        s409["409 Conflict — Duplicidade"]
-        s422["422 Unprocessable — Regra negócio"]
-    end
-
-    POST --> s201
-    GET --> s200
-    PUT --> s200
-    DELETE --> s204
-```
-
----
-
-## 5. Controllers MVC com Thymeleaf (SSR)
+## 4. Controllers MVC com Thymeleaf (SSR)
 
 > **Sintaxe alternativa HTML5 — `data-th-*`**
 >
@@ -3489,7 +2989,7 @@ graph LR
 > exigidos no projeto, pois `th:text` tecnicamente não é um atributo HTML válido
 > fora do namespace Thymeleaf.
 
-### 5.1 Controller MVC Clássico
+### 4.1 Controller MVC Clássico
 
 ```java
 @Controller
@@ -3601,7 +3101,7 @@ public class ProdutoMvcController {
 }
 ```
 
-### 5.2 Form Object (Separado do Domain/DTO)
+### 4.2 Form Object (Separado do Domain/DTO)
 
 ```java
 // Form object: representa o estado do formulário HTML, com coerção de tipos
@@ -3643,7 +3143,7 @@ public class ProdutoForm {
 }
 ```
 
-### 5.3 Templates Thymeleaf
+### 4.3 Templates Thymeleaf
 
 #### Layout Base (`templates/layout/base.html`)
 
@@ -3815,7 +3315,7 @@ public HiddenHttpMethodFilter hiddenHttpMethodFilter() {
 </form>
 ```
 
-### 5.4 Convertendo `ConstraintViolationException` do Service em `BindingResult`
+### 4.4 Convertendo `ConstraintViolationException` do Service em `BindingResult`
 
 Quando um `@Service` anotado com `@Validated` lança `ConstraintViolationException`,
 essa exceção **não é capturada automaticamente** pelo mecanismo de `BindingResult`
@@ -4174,7 +3674,7 @@ public class ConstraintViolationMvcAdvice {
 | Centralização do tratamento | ❌ Repetido por controller | ✅ Um único lugar |
 | **Recomendação** | ✅ Formulários com campos | Somente lista genérica de erros |
 
-### 5.5 Atributos de Modelo Compartilhados com @ModelAttribute
+### 4.5 Atributos de Modelo Compartilhados com @ModelAttribute
 
 ```java
 @Controller
@@ -4197,7 +3697,7 @@ public class ProdutoMvcController {
 
 ---
 
-### 5.6 `@SessionAttributes` e `@SessionAttribute`
+### 4.6 `@SessionAttributes` e `@SessionAttribute`
 
 #### `@SessionAttributes` — manter atributos do model na sessão
 
@@ -4438,9 +3938,11 @@ public class CheckoutController {
 
 ---
 
-## 6. Bean Validation — @Valid vs @Validated
 
-### 6.1 Diferença Conceitual
+
+## 5. Bean Validation — @Valid vs @Validated
+
+### 5.1 Diferença Conceitual
 
 ```mermaid
 graph TB
@@ -4461,7 +3963,7 @@ graph TB
     VA1 --> VA2 --> VA3 --> VA4
 ```
 
-### 6.2 Exemplo Prático de Grupos de Validação
+### 5.2 Exemplo Prático de Grupos de Validação
 
 ```java
 // ─── Definição de grupos ──────────────────────────────────────────────────────
@@ -4540,7 +4042,7 @@ public class ClienteController {
 }
 ```
 
-### 6.3 Validação em Serviços com @Validated
+### 5.3 Validação em Serviços com @Validated
 
 ```java
 // Habilitar validação de método em Services
@@ -4567,7 +4069,7 @@ public class ClienteService {
 }
 ```
 
-### 6.4 Cascata de Validação com @Valid
+### 5.4 Cascata de Validação com @Valid
 
 ```java
 public class PedidoRequest {
@@ -4591,7 +4093,7 @@ public class EnderecoRequest {
 }
 ```
 
-### 6.5 Constraint Customizada
+### 5.5 Constraint Customizada
 
 ```java
 // ─── Anotação ─────────────────────────────────────────────────────────────────
@@ -4634,7 +4136,7 @@ public class CpfValidator implements ConstraintValidator<CPF, String> {
 }
 ```
 
-### 6.6 Constraint com Acesso a Banco (Spring Bean)
+### 5.6 Constraint com Acesso a Banco (Spring Bean)
 
 ```java
 @Target(FIELD)
@@ -4666,7 +4168,7 @@ public class EmailUnicoValidator implements ConstraintValidator<EmailUnico, Stri
 
 ---
 
-### 6.7 Atributo `payload` nas Constraints
+### 5.7 Atributo `payload` nas Constraints
 
 O atributo `payload` presente em toda anotação de constraint (`Class<? extends Payload>[]`)
 é uma extensão point da especificação Jakarta Bean Validation: permite **anexar
@@ -5021,11 +4523,13 @@ public String salvar(
 
 ---
 
-## 7. InitBinder
+
+
+## 6. InitBinder
 
 `@InitBinder` é executado antes do binding de cada request no controller. Permite registrar editores, formatters e configurações de binding específicas por controller.
 
-### 7.1 Usos Comuns
+### 6.1 Usos Comuns
 
 ```java
 @Controller
@@ -5071,7 +4575,7 @@ public class ProdutoMvcController {
 }
 ```
 
-### 7.2 PropertyEditor Customizado
+### 6.2 PropertyEditor Customizado
 
 ```java
 /**
@@ -5105,7 +4609,7 @@ public class BigDecimalBrazilianEditor extends PropertyEditorSupport {
 }
 ```
 
-### 7.3 Validator Programático com @InitBinder
+### 6.3 Validator Programático com @InitBinder
 
 ```java
 @Component
@@ -5142,9 +4646,11 @@ public class ProdutoFormValidator implements Validator {
 
 ---
 
-## 8. Converters e Formatters
 
-### 8.1 Diferenças entre os Tipos
+
+## 7. Converters e Formatters
+
+### 7.1 Diferenças entre os Tipos
 
 ```mermaid
 graph TB
@@ -5170,7 +4676,7 @@ graph TB
 | Uso ideal | Conversão de tipos | Apresentação de dados | Legado / @InitBinder |
 | Registro | `FormatterRegistry` | `FormatterRegistry` | `WebDataBinder` |
 
-### 8.2 Converter — String para Enum Genérico
+### 7.2 Converter — String para Enum Genérico
 
 ```java
 /**
@@ -5196,7 +4702,7 @@ public class StringToEnumConverterFactory
 }
 ```
 
-### 8.3 Converter — ID para Entidade JPA
+### 7.3 Converter — ID para Entidade JPA
 
 ```java
 /**
@@ -5223,7 +4729,7 @@ public class IdToCategoriaConverter implements Converter<Long, Categoria> {
 }
 ```
 
-### 8.4 Formatter — Moeda Brasileira com Locale
+### 7.4 Formatter — Moeda Brasileira com Locale
 
 ```java
 /**
@@ -5256,7 +4762,7 @@ public class BrazilianMoneyFormatter implements Formatter<BigDecimal> {
 }
 ```
 
-### 8.5 Formatter para LocalDate Brasileiro
+### 7.5 Formatter para LocalDate Brasileiro
 
 ```java
 @Component
@@ -5289,7 +4795,7 @@ public class BrazilianDateFormatter implements Formatter<LocalDate> {
 }
 ```
 
-### 8.6 Registro dos Converters/Formatters
+### 7.6 Registro dos Converters/Formatters
 
 ```java
 @Configuration
@@ -5319,9 +4825,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
 ---
 
-## 9. Tratamento de Erros
 
-### 9.1 Hierarquia de Exceções
+
+## 8. Tratamento de Erros
+
+### 8.1 Hierarquia de Exceções
 
 ```mermaid
 graph TB
@@ -5334,136 +4842,7 @@ graph TB
     RuntimeException --> VE[ValidationException<br/>400 - Bean Validation]
 ```
 
-### 9.2 @ControllerAdvice Global — RFC 9457 (Problem Details)
-
-```java
-/**
- * Tratamento global de exceções.
- * RFC 9457 / RFC 7807: ProblemDetail é o padrão do Spring 6+
- */
-@RestControllerAdvice           // @ControllerAdvice para SSR (retorna view de erro)
-@Slf4j
-public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
-
-    // ─── Bean Validation (@Valid / @Validated) ────────────────────────────────
-    @Override
-    protected ResponseEntity<Object> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException ex,
-            HttpHeaders headers,
-            HttpStatusCode status,
-            WebRequest request) {
-
-        var detail = ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST, "Dados de entrada inválidos");
-
-        detail.setTitle("Erro de Validação");
-        detail.setType(URI.create("https://api.example.com/problems/validation-error"));
-        detail.setInstance(URI.create(((ServletWebRequest) request).getRequest().getRequestURI()));
-
-        // Mapa campo → lista de erros
-        var fieldErrors = ex.getBindingResult().getFieldErrors().stream()
-                .collect(Collectors.groupingBy(
-                    FieldError::getField,
-                    Collectors.mapping(FieldError::getDefaultMessage, Collectors.toList())
-                ));
-
-        detail.setProperty("errors", fieldErrors);
-        detail.setProperty("timestamp", Instant.now());
-
-        return ResponseEntity.badRequest().body(detail);
-    }
-
-    // ─── Validação de parâmetros (@Validated em @Service/@Controller) ─────────
-    @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<ProblemDetail> handleConstraintViolation(
-            ConstraintViolationException ex, HttpServletRequest request) {
-
-        var detail = ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST, "Parâmetros inválidos");
-        detail.setTitle("Erro de Validação de Parâmetros");
-
-        var violations = ex.getConstraintViolations().stream()
-                .collect(Collectors.toMap(
-                    v -> v.getPropertyPath().toString(),
-                    v -> v.getMessage(),
-                    (a, b) -> a + "; " + b
-                ));
-
-        detail.setProperty("errors", violations);
-        return ResponseEntity.badRequest().body(detail);
-    }
-
-    // ─── Recurso não encontrado ───────────────────────────────────────────────
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ResponseEntity<ProblemDetail> handleResourceNotFound(
-            ResourceNotFoundException ex, HttpServletRequest request) {
-
-        var detail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
-        detail.setTitle("Recurso Não Encontrado");
-        detail.setType(URI.create("https://api.example.com/problems/resource-not-found"));
-        detail.setInstance(URI.create(request.getRequestURI()));
-
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(detail);
-    }
-
-    // ─── Regra de negócio ─────────────────────────────────────────────────────
-    @ExceptionHandler(BusinessRuleException.class)
-    public ResponseEntity<ProblemDetail> handleBusinessRule(
-            BusinessRuleException ex, HttpServletRequest request) {
-
-        var detail = ProblemDetail.forStatusAndDetail(
-            HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
-        detail.setTitle("Regra de Negócio Violada");
-
-        return ResponseEntity.unprocessableEntity().body(detail);
-    }
-
-    // ─── Conflito de dados ────────────────────────────────────────────────────
-    @ExceptionHandler(DuplicateEntityException.class)
-    public ResponseEntity<ProblemDetail> handleDuplicate(
-            DuplicateEntityException ex, HttpServletRequest request) {
-
-        var detail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
-        detail.setTitle("Conflito de Dados");
-
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(detail);
-    }
-
-    // ─── Fallback para exceções inesperadas ───────────────────────────────────
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ProblemDetail> handleGeneral(
-            Exception ex, HttpServletRequest request) {
-
-        log.error("Erro inesperado na requisição {}: {}",
-            request.getRequestURI(), ex.getMessage(), ex);
-
-        var detail = ProblemDetail.forStatusAndDetail(
-            HttpStatus.INTERNAL_SERVER_ERROR, "Ocorreu um erro interno. Tente novamente.");
-        detail.setTitle("Erro Interno");
-
-        return ResponseEntity.internalServerError().body(detail);
-    }
-}
-```
-
-### 9.3 Resposta de Erro Padrão (RFC 9457)
-
-```json
-{
-  "type": "https://api.example.com/problems/validation-error",
-  "title": "Erro de Validação",
-  "status": 400,
-  "detail": "Dados de entrada inválidos",
-  "instance": "/api/v1/produtos",
-  "timestamp": "2025-03-15T10:30:00Z",
-  "errors": {
-    "nome": ["Nome é obrigatório", "Tamanho mínimo: 2 caracteres"],
-    "preco": ["Preço deve ser maior que zero"]
-  }
-}
-```
-
-### 9.4 Tratamento de Erros em SSR (Páginas de Erro Thymeleaf)
+### 8.2 Tratamento de Erros em SSR (Páginas de Erro Thymeleaf)
 
 ```java
 // Para controllers @Controller (SSR), use @ControllerAdvice sem "Rest"
@@ -5487,14 +4866,15 @@ public class MvcExceptionHandler {
 
 ---
 
-## 10. Boas Práticas na Camada de Serviço (`@Service`)
+
+## 9. Boas Práticas na Camada de Serviço (`@Service`)
 
 A camada de serviço é o coração da aplicação: concentra as regras de negócio,
 coordena operações entre repositórios e garante a consistência dos dados. Esta
 seção consolida os padrões e armadilhas mais importantes do `@Service` no
 ecossistema Spring Boot.
 
-### 10.1 Responsabilidades e Estrutura
+### 9.1 Responsabilidades e Estrutura
 
 ```java
 // ─── Responsabilidades de um @Service bem definido ────────────────────────────
@@ -5548,9 +4928,9 @@ public class SmsNotificacaoService implements NotificacaoService {
 }
 ```
 
-### 10.2 `@Transactional` — Padrões e Armadilhas
+### 9.2 `@Transactional` — Padrões e Armadilhas
 
-#### 10.2.1 Padrão `readOnly` + escrita explícita
+#### 9.2.1 Padrão `readOnly` + escrita explícita
 
 ```java
 @Service
@@ -5623,7 +5003,7 @@ public class ProdutoService {
 }
 ```
 
-#### 10.2.2 Propagação — quando usar cada modo
+#### 9.2.2 Propagação — quando usar cada modo
 
 ```java
 @Service
@@ -5666,7 +5046,7 @@ public class PedidoService {
 }
 ```
 
-#### 10.2.3 `rollbackFor` — checked exceptions não fazem rollback por padrão
+#### 9.2.3 `rollbackFor` — checked exceptions não fazem rollback por padrão
 
 ```java
 @Service
@@ -5718,7 +5098,7 @@ public class ImportacaoService {
 }
 ```
 
-#### 10.2.4 Self-invocation — a armadilha silenciosa
+#### 9.2.4 Self-invocation — a armadilha silenciosa
 
 ```java
 @Service
@@ -5768,7 +5148,7 @@ public class RelatorioService {
 }
 ```
 
-### 10.3 Mapeamento DTO ↔ Entidade
+### 9.3 Mapeamento DTO ↔ Entidade
 
 ```java
 // ─── Opção 1: método factory estático no Record (simples, sem dependência) ────
@@ -5826,7 +5206,7 @@ public class ProdutoService {
 }
 ```
 
-### 10.4 Validação no Service — Invariantes de Domínio
+### 9.4 Validação no Service — Invariantes de Domínio
 
 ```java
 // O @Valid no controller valida o formato do input (Bean Validation).
@@ -5878,7 +5258,7 @@ public class PedidoService {
 }
 ```
 
-### 10.5 Tratamento de Exceções no Service
+### 9.5 Tratamento de Exceções no Service
 
 ```java
 // ─── Hierarquia de exceções de domínio ────────────────────────────────────────
@@ -5960,7 +5340,7 @@ public class ClienteService {
 }
 ```
 
-### 10.6 Services Stateless — Evitar Estado em Campos
+### 9.6 Services Stateless — Evitar Estado em Campos
 
 ```java
 // @Service é um singleton — a MESMA instância atende TODAS as requisições.
@@ -6005,7 +5385,7 @@ public class RequestContext {
 }
 ```
 
-### 10.7 Checklist — Boas Práticas do `@Service`
+### 9.7 Checklist — Boas Práticas do `@Service`
 
 | Prática | Justificativa |
 |---|---|
@@ -6024,152 +5404,11 @@ public class RequestContext {
 
 ---
 
-## 11. Documentação com OpenAPI / SpringDoc
 
-### 11.1 Configuração Principal
 
-```java
-@Configuration
-public class OpenApiConfig {
+## 10. Recursos Avançados e Pouco Explorados
 
-    @Bean
-    public OpenAPI openAPI() {
-        return new OpenAPI()
-            .info(new Info()
-                .title("API de Produtos")
-                .description("""
-                    API REST para gerenciamento de produtos e categorias.
-
-                    ## Autenticação
-                    Use Bearer Token (JWT) obtido via `/auth/login`.
-                    """)
-                .version("1.0.0")
-                .contact(new Contact()
-                    .name("Time de Desenvolvimento")
-                    .email("dev@example.com"))
-                .license(new License()
-                    .name("Apache 2.0")
-                    .url("https://www.apache.org/licenses/LICENSE-2.0")))
-            .addSecurityItem(new SecurityRequirement().addList("BearerAuth"))
-            .components(new Components()
-                .addSecuritySchemes("BearerAuth",
-                    new SecurityScheme()
-                        .type(SecurityScheme.Type.HTTP)
-                        .scheme("bearer")
-                        .bearerFormat("JWT")));
-    }
-
-    // ─── Agrupamento de endpoints por domínio ─────────────────────────────────
-    @Bean
-    public GroupedOpenApi produtosApi() {
-        return GroupedOpenApi.builder()
-                .group("produtos")
-                .displayName("Gerenciamento de Produtos")
-                .pathsToMatch("/api/v1/produtos/**")
-                .build();
-    }
-
-    @Bean
-    public GroupedOpenApi adminApi() {
-        return GroupedOpenApi.builder()
-                .group("admin")
-                .displayName("Administração")
-                .pathsToMatch("/api/v1/admin/**")
-                .build();
-    }
-}
-```
-
-### 11.2 Anotações nos Controllers e DTOs
-
-```java
-// ─── Controller com documentação completa ─────────────────────────────────────
-@RestController
-@RequestMapping("/api/v1/produtos")
-@Tag(name = "Produtos", description = "CRUD de produtos com paginação e filtros")
-public class ProdutoController {
-
-    @Operation(
-        summary = "Buscar produto por ID",
-        description = "Retorna os detalhes completos de um produto pelo seu identificador único.",
-        security = @SecurityRequirement(name = "BearerAuth")
-    )
-    @ApiResponses({
-        @ApiResponse(
-            responseCode = "200",
-            description = "Produto encontrado",
-            content = @Content(
-                mediaType = "application/json",
-                schema = @Schema(implementation = ProdutoResponse.class),
-                examples = @ExampleObject(
-                    name = "Produto exemplo",
-                    value = """
-                        {
-                          "id": 1,
-                          "nome": "Notebook Dell XPS 15",
-                          "preco": 8999.99,
-                          "estoque": 25
-                        }
-                        """
-                )
-            )
-        ),
-        @ApiResponse(
-            responseCode = "404",
-            description = "Produto não encontrado",
-            content = @Content(schema = @Schema(implementation = ProblemDetail.class))
-        )
-    })
-    @GetMapping("/{id}")
-    public ResponseEntity<ProdutoResponse> buscarPorId(
-            @Parameter(description = "ID único do produto", example = "1", required = true)
-            @PathVariable @Positive Long id) {
-        // ...
-    }
-}
-
-// ─── DTO com Schema OpenAPI ────────────────────────────────────────────────────
-@Schema(description = "Dados para criação de um novo produto")
-public record ProdutoCreateRequest(
-
-    @Schema(description = "Nome do produto", example = "Notebook Dell XPS 15",
-            minLength = 2, maxLength = 200, requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotBlank @Size(min = 2, max = 200)
-    String nome,
-
-    @Schema(description = "Preço de venda", example = "8999.99",
-            minimum = "0.01", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull @DecimalMin("0.01")
-    BigDecimal preco,
-
-    @Schema(description = "Quantidade em estoque", example = "100",
-            minimum = "0", requiredMode = Schema.RequiredMode.REQUIRED)
-    @NotNull @Min(0)
-    Integer estoque
-
-) {}
-```
-
-### 11.3 Ocultando Endpoints do Swagger
-
-```java
-// Ocultar endpoint específico
-@Hidden
-@GetMapping("/interno/cache/clear")
-public void limparCache() { ... }
-
-// Ocultar parâmetro interno do usuário no Swagger
-@GetMapping
-public List<ProdutoResponse> listar(
-    @Parameter(hidden = true) @AuthenticationPrincipal UserDetails user,
-    @RequestParam(defaultValue = "0") int page) { ... }
-```
-
----
-
-## 12. Recursos Avançados e Pouco Explorados
-
-### 12.1 HandlerInterceptor — Auditoria e Métricas
+### 10.1 HandlerInterceptor — Auditoria e Métricas
 
 ```java
 @Component
@@ -6223,7 +5462,7 @@ public class AuditInterceptor implements HandlerInterceptor {
 }
 ```
 
-### 12.2 @ModelAttribute Global com @ControllerAdvice
+### 10.2 @ModelAttribute Global com @ControllerAdvice
 
 ```java
 /**
@@ -6255,99 +5494,7 @@ public class GlobalModelAttributeAdvice {
 }
 ```
 
-### 12.3 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos
-
-```java
-@RestController
-@RequestMapping("/api/v1/relatorios")
-public class RelatorioController {
-
-    /**
-     * Mesmo endpoint retorna JSON, XML ou CSV dependendo do Accept header.
-     * Accept: application/json → JSON
-     * Accept: application/xml  → XML
-     * Accept: text/csv         → CSV download
-     * ?format=pdf              → PDF download
-     */
-    @GetMapping(value = "/vendas",
-        produces = {
-            MediaType.APPLICATION_JSON_VALUE,
-            MediaType.APPLICATION_XML_VALUE,
-            "text/csv",
-            MediaType.APPLICATION_PDF_VALUE
-        })
-    public ResponseEntity<?> relatorioVendas(
-            @RequestParam(required = false) String format,
-            HttpServletRequest request) {
-
-        var dados = relatorioService.gerarVendas();
-
-        return switch (format != null ? format : detectContentType(request)) {
-            case "pdf"  -> ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_PDF)
-                .header("Content-Disposition", "attachment; filename=vendas.pdf")
-                .body(relatorioService.gerarPdf(dados));
-            case "csv"  -> ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("text/csv"))
-                .header("Content-Disposition", "attachment; filename=vendas.csv")
-                .body(relatorioService.gerarCsv(dados));
-            default     -> ResponseEntity.ok(dados);
-        };
-    }
-}
-```
-
-### 12.4 Streaming com SseEmitter e StreamingResponseBody
-
-```java
-@RestController
-@RequestMapping("/api/v1/eventos")
-public class EventoController {
-
-    /**
-     * Server-Sent Events (SSE) — Notificações em tempo real sem WebSocket.
-     * O cliente recebe eventos via EventSource (JavaScript).
-     */
-    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@RequestParam Long usuarioId) {
-        var emitter = new SseEmitter(60_000L);  // Timeout 60s
-
-        eventoBroadcaster.subscribe(usuarioId, emitter);
-
-        emitter.onTimeout(() -> eventoBroadcaster.unsubscribe(usuarioId));
-        emitter.onCompletion(() -> eventoBroadcaster.unsubscribe(usuarioId));
-
-        return emitter;
-    }
-
-    /**
-     * Download progressivo de arquivo grande sem carregar tudo na memória.
-     */
-    @GetMapping("/exportar-grande")
-    public ResponseEntity<StreamingResponseBody> exportarGrande() {
-        StreamingResponseBody body = outputStream -> {
-            try (var writer = new OutputStreamWriter(outputStream)) {
-                writer.write("id,nome,preco\n");
-                produtoService.streamTodos().forEach(p -> {
-                    try {
-                        writer.write(p.id() + "," + p.nome() + "," + p.preco() + "\n");
-                        writer.flush(); // flush a cada linha
-                    } catch (IOException e) {
-                        throw new UncheckedIOException(e);
-                    }
-                });
-            }
-        };
-
-        return ResponseEntity.ok()
-                .contentType(MediaType.parseMediaType("text/csv"))
-                .header("Content-Disposition", "attachment; filename=produtos.csv")
-                .body(body);
-    }
-}
-```
-
-### 12.5 HandlerMethodArgumentResolver — Argumento Customizado
+### 10.3 HandlerMethodArgumentResolver — Argumento Customizado
 
 ```java
 /**
@@ -6390,7 +5537,7 @@ public ResponseEntity<PerfilResponse> meuPerfil(@CurrentUser UsuarioInfo usuario
 }
 ```
 
-### 12.6 @RequestScope e @SessionScope Beans
+### 10.4 @RequestScope e @SessionScope Beans
 
 ```java
 // Bean scoped por request — contexto da requisição corrente
@@ -6430,7 +5577,7 @@ public class CarrinhoController {
 }
 ```
 
-### 12.7 Flash Attributes — Dados entre Redirects (PRG Pattern)
+### 10.5 Flash Attributes — Dados entre Redirects (PRG Pattern)
 
 ```java
 /**
@@ -6453,59 +5600,7 @@ public String processarFormulario(RedirectAttributes redirectAttrs) {
 }
 ```
 
-### 12.8 ResponseBodyAdvice — Interceptar Respostas Globalmente
-
-```java
-/**
- * Envolve TODAS as respostas REST em um envelope padronizado.
- * Útil para adicionar metadata, correlation IDs, versão da API.
- */
-@RestControllerAdvice
-public class ApiResponseWrapper
-        implements ResponseBodyAdvice<Object> {
-
-    @Override
-    public boolean supports(MethodParameter returnType,
-                             Class<? extends HttpMessageConverter<?>> converterType) {
-        // Aplica apenas em controllers da API, não no Swagger
-        return returnType.getContainingClass().isAnnotationPresent(RestController.class)
-            && !returnType.hasMethodAnnotation(RawResponse.class); // Anotação para exclusões
-    }
-
-    @Override
-    public Object beforeBodyWrite(Object body,
-                                   MethodParameter returnType,
-                                   MediaType selectedContentType,
-                                   Class<? extends HttpMessageConverter<?>> selectedConverterType,
-                                   ServerHttpRequest request,
-                                   ServerHttpResponse response) {
-
-        if (body instanceof ProblemDetail) return body; // Não envelopa erros
-
-        return ApiEnvelope.of(body, correlationId());
-    }
-
-    private String correlationId() {
-        // Pega da requisição ou gera novo
-        return MDC.get("correlationId");
-    }
-}
-
-// Envelope padrão
-public record ApiEnvelope<T>(
-    T data,
-    String correlationId,
-    Instant timestamp
-) {
-    public static <T> ApiEnvelope<T> of(T data, String correlationId) {
-        return new ApiEnvelope<>(data, correlationId, Instant.now());
-    }
-}
-```
-
----
-
-### 12.9 Controller Assíncrono — `CompletableFuture`, `Callable` e `DeferredResult`
+### 10.6 Controller Assíncrono — `CompletableFuture`, `Callable` e `DeferredResult`
 
 O Spring MVC suporta retornos assíncronos no controller sem bloquear a thread do
 Servlet. O container libera a thread imediatamente e a resposta é enviada quando o
@@ -6855,170 +5950,7 @@ class ProdutoAsyncControllerIT {
 
 ---
 
-### 12.10 API Versioning nativo — Spring Framework 7 / Spring Boot 4
-
-O Spring Framework 7 (base do Spring Boot 4) introduziu suporte nativo a
-versionamento de API por meio da classe `ApiVersionRequestMappingHandlerMapping`
-e da anotação `@ApiVersion`. Isso elimina a necessidade de embutir a versão
-explicitamente em cada `@RequestMapping("/api/v1/...")`.
-
-#### Como funciona
-
-```mermaid
-flowchart LR
-    subgraph Estratégias["Estratégias de versão (uma por app)"]
-        P["Prefixo no path<br>/v1/produtos, /v2/produtos"]
-        H["Header<br>X-API-Version: 2"]
-        Q["Query param<br>?api-version=2"]
-    end
-
-    C["Cliente HTTP"] -- "request com versão" --> DS["DispatcherServlet"]
-    DS --> AVRM["ApiVersionRequestMappingHandlerMapping<br>(resolve versão da request)"]
-    AVRM --> CTRL["@Controller<br>@ApiVersion(from=1)"]
-    AVRM --> CTRL2["@Controller<br>@ApiVersion(from=2)"]
-```
-
-#### Configuração do versionamento
-
-```java
-// ─── 1. Configurar a estratégia em WebMvcConfigurer ──────────────────────────
-@Configuration
-public class WebMvcConfig implements WebMvcConfigurer {
-
-    @Override
-    public void configureApiVersioning(ApiVersioningConfigurer configurer) {
-        configurer
-            // Estratégia 1: versão como prefixo no path  → /v{n}/produtos
-            .usePathPrefix("v{version}")
-
-            // Estratégia 2: via header (alternativa)
-            // .useRequestHeader("X-API-Version")
-
-            // Estratégia 3: via query param (alternativa)
-            // .useRequestParameter("api-version")
-
-            // Versão default quando o cliente não envia nenhuma
-            .setDefaultVersion("1")
-
-            // Como reagir a versões sem handler mapeado
-            .setIncompatibleVersionStrategy(
-                ApiVersionIncompatibleRequestStrategy.sendError(
-                    HttpStatus.GONE, "Versão da API não suportada"));
-    }
-}
-```
-
-#### Controllers sem versão no path
-
-```java
-// ─── Controller v1 — versão inicial ──────────────────────────────────────────
-//
-// @ApiVersion(from = "1") = atende requests de versão 1 em diante,
-//   até que uma versão mais específica exista para a mesma rota.
-//
-// Mapeamento gerado automaticamente: /v1/produtos/**
-//
-@RestController
-@RequestMapping("/produtos")   // SEM prefixo de versão na rota!
-@ApiVersion(from = "1")
-@Tag(name = "Produtos")
-public class ProdutoV1Controller {
-
-    @GetMapping("/{id}")
-    public ResponseEntity<ProdutoV1Response> buscar(@PathVariable Long id) {
-        return ResponseEntity.ok(produtoService.buscarV1(id));
-    }
-
-    @GetMapping
-    public ResponseEntity<Page<ProdutoV1Response>> listar(Pageable pageable) {
-        return ResponseEntity.ok(produtoService.listarV1(pageable));
-    }
-}
-
-// ─── Controller v2 — breaking change ─────────────────────────────────────────
-//
-// @ApiVersion(from = "2") = atende requests de versão 2 em diante.
-// Requests para /v1/produtos/{id} continuam indo para ProdutoV1Controller.
-// Requests para /v2/produtos/{id} vão para ProdutoV2Controller.
-//
-// Mapeamento gerado automaticamente: /v2/produtos/**
-//
-@RestController
-@RequestMapping("/produtos")   // mesmo path base — o framework diferencia pela versão
-@ApiVersion(from = "2")
-@Tag(name = "Produtos")
-public class ProdutoV2Controller {
-
-    // v2 retorna um Response com campos extras (breaking change justifica nova versão)
-    @GetMapping("/{id}")
-    public ResponseEntity<ProdutoV2Response> buscar(@PathVariable Long id) {
-        return ResponseEntity.ok(produtoService.buscarV2(id));
-    }
-
-    // Endpoint novo que existe apenas na v2
-    @GetMapping("/{id}/avaliacoes")
-    public ResponseEntity<Page<AvaliacaoResponse>> avaliacoes(
-            @PathVariable Long id, Pageable pageable) {
-        return ResponseEntity.ok(avaliacaoService.listar(id, pageable));
-    }
-}
-
-// ─── Granularidade por método ─────────────────────────────────────────────────
-//
-// @ApiVersion pode ser aplicado também em métodos individuais,
-// permitindo que apenas parte de um controller seja versionado.
-//
-@RestController
-@RequestMapping("/categorias")
-@ApiVersion(from = "1")
-public class CategoriaController {
-
-    @GetMapping                     // disponível desde v1
-    public List<CategoriaResponse> listar() { ... }
-
-    @GetMapping("/{id}/arvore")
-    @ApiVersion(from = "2")         // endpoint novo, apenas v2+
-    public CategoriaArvoreResponse arvore(@PathVariable Long id) { ... }
-
-    @DeleteMapping("/{id}")
-    @ApiVersion(from = "1", to = "2")  // removido na v3 (deprecated range)
-    public void excluir(@PathVariable Long id) { ... }
-}
-```
-
-#### Documentação OpenAPI por versão
-
-```java
-// SpringDoc agrupa automaticamente os endpoints por versão quando configurado:
-@Bean
-public GroupedOpenApi v1Api() {
-    return GroupedOpenApi.builder()
-            .group("v1")
-            .displayName("API v1 (estável)")
-            .addOpenApiCustomizer(api ->
-                api.info(new Info().title("API v1").version("1.0")))
-            .build();
-}
-
-@Bean
-public GroupedOpenApi v2Api() {
-    return GroupedOpenApi.builder()
-            .group("v2")
-            .displayName("API v2 (atual)")
-            .addOpenApiCustomizer(api ->
-                api.info(new Info().title("API v2").version("2.0")))
-            .build();
-}
-```
-
-> **Compatibilidade:** `@ApiVersion` e `configureApiVersioning` são APIs do
-> Spring Framework 7 — disponíveis a partir do Spring Boot 4.0. No Spring Boot
-> 3.x, o versionamento manual via prefixo de path (`/api/v1/...`) ou
-> `GroupedOpenApi` continua sendo a abordagem recomendada.
-
----
-
-### 12.11 Acesso a Recursos do Servlet — `HttpServletRequest`, `HttpServletResponse` e `RequestContextHolder`
+### 10.7 Acesso a Recursos do Servlet — `HttpServletRequest`, `HttpServletResponse` e `RequestContextHolder`
 
 O Spring MVC expõe os objetos do Servlet diretamente como parâmetros de método
 nos controllers. Para camadas mais internas (services, componentes) que não têm
@@ -7236,7 +6168,7 @@ public class RequestContextTaskDecorator implements TaskDecorator {
 
 ---
 
-### 12.12 Integração com Spring Security
+### 10.8 Integração com Spring Security
 
 #### Recuperando o usuário autenticado no Controller
 
@@ -7637,9 +6569,10 @@ flowchart TD
 
 ---
 
-## 13. Alternativas ao Thymeleaf
 
-### 13.1 Comparativo de Engines de Template
+## 11. Alternativas ao Thymeleaf
+
+### 11.1 Comparativo de Engines de Template
 
 ```mermaid
 graph TB
@@ -7651,7 +6584,7 @@ graph TB
     end
 ```
 
-### 13.2 FreeMarker
+### 11.2 FreeMarker
 
 ```xml
 <dependency>
@@ -7688,7 +6621,7 @@ spring:
 <@campo label="Nome" nome="nome"/>
 ```
 
-### 13.3 JTE (Java Template Engine) — Recomendado para Performance
+### 11.3 JTE (Java Template Engine) — Recomendado para Performance
 
 JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de compilação e desempenho superior ao Thymeleaf.
 
@@ -7726,7 +6659,7 @@ JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de 
 </html>
 ```
 
-### 13.4 Quando Usar Cada Template Engine
+### 11.4 Quando Usar Cada Template Engine
 
 | Cenário | Recomendação |
 |---|---|
@@ -7739,9 +6672,11 @@ JTE compila os templates para bytecode Java, oferecendo type-safety em tempo de 
 
 ---
 
-## 14. Boas Práticas e Checklist
 
-### 14.1 Diagrama de Fluxo de Decisão
+
+## 12. Boas Práticas e Checklist
+
+### 12.1 Diagrama de Fluxo de Decisão
 
 ```mermaid
 flowchart TD
@@ -7772,21 +6707,7 @@ flowchart TD
     N --> O[@WebMvcTest + @SpringBootTest<br/>RestTestClient ou REST Assured]
 ```
 
-### 14.2 Checklist — REST Controllers
-
-- [ ] Usar `@RestController` (combina `@Controller` + `@ResponseBody`)
-- [ ] Versionamento de API na URL: `/api/v1/...`
-- [ ] Retornar `ResponseEntity<T>` com status HTTP correto
-- [ ] POST retorna `201 Created` + header `Location`
-- [ ] DELETE retorna `204 No Content`
-- [ ] Usar `@Validated` no controller para validar `@PathVariable` e `@RequestParam`
-- [ ] Separar DTOs de Request e Response (nunca expor entidades JPA)
-- [ ] Usar Records para DTOs imutáveis
-- [ ] Documentar com `@Tag`, `@Operation`, `@ApiResponse`
-- [ ] Tratar erros com `@RestControllerAdvice` e `ProblemDetail` (RFC 9457)
-- [ ] CORS configurado explicitamente (nunca `*` em produção)
-
-### 14.3 Checklist — SSR Controllers
+### 12.2 Checklist — SSR Controllers
 
 - [ ] Usar `@Controller` (não `@RestController`)
 - [ ] Criar Form Objects separados das entidades/DTOs
@@ -7797,7 +6718,7 @@ flowchart TD
 - [ ] Aplicar `StringTrimmerEditor` via `@InitBinder`
 - [ ] Definir `setAllowedFields` para prevenir mass assignment
 
-### 14.4 Checklist — Validação
+### 12.3 Checklist — Validação
 
 - [ ] Bean Validation nas camadas Controller E Service (`@Validated`)
 - [ ] Usar grupos de validação para criar/atualizar com regras diferentes
@@ -7806,7 +6727,7 @@ flowchart TD
 - [ ] Mensagens de erro externalizadas em `messages.properties`
 - [ ] `@EmailUnico`, `@CpfUnico` com acesso ao repositório via Spring
 
-### 14.5 Anti-patterns a Evitar
+### 12.4 Anti-patterns a Evitar
 
 ```java
 // ❌ Expondo entidade JPA diretamente
@@ -7871,7 +6792,7 @@ public void init(WebDataBinder binder) {
 }
 ```
 
-### 14.6 Mensagens de Validação i18n — Integração com messages.properties
+### 12.5 Mensagens de Validação i18n — Integração com messages.properties
 
 Por padrão o Bean Validation resolve mensagens no arquivo
 `ValidationMessages.properties` (padrão Jakarta) ou dentro das próprias
@@ -7982,434 +6903,11 @@ spring:
     use-code-as-default-message: false  # false = lança exceção se chave não existir
 ```
 
-## 15. CORS — Cross-Origin Resource Sharing
 
-### 15.1 Como o CORS Funciona
 
-```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant S as Spring MVC
+## 13. ETag e Cache HTTP
 
-    Note over B,S: Preflight (requisição não-simples: POST/PUT/PATCH com JSON)
-    B->>S: OPTIONS /api/v1/produtos<br/>Origin: https://app.empresa.com.br<br/>Access-Control-Request-Method: POST<br/>Access-Control-Request-Headers: Content-Type
-    S-->>B: 200 OK<br/>Access-Control-Allow-Origin: https://app.empresa.com.br<br/>Access-Control-Allow-Methods: GET, POST, PUT, DELETE<br/>Access-Control-Allow-Headers: Content-Type, Authorization<br/>Access-Control-Max-Age: 3600
-
-    Note over B,S: Requisição real (após preflight autorizado)
-    B->>S: POST /api/v1/produtos<br/>Origin: https://app.empresa.com.br<br/>Content-Type: application/json
-    S-->>B: 201 Created<br/>Access-Control-Allow-Origin: https://app.empresa.com.br
-```
-
-**Requisições "simples"** (sem preflight): `GET`, `HEAD`, `POST` com `Content-Type: application/x-www-form-urlencoded`, `multipart/form-data` ou `text/plain`.
-Qualquer outro método ou Content-Type (incluindo `application/json`) dispara o preflight.
-
-### 15.2 Configuração Global — `WebMvcConfigurer`
-
-```java
-@Configuration
-public class WebMvcConfig implements WebMvcConfigurer {
-
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-                // Origens exatas — preferível a wildcard em produção
-                .allowedOrigins(
-                    "https://app.empresa.com.br",
-                    "https://admin.empresa.com.br"
-                )
-                // allowedOriginPatterns aceita wildcards no subdomínio
-                // .allowedOriginPatterns("https://*.empresa.com.br")
-
-                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-
-                // Headers que o browser pode enviar
-                .allowedHeaders(
-                    "Authorization",
-                    "Content-Type",
-                    "X-Requested-With",
-                    "X-API-Version"
-                )
-
-                // Headers que o browser pode ler na resposta
-                // (por padrão apenas CORS-safelisted headers são expostos)
-                .exposedHeaders(
-                    "Location",
-                    "X-Total-Count",
-                    "X-Correlation-ID"
-                )
-
-                // Permite envio de cookies/credentials (requer origem exata, não *)
-                .allowCredentials(true)
-
-                // Duração do cache do preflight no browser (segundos)
-                // ✅ Default: 1800 (30 min). Máximo aceito pelo Chrome: 7200 (2h)
-                .maxAge(3600);
-
-        // Endpoints públicos — mais permissivo
-        registry.addMapping("/api/public/**")
-                .allowedOriginPatterns("*")
-                .allowedMethods("GET")
-                .allowCredentials(false);
-    }
-}
-```
-
-### 15.3 `@CrossOrigin` por Controller ou Método
-
-```java
-// ─── Nível de classe: aplica a TODOS os métodos do controller ─────────────────
-@RestController
-@RequestMapping("/api/v1/produtos")
-@CrossOrigin(
-    origins            = "https://app.empresa.com.br",
-    allowedHeaders     = "*",
-    allowCredentials   = "true",
-    maxAge             = 3600
-)
-public class ProdutoController { /* ... */ }
-
-// ─── Nível de método: sobrescreve ou complementa o nível de classe ────────────
-@RestController
-@RequestMapping("/api/v1/relatorios")
-@CrossOrigin(origins = "https://app.empresa.com.br")   // restrito por padrão
-public class RelatorioController {
-
-    @GetMapping("/publico")
-    @CrossOrigin(origins = "*", allowCredentials = "false") // este endpoint é público
-    public ResponseEntity<RelatorioPublicoResponse> relatorioPublico() {
-        return ResponseEntity.ok(relatorioService.publico());
-    }
-
-    @GetMapping("/interno")
-    // herda o @CrossOrigin da classe — apenas app.empresa.com.br
-    public ResponseEntity<RelatorioInternoResponse> relatorioInterno(
-            @AuthenticationPrincipal UsuarioDetails usuario) {
-        return ResponseEntity.ok(relatorioService.interno(usuario));
-    }
-}
-```
-
-> **`@CrossOrigin` vs configuração global:** a configuração via `WebMvcConfigurer`
-> é preferível para a maioria dos casos, pois centraliza a política e evita
-> divergências entre controllers. `@CrossOrigin` é útil quando um endpoint
-> específico precisa de política diferente da global.
-
-### 15.4 Integração Obrigatória com Spring Security
-
-> ⚠️ **Armadilha comum:** configurar CORS no `WebMvcConfigurer` **não é suficiente**
-> quando Spring Security está presente. O `SecurityFilterChain` intercepta a
-> requisição antes do `DispatcherServlet` — sem a configuração no Security, os
-> preflights `OPTIONS` recebem 401 ou 403 e o browser bloqueia tudo.
-
-```java
-@Configuration
-@EnableWebSecurity
-public class SecurityConfig {
-
-    @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            // CORS deve ser habilitado AQUI para que o CorsFilter do Spring
-            // seja registrado na cadeia do Security antes da autenticação.
-            // Ele lê a configuração do CorsConfigurationSource bean abaixo.
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-            .csrf(csrf -> csrf.disable())   // APIs REST stateless
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // preflight sem auth
-                .requestMatchers("/api/public/**").permitAll()
-                .anyRequest().authenticated()
-            )
-            .sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
-
-        return http.build();
-    }
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        var config = new CorsConfiguration();
-        config.setAllowedOrigins(List.of(
-            "https://app.empresa.com.br",
-            "https://admin.empresa.com.br"
-        ));
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization","Content-Type","X-API-Version"));
-        config.setExposedHeaders(List.of("Location","X-Total-Count"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-
-        var source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**", config);
-        return source;
-    }
-}
-```
-
-### 15.5 CORS Dinâmico — Origens em Banco de Dados
-
-```java
-/**
- * CorsConfigurationSource que lê as origens permitidas do banco de dados,
- * com cache para não consultar a cada requisição.
- *
- * Útil para aplicações multi-tenant onde cada tenant tem sua própria origem.
- */
-@Component
-public class DynamicCorsConfigurationSource implements CorsConfigurationSource {
-
-    private final OrigemPermitidaRepository origemRepository;
-
-    // Cache de 5 minutos para evitar query por requisição
-    @Cacheable("corsOrigens")
-    public List<String> origensPermitidas() {
-        return origemRepository.findAllAtivas()
-                .stream()
-                .map(OrigemPermitida::getUrl)
-                .toList();
-    }
-
-    @Override
-    public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
-        var config = new CorsConfiguration();
-        config.setAllowedOrigins(origensPermitidas());
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(600L);
-        return config;
-    }
-}
-```
-
-### 15.6 Diagnóstico de Problemas CORS
-
-```yaml
-# application-dev-local.yml — habilitar log do CorsFilter para diagnóstico
-logging:
-  level:
-    org.springframework.web.cors: DEBUG
-    org.springframework.security.web.cors: DEBUG
-```
-
-| Sintoma | Causa mais provável | Solução |
-|---|---|---|
-| `No 'Access-Control-Allow-Origin'` em produção | `allowedOrigins` não inclui a origem exata | Verificar o header `Origin` da requisição e adicionar à lista |
-| Preflight retorna 401 | Spring Security sem `.cors()` configurado | Adicionar `CorsConfigurationSource` bean e `.cors(cors -> ...)` |
-| `allowCredentials` não funciona | Usando `allowedOriginPatterns("*")` com `allowCredentials(true)` | Usar origens exatas — wildcard e credentials são incompatíveis |
-| Origem permitida mas headers bloqueados | `allowedHeaders` não inclui o header enviado | Adicionar o header à lista ou usar `allowedHeaders("*")` |
-| `exposedHeaders` não visível no browser | Header não listado em `exposedHeaders` | Adicionar o header à lista de expostos |
-
----
-
-## 16. ETag e Cache HTTP
-
-### 16.1 Visão Geral dos Mecanismos de Cache
-
-```mermaid
-flowchart LR
-    subgraph CacheHeaders["Headers de controle de cache"]
-        CC["Cache-Control<br>max-age, no-cache, no-store<br>private, public, must-revalidate"]
-        ET["ETag<br>Hash do conteúdo da resposta<br>identifica versão do recurso"]
-        LM["Last-Modified<br>Data da última modificação<br>alternativa ao ETag"]
-    end
-
-    subgraph Revalidation["Revalidação condicional"]
-        INM["If-None-Match<br>Cliente envia ETag guardada<br>→ 304 se não mudou"]
-        IMS["If-Modified-Since<br>Cliente envia data guardada<br>→ 304 se não modificado"]
-    end
-
-    ET --> INM
-    LM --> IMS
-    CC -->|"no-cache: força revalidação"| INM
-    CC -->|"max-age: skip revalidação"| SKIP["Resposta do cache local<br>sem ir ao servidor"]
-```
-
-### 16.2 `ShallowEtagHeaderFilter` — ETag Automático
-
-O `ShallowEtagHeaderFilter` calcula o hash MD5 do body da resposta e adiciona o
-header `ETag` automaticamente. Nas requisições seguintes com `If-None-Match`,
-ele compara os ETags e retorna 304 sem re-executar o controller.
-
-```java
-// ─── Registro do filtro — Spring Boot NÃO registra automaticamente ────────────
-@Configuration
-public class CacheConfig {
-
-    /**
-     * ShallowEtagHeaderFilter: calcula ETag a partir do body serializado.
-     * "Shallow" = baseado apenas no conteúdo da resposta, não em dados do domínio.
-     *
-     * O controller AINDA é executado — o 304 é decidido pelo filtro após a execução.
-     * Para evitar a execução do controller, use ETag baseada em versão (seção 16.3).
-     */
-    @Bean
-    public FilterRegistrationBean<ShallowEtagHeaderFilter> etagFilter() {
-        var registration = new FilterRegistrationBean<>(new ShallowEtagHeaderFilter());
-        registration.addUrlPatterns("/api/*");
-        registration.setOrder(Ordered.LOWEST_PRECEDENCE - 10);
-        return registration;
-    }
-}
-```
-
-```yaml
-# application.yml — sem configuração Spring Boot automática para este filtro
-# O filtro deve ser registrado explicitamente como acima.
-```
-
-### 16.3 `ResponseEntity` com ETag e Last-Modified
-
-Para evitar execução desnecessária do controller, use `WebRequest.checkNotModified()`
-— retorna `true` e define o status 304 antes de qualquer processamento:
-
-```java
-@RestController
-@RequestMapping("/api/v1/produtos")
-public class ProdutoController {
-
-    private final ProdutoService produtoService;
-
-    // ─── ETag baseada no hash/versão do recurso ───────────────────────────────
-    @GetMapping("/{id}")
-    public ResponseEntity<ProdutoResponse> buscar(
-            @PathVariable Long id,
-            WebRequest webRequest) {
-
-        var produto = produtoService.buscarPorId(id);
-
-        // Calcula ETag a partir da versão do objeto (ex.: campo @Version do JPA)
-        // ou de um hash do conteúdo — mais eficiente que ShallowEtagHeaderFilter
-        // pois evita executar a serialização completa
-        String etag = "\"" + produto.versao() + "\""; // aspas obrigatórias na spec
-
-        // Se o cliente enviou If-None-Match e o ETag não mudou:
-        // checkNotModified seta status 304 e retorna true — retornar null encerra a resposta
-        if (webRequest.checkNotModified(etag)) {
-            return null; // Spring MVC envia 304 automaticamente
-        }
-
-        return ResponseEntity.ok()
-                .eTag(etag)
-                .cacheControl(CacheControl.maxAge(60, TimeUnit.SECONDS)
-                        .cachePublic()
-                        .mustRevalidate())
-                .body(produto);
-    }
-
-    // ─── Last-Modified — alternativa ao ETag para recursos baseados em tempo ──
-    @GetMapping("/{id}/foto")
-    public ResponseEntity<Resource> foto(
-            @PathVariable Long id,
-            WebRequest webRequest) {
-
-        var foto = produtoService.buscarFoto(id);
-        long lastModifiedMs = foto.atualizadoEm().toInstant(ZoneOffset.UTC).toEpochMilli();
-
-        if (webRequest.checkNotModified(lastModifiedMs)) {
-            return null; // 304
-        }
-
-        return ResponseEntity.ok()
-                .lastModified(foto.atualizadoEm())
-                .cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
-                .contentType(MediaType.IMAGE_JPEG)
-                .body(foto.resource());
-    }
-
-    // ─── ETag + Last-Modified combinados ─────────────────────────────────────
-    @GetMapping("/{id}/detalhes")
-    public ResponseEntity<ProdutoDetalhesResponse> detalhes(
-            @PathVariable Long id,
-            WebRequest webRequest) {
-
-        var produto = produtoService.buscarDetalhes(id);
-        String etag = "\"" + produto.checksum() + "\"";
-        long  lastModified = produto.atualizadoEm().toInstant(ZoneOffset.UTC).toEpochMilli();
-
-        // Verifica ETag E Last-Modified — retorna 304 se qualquer um corresponder
-        if (webRequest.checkNotModified(etag, lastModified)) {
-            return null;
-        }
-
-        return ResponseEntity.ok()
-                .eTag(etag)
-                .lastModified(produto.atualizadoEm())
-                .cacheControl(CacheControl.maxAge(120, TimeUnit.SECONDS))
-                .body(produto);
-    }
-}
-```
-
-### 16.4 `CacheControl` — Políticas Comuns
-
-```java
-@RestController
-@RequestMapping("/api/v1/catalogo")
-public class CatalogoController {
-
-    // ─── Recurso público, cacheable por proxies ────────────────────────────────
-    // max-age=300: cache válido por 5 minutos
-    // public: proxies e CDNs podem armazenar
-    @GetMapping("/categorias")
-    public ResponseEntity<List<CategoriaResponse>> categorias() {
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(5, TimeUnit.MINUTES).cachePublic())
-                .body(catalogoService.listarCategorias());
-    }
-
-    // ─── Recurso privado por usuário — só browser pode cachear ───────────────
-    // private: proxy não armazena (conteúdo é específico do usuário)
-    @GetMapping("/minha-lista")
-    public ResponseEntity<List<ProdutoResponse>> minhaLista(
-            @AuthenticationPrincipal UsuarioDetails usuario) {
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(1, TimeUnit.MINUTES).cachePrivate())
-                .body(catalogoService.listarFavoritos(usuario.getId()));
-    }
-
-    // ─── Sem cache algum — dados em tempo real ────────────────────────────────
-    @GetMapping("/estoque/{id}")
-    public ResponseEntity<EstoqueResponse> estoque(@PathVariable Long id) {
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.noStore())
-                .body(catalogoService.consultarEstoque(id));
-    }
-
-    // ─── no-cache: armazena mas sempre revalida ───────────────────────────────
-    // Útil quando o recurso muda com frequência imprevisível mas
-    // revalidação com ETag/304 é barata
-    @GetMapping("/preco/{id}")
-    public ResponseEntity<PrecoResponse> preco(
-            @PathVariable Long id,
-            WebRequest webRequest) {
-
-        var preco = catalogoService.consultarPreco(id);
-        String etag = "\"" + preco.hashCode() + "\"";
-
-        if (webRequest.checkNotModified(etag)) return null;
-
-        return ResponseEntity.ok()
-                .eTag(etag)
-                .cacheControl(CacheControl.noCache())   // revalida sempre, mas armazena
-                .body(preco);
-    }
-
-    // ─── Recurso imutável — pode ser cacheado para sempre ────────────────────
-    // Usado para assets com hash no nome (ex: produto-thumbnail-a3f8d2.jpg)
-    @GetMapping("/imagens/{hash}")
-    public ResponseEntity<Resource> imagem(@PathVariable String hash) {
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(365, TimeUnit.DAYS)
-                        .cachePublic()
-                        .immutable())
-                .body(catalogoService.buscarImagem(hash));
-    }
-}
-```
-
-### 16.5 Cache HTTP em Views SSR
+### 13.1 Cache HTTP em Views SSR
 
 ```java
 // Para páginas Thymeleaf com dados relativamente estáveis
@@ -8442,7 +6940,7 @@ spring:
           must-revalidate: true
 ```
 
-### 16.6 Resumo: Quando Usar Cada Estratégia
+### 13.2 Resumo: Quando Usar Cada Estratégia
 
 | Recurso | Estratégia recomendada | Headers |
 |---|---|---|
@@ -8455,9 +6953,11 @@ spring:
 
 ---
 
-## 17. Upload de Arquivos
 
-### 17.1 Configuração
+
+## 14. Upload de Arquivos
+
+### 14.1 Configuração
 
 ```yaml
 # application.yml — MultipartAutoConfiguration (✅ auto-configurado pelo Boot)
@@ -8471,7 +6971,7 @@ spring:
       location: /tmp/uploads    # ✅ Default: diretório temporário do SO
 ```
 
-### 17.2 Controller de Upload
+### 14.2 Controller de Upload
 
 ```java
 @RestController
@@ -8550,7 +7050,7 @@ public class ArquivoController {
 }
 ```
 
-### 17.3 Service — Estratégias de Armazenamento
+### 14.3 Service — Estratégias de Armazenamento
 
 ```java
 @Service
@@ -8615,7 +7115,7 @@ public class ArquivoService {
 }
 ```
 
-### 17.4 Download de Arquivos
+### 14.4 Download de Arquivos
 
 ```java
 @GetMapping("/{nomeArquivo:.+}")
@@ -8650,7 +7150,7 @@ public ResponseEntity<Resource> download(@PathVariable String nomeArquivo) {
 }
 ```
 
-### 17.5 Upload via Fetch API (JavaScript)
+### 14.5 Upload via Fetch API (JavaScript)
 
 #### Upload simples com arquivo único
 
@@ -8852,9 +7352,11 @@ public class GlobalExceptionHandler {
 
 ---
 
-## 18. Internacionalização (i18n)
 
-### 18.1 Estratégias de Resolução de Locale
+
+## 15. Internacionalização (i18n)
+
+### 15.1 Estratégias de Resolução de Locale
 
 ```mermaid
 flowchart TD
@@ -8870,7 +7372,7 @@ flowchart TD
     LR -->|LocaleChangeInterceptor| CTRL["Controller / Template"]
 ```
 
-### 18.2 Configuração Completa
+### 15.2 Configuração Completa
 
 ```java
 @Configuration
@@ -8956,7 +7458,7 @@ spring:
     fallback-to-system-locale: true  # tenta locale do SO se não encontrar o arquivo
 ```
 
-### 18.3 Arquivos de Mensagens
+### 15.3 Arquivos de Mensagens
 
 ```
 src/main/resources/
@@ -9040,7 +7542,7 @@ br.com.app.validation.cpf.invalido=CPF inválido
 br.com.app.validation.email.unico=E-mail já cadastrado
 ```
 
-### 18.4 i18n em Controllers REST
+### 15.4 i18n em Controllers REST
 
 ```java
 @RestController
@@ -9099,7 +7601,7 @@ public class GlobalExceptionHandler {
 }
 ```
 
-### 18.5 i18n em Templates Thymeleaf
+### 15.5 i18n em Templates Thymeleaf
 
 ```html
 <!DOCTYPE html>
@@ -9164,7 +7666,7 @@ public class GlobalExceptionHandler {
 </html>
 ```
 
-### 18.6 Controller SSR — enviando chave em vez de texto
+### 15.6 Controller SSR — enviando chave em vez de texto
 
 ```java
 // Padrão recomendado para SSR: o controller envia CHAVES, o template resolve
@@ -9190,7 +7692,7 @@ public class ProdutoMvcController {
 }
 ```
 
-### 18.7 i18n em Respostas JSON — `MessageSourceAccessor`
+### 15.7 i18n em Respostas JSON — `MessageSourceAccessor`
 
 ```java
 /**
@@ -9228,7 +7730,7 @@ public class NotificacaoService {
 }
 ```
 
-### 18.8 Timezone — Integração com i18n
+### 15.8 Timezone — Integração com i18n
 
 ```java
 // LocaleContextHolder carrega Locale E TimeZone — útil para formatação
@@ -9251,7 +7753,7 @@ public class DateTimeFormatter {
 ```
 
 
-### 18.9 `LocaleContextHolder` — acesso ao Locale fora do Controller
+### 15.9 `LocaleContextHolder` — acesso ao Locale fora do Controller
 
 `LocaleContextHolder` é um utilitário estático do Spring que armazena o **Locale e o
 TimeZone da requisição atual** em uma variável `ThreadLocal`. O `DispatcherServlet`
@@ -9442,14 +7944,15 @@ public class ContextoUsuarioHelper {
 
 ---
 
-## 19. Customização do `ErrorController`
+
+## 16. Customização do `ErrorController`
 
 O Spring Boot registra automaticamente um `BasicErrorController` que serve o
 endpoint `/error` — ponto de chegada de todos os erros não tratados por um
 `@ControllerAdvice` (ex.: 404 gerado antes do `DispatcherServlet`, exceções em
 filtros, erros de Tomcat). Esta seção cobre como personalizar esse comportamento.
 
-### 19.1 Como o Fluxo de Erro Funciona
+### 16.1 Como o Fluxo de Erro Funciona
 
 ```mermaid
 flowchart LR
@@ -9467,7 +7970,7 @@ flowchart LR
 > A regra prática é: `@ControllerAdvice` para a esmagadora maioria dos casos;
 > `ErrorController` apenas para erros que **escapam** do `DispatcherServlet`.
 
-### 19.2 Customizando o `BasicErrorController`
+### 16.2 Customizando o `BasicErrorController`
 
 #### Abordagem 1 — `ErrorAttributes` customizado
 
@@ -9584,7 +8087,7 @@ public class AppErrorController implements ErrorController {
 }
 ```
 
-### 19.3 Templates de Erro Thymeleaf
+### 16.3 Templates de Erro Thymeleaf
 
 O Spring Boot resolve automaticamente templates em `templates/error/` pelo
 código de status — sem nenhuma configuração adicional.
@@ -9618,7 +8121,7 @@ src/main/resources/templates/
 </html>
 ```
 
-### 19.4 Configuração via `application.yml`
+### 16.4 Configuração via `application.yml`
 
 ```yaml
 server:
@@ -9636,13 +8139,15 @@ server:
 
 ---
 
-## 20. `@ResponseStatus` em Classes de Exceção
+
+
+## 17. `@ResponseStatus` em Classes de Exceção
 
 `@ResponseStatus` aplicado diretamente a uma classe de exceção instrui o Spring
 MVC a retornar um HTTP status específico sempre que essa exceção for lançada —
 sem necessidade de um `@ExceptionHandler` dedicado.
 
-### 20.1 Uso Básico
+### 17.1 Uso Básico
 
 ```java
 // ─── Exceção com status fixo ──────────────────────────────────────────────────
@@ -9686,7 +8191,7 @@ public ResponseEntity<ProdutoResponse> criar(@RequestBody @Valid ProdutoRequest 
 }
 ```
 
-### 20.2 `@ResponseStatus` vs `@ExceptionHandler` — Quando Usar Cada Um
+### 17.2 `@ResponseStatus` vs `@ExceptionHandler` — Quando Usar Cada Um
 
 ```java
 // ─── @ResponseStatus: adequado para exceções simples ─────────────────────────
@@ -9718,7 +8223,7 @@ public ProblemDetail handleConstraintViolation(ConstraintViolationException ex) 
 }
 ```
 
-### 20.3 Precedência com `@ControllerAdvice`
+### 17.3 Precedência com `@ControllerAdvice`
 
 Quando uma exceção tem `@ResponseStatus` **e** existe um `@ExceptionHandler`
 compatível no `@ControllerAdvice`, o **`@ExceptionHandler` vence** — a anotação
@@ -9748,9 +8253,11 @@ public ProblemDetail handle(RecursoNaoEncontradoException ex, HttpServletRequest
 
 ---
 
-## 21. `MultiValueMap` e Form Data
 
-### 21.1 `MultiValueMap` — Múltiplos Valores por Chave
+
+## 18. `MultiValueMap` e Form Data
+
+### 18.1 `MultiValueMap` — Múltiplos Valores por Chave
 
 `MultiValueMap<K, V>` é uma extensão de `Map` do Spring que associa **uma ou mais
 valores** a cada chave. É o tipo usado internamente pelo MVC para representar
@@ -9791,7 +8298,7 @@ public class MultiValueMapController {
 }
 ```
 
-### 21.2 Form Data com Checkboxes (`multi-select`)
+### 18.2 Form Data com Checkboxes (`multi-select`)
 
 O caso de uso mais comum de `MultiValueMap` em SSR é o binding de checkboxes e
 selects múltiplos em um form HTML — onde cada checkbox marcado envia o mesmo
@@ -9901,23 +8408,7 @@ public class ProdutoMvcController {
 </form>
 ```
 
-### 21.3 `@RequestBody` com `MultiValueMap` (form-urlencoded)
-
-```java
-// Para receber form data (application/x-www-form-urlencoded) via REST
-@PostMapping(value = "/form",
-             consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-public ResponseEntity<String> receberFormData(
-        @RequestBody MultiValueMap<String, String> formData) {
-
-    String nome  = formData.getFirst("nome");
-    List<String> tags = formData.get("tags");   // múltiplos valores
-
-    return ResponseEntity.ok("Recebido: " + nome + ", tags: " + tags);
-}
-```
-
-### 21.4 `LinkedMultiValueMap` — Construção Programática
+### 18.3 `LinkedMultiValueMap` — Construção Programática
 
 ```java
 // Construção manual de MultiValueMap — útil em testes ou ao montar requests
@@ -9939,9 +8430,11 @@ restClient.get()
 
 ---
 
-## 22. `RedirectView` e `UrlBasedViewResolver`
 
-### 22.1 `RedirectView` — Redirect Programático com Controle Total
+
+## 19. `RedirectView` e `UrlBasedViewResolver`
+
+### 19.1 `RedirectView` — Redirect Programático com Controle Total
 
 ```java
 @Controller
@@ -9998,7 +8491,7 @@ public class LegacyRedirectController {
 }
 ```
 
-### 22.2 `UrlBasedViewResolver` — Configuração Avançada de View Resolution
+### 19.2 `UrlBasedViewResolver` — Configuração Avançada de View Resolution
 
 O Spring Boot auto-configura o `ThymeleafViewResolver`, que tem precedência sobre
 o `UrlBasedViewResolver`. Este é relevante quando se usa FreeMarker, Mustache,
@@ -10047,7 +8540,7 @@ public class ViewResolverConfig {
 }
 ```
 
-### 22.3 Redirect 301 Permanente — SEO e Mudança de URL
+### 19.3 Redirect 301 Permanente — SEO e Mudança de URL
 
 ```java
 @Controller
@@ -10073,7 +8566,7 @@ public class SeoRedirectController {
 }
 ```
 
-### 22.4 Forward Interno — Compartilhamento de Handlers
+### 19.4 Forward Interno — Compartilhamento de Handlers
 
 ```java
 @Controller
@@ -10100,9 +8593,11 @@ public class ForwardController {
 ```
 ---
 
-## 23. Testes
 
-### 23.1 Visão Geral — Pirâmide de Testes no Spring MVC
+
+## 20. Testes
+
+### 20.1 Visão Geral — Pirâmide de Testes no Spring MVC
 
 ```mermaid
 graph TB
@@ -10204,7 +8699,7 @@ import org.junit.api.params.provider.ValueSource;
 
 ---
 
-### 23.2 Teste Unitário — Service sem Spring
+### 20.2 Teste Unitário — Service sem Spring
 
 O teste mais rápido: instancia a classe diretamente, injeta mocks via construtor.
 Não carrega nenhum contexto Spring.
@@ -10516,111 +9011,12 @@ class PedidoControllerIT {
 
 ---
 
-### 23.3 `@WebMvcTest` — Slice Test da Camada Web
+### 20.3 `@WebMvcTest` — Slice Test da Camada Web
 
 Carrega apenas o slice MVC (controllers, filters, converters, security web).
 **Não carrega** services, repositories nem o banco — estes devem ser mockados.
 
-#### 23.3.1 REST Controller com `RestTestClient` (Spring Boot 4)
-
-> **Nota:** no baseline Spring Boot 3.5 deste documento, prefira `MockMvc` ou um cliente equivalente. O `RestTestClient` é tratado aqui como recurso nativo da stack Spring Boot 4 / Spring Framework 7.
-
-```java
-@WebMvcTest(ProdutoController.class)
-@DisplayName("ProdutoController — slice REST")
-class ProdutoControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockitoBean                   // Spring Boot 3.4+: substitui @MockBean
-    private ProdutoService produtoService;
-
-    private RestTestClient restTestClient;
-
-    @BeforeEach
-    void setUp() {
-        // Bind RestTestClient ao MockMvc para testes de slice
-        restTestClient = RestTestClient.bindToMockMvc(mockMvc).build();
-    }
-
-    @Test
-    @DisplayName("GET /{id} → 200 quando produto existe")
-    void buscar_WhenExists_Returns200() {
-        var response = new ProdutoResponse(1L, "Notebook",
-                new BigDecimal("3499.99"), "TI",
-                LocalDateTime.now(), LocalDateTime.now());
-        when(produtoService.buscarPorId(1L)).thenReturn(response);
-
-        restTestClient.get()
-                .uri("/api/v1/produtos/1")
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody(ProdutoResponse.class)
-                .value(p -> {
-                    assertThat(p.id()).isEqualTo(1L);
-                    assertThat(p.nome()).isEqualTo("Notebook");
-                });
-    }
-
-    @Test
-    @DisplayName("GET /{id} → 404 quando produto não existe")
-    void buscar_WhenNotFound_Returns404() {
-        when(produtoService.buscarPorId(99L))
-                .thenThrow(new RecursoNaoEncontradoException("Produto", 99L));
-
-        restTestClient.get()
-                .uri("/api/v1/produtos/99")
-                .exchange()
-                .expectStatus().isNotFound()
-                .expectBody()
-                .jsonPath("$.status").isEqualTo(404)
-                .jsonPath("$.detail").isNotEmpty();
-    }
-
-    @Test
-    @DisplayName("POST / → 201 com Location quando request válido")
-    void criar_ValidRequest_Returns201() {
-        var created = new ProdutoResponse(42L, "Notebook",
-                new BigDecimal("3499.99"), "TI",
-                LocalDateTime.now(), LocalDateTime.now());
-        when(produtoService.criar(any())).thenReturn(created);
-
-        restTestClient.post()
-                .uri("/api/v1/produtos")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("""
-                        {
-                          "nome": "Notebook",
-                          "preco": 3499.99,
-                          "categoriaId": 1
-                        }
-                        """)
-                .exchange()
-                .expectStatus().isCreated()
-                .expectHeader().valueMatches("Location", ".*/api/v1/produtos/42")
-                .expectBody(ProdutoResponse.class)
-                .value(p -> assertThat(p.id()).isEqualTo(42L));
-    }
-
-    @Test
-    @DisplayName("POST / → 400 quando nome em branco")
-    void criar_WhenNomeBlank_Returns400() {
-        restTestClient.post()
-                .uri("/api/v1/produtos")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("""
-                        {"nome": "", "preco": 99.90, "categoriaId": 1}
-                        """)
-                .exchange()
-                .expectStatus().isBadRequest()
-                .expectBody()
-                .jsonPath("$.errors.nome").isNotEmpty();
-    }
-}
-```
-
-#### 23.3.2 Controller MVC SSR com Thymeleaf
+#### 20.3.2 Controller MVC SSR com Thymeleaf
 
 ```java
 @WebMvcTest(ProdutoMvcController.class)
@@ -10704,7 +9100,7 @@ class ProdutoMvcControllerTest {
 
 ---
 
-### 23.4 `@WebMvcTest` com Spring Security
+### 20.4 `@WebMvcTest` com Spring Security
 
 ```java
 // Por padrão, @WebMvcTest aplica a configuração de Security do projeto.
@@ -10775,7 +9171,7 @@ class PedidoControllerSecurityTest {
 
 ---
 
-### 23.5 `@SpringBootTest` — Teste de Integração
+### 20.5 `@SpringBootTest` — Teste de Integração
 
 Carrega o contexto Spring completo. Use com `Testcontainers` para banco real.
 
@@ -10885,50 +9281,7 @@ class ProdutoControllerIT {
 
 ---
 
-### 23.6 `MockMvc` vs `RestTestClient` — Comparativo
-
-> **Nota:** na comparação abaixo, a disponibilidade do `RestTestClient` sem dependência extra refere-se ao Spring Boot 4.
-
-```java
-// ─── MockMvc — API imperativa tradicional ─────────────────────────────────────
-// Verboso mas flexível; suporte nativo ao Thymeleaf (view(), model(), xpath())
-mockMvc.perform(
-        get("/api/v1/produtos/1")
-                .accept(MediaType.APPLICATION_JSON)
-                .header("X-API-Version", "1.0"))
-        .andExpect(status().isOk())
-        .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-        .andExpect(jsonPath("$.nome").value("Notebook"))
-        .andExpect(jsonPath("$.preco").value(3499.99))
-        .andDo(print());  // imprime request/response no console
-
-// ─── RestTestClient — API fluente (Spring Boot 4 nativo) ─────────────────────
-// Mais legível; AssertJ; funciona igual para MockMvc (slice) e RANDOM_PORT (IT)
-restTestClient.get()
-        .uri("/api/v1/produtos/1")
-        .accept(MediaType.APPLICATION_JSON)
-        .header("X-API-Version", "1.0")
-        .exchange()
-        .expectStatus().isOk()
-        .expectHeader().contentType(MediaType.APPLICATION_JSON)
-        .expectBody()
-        .jsonPath("$.nome").isEqualTo("Notebook")
-        .jsonPath("$.preco").isEqualTo(3499.99);
-```
-
-| | `MockMvc` | `RestTestClient` |
-|---|---|---|
-| API | Imperativa — `andExpect()` | Fluente — `expectStatus()` |
-| Assertions | Hamcrest / MockMvc matchers | AssertJ + JsonPath |
-| Suporte a Thymeleaf (`view()`, `model()`) | ✅ Nativo | ❌ Não |
-| Funciona com `@WebMvcTest` | ✅ | ✅ via `bindToMockMvc(mockMvc)` |
-| Funciona com `@SpringBootTest RANDOM_PORT` | ❌ | ✅ injetado automaticamente |
-| Disponível sem dependência extra | ✅ | ✅ (Boot 4 — `spring-boot-starter-test`) |
-| **Recomendação** | Testes SSR com view/model | REST — slice e integração |
-
----
-
-### 23.7 Configuração de Contexto de Teste
+### 20.6 Configuração de Contexto de Teste
 
 ```java
 // ─── @TestConfiguration — beans extras apenas nos testes ─────────────────────
@@ -10987,7 +9340,7 @@ class IntegracaoComEfeitos { /* ... */ }
 
 ---
 
-### 23.8 Testando Upload, CORS e SSE
+### 20.7 Testando Upload, CORS e SSE
 
 ```java
 @WebMvcTest(ArquivoController.class)
@@ -11054,40 +9407,38 @@ class EventoControllerTest {
 
 ---
 
-## 24. Tópicos Relevantes Não Cobertos Neste Documento
+
+
+## 21. Tópicos Relevantes Não Cobertos Neste Documento
 
 Assuntos relacionados ao Spring MVC ainda ausentes neste documento, ordenados por relevância prática.
 
-### 24.1 Tópicos Ausentes — Alta Relevância
+### 21.1 Tópicos Ausentes — Alta Relevância
 
-**1. HTTP Interface — `@HttpExchange`**
 Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao Feign) usando interfaces anotadas com `@GetExchange`, `@PostExchange` etc., resolvidos por `HttpServiceProxyFactory`. Direto ao território do Spring MVC e completamente ausente.
 
-**2. HATEOAS**
-`spring-hateoas`, `EntityModel<T>`, `CollectionModel<T>`, `WebMvcLinkBuilder`, representação HAL. Ausente por completo, apesar de ser parte oficial do ecossistema Spring MVC para APIs hipermídia.
 
-### 24.2 Tópicos Ausentes — Relevância Moderada
+### 21.2 Tópicos Ausentes — Relevância Moderada
 
 **3. Endpoints funcionais — `RouterFunction` / WebMvc.fn**
 Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `WebMvcConfigurer.addRouterFunctions()`. Não substitui `@Controller` no dia a dia mas é relevante para cenários de roteamento dinâmico ou bibliotecas internas.
 
-### 24.3 Tópicos Ausentes — Relevância Menor mas Notáveis
+### 21.3 Tópicos Ausentes — Relevância Menor mas Notáveis
 
 **4. `WebMvcTest` + `MockMvcRestDocumentation`** — geração de documentação a partir dos testes (Spring REST Docs)
 
 **5. Virtual Threads — seção dedicada** — mencionado em vários lugares, mas sem consolidar os impactos no MVC (thread locals, `@Async`, `SecurityContextHolder`, `TransactionSynchronizationManager`)
 
-### 24.4 Resumo por Prioridade
+### 21.4 Resumo por Prioridade
 
 | Prioridade | Tópico | Justificativa |
 |---|---|---|
-| 🔴 Alta | `@HttpExchange` | Substitui Feign no ecossistema Spring — muito usado em microserviços |
-| 🔴 Alta | HATEOAS | Parte oficial do ecossistema Spring MVC para APIs hipermídia |
 | 🟡 Média | WebMvc.fn | Nicho, mas parte oficial da stack MVC |
 | 🟢 Baixa | `MockMvcRestDocumentation` | Útil para gerar documentação a partir dos testes |
 | 🟢 Baixa | Virtual Threads | Merece consolidação dos impactos no MVC e em contexto assíncrono |
 
 ---
+
 
 ## Referências e Créditos
 
@@ -11102,7 +9453,6 @@ Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `We
 | Thymeleaf Documentation | https://www.thymeleaf.org/documentation.html |
 | Thymeleaf Layout Dialect | https://ultraq.github.io/thymeleaf-layout-dialect/ |
 | Thymeleaf + Spring Security | https://github.com/thymeleaf/thymeleaf-extras-springsecurity |
-| SpringDoc OpenAPI | https://springdoc.org/ |
 | Jakarta Bean Validation 3.0 | https://beanvalidation.org/3.0/ |
 | JTE — Java Template Engine | https://jte.gg/ |
 | JUnit 5 User Guide | https://junit.org/junit5/docs/current/user-guide/ |
@@ -11113,7 +9463,6 @@ Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `We
 
 | Especificação | URL |
 |---|---|
-| RFC 9457 — Problem Details for HTTP APIs | https://www.rfc-editor.org/rfc/rfc9457 |
 | RFC 8594 — Sunset HTTP Header | https://www.rfc-editor.org/rfc/rfc8594 |
 | Jakarta EE 10 Platform | https://jakarta.ee/specifications/platform/10/ |
 | WHATWG HTML — `data-*` attributes | https://html.spec.whatwg.org/multipage/dom.html#embedding-custom-non-visible-data-with-the-data-*-attributes |
@@ -11138,4 +9487,3 @@ Este documento foi elaborado de forma colaborativa entre:
 
 - **[Claude Sonnet 4.6](https://www.anthropic.com/claude)** (Anthropic) — modelo de linguagem utilizado para geração, estruturação e revisão do conteúdo técnico ao longo de toda a conversa.
 
-> *Documento gerado para Spring Boot 3.5 / 4.0 com Java 21+ · Spring Framework 6.x / 7.x · Thymeleaf 3.x · SpringDoc OpenAPI 2.x / 3.x*

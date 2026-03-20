@@ -1,4 +1,4 @@
-# Guia de Consultas JPA e Spring Data JPA
+# Spring Data JPA - Criação de queries e ações no banco de dados
 
 > Estratégias, padrões e boas práticas para consultas em aplicações Spring Boot com PostgreSQL.
 
@@ -505,6 +505,37 @@ public interface MatriculaRepository extends JpaRepository<Matricula, Long> {
     Optional<Matricula> findByCursoIdAndAlunoRa(Long cursoId, String ra);
 }
 ```
+
+#### Usando `_` para forçar a separação entre entidade e campo
+
+O Spring Data infere a navegação percorrendo o nome do método da esquerda para a direita e tentando casar partes do nome com campos da entidade. Isso cria ambiguidade quando um campo da entidade principal tem nome composto que coincide com a concatenação de uma associação + campo:
+
+```java
+// Entidade Matricula tem:
+//   - campo direto:  alunoNome  (String)
+//   - associação:    aluno      (Aluno), com campo nome (String)
+
+// Ambíguo: alunoNome pode ser o campo direto OU aluno.nome
+List<Matricula> findByAlunoNome(String nome);
+```
+
+O `_` força o ponto de separação, eliminando a ambiguidade:
+
+```java
+public interface MatriculaRepository extends JpaRepository<Matricula, Long> {
+
+    // Explícito: aluno → nome  (JOIN em Aluno)
+    List<Matricula> findByAluno_Nome(String nome);
+
+    // Explícito: aluno → endereco → cidade  (dois níveis de navegação)
+    List<Matricula> findByAluno_Endereco_Cidade(String cidade);
+
+    // Explícito: curso → professor → nome
+    List<Matricula> findByCurso_Professor_Nome(String nomeProfessor);
+}
+```
+
+> **Quando usar:** prefira `_` sempre que o nome da associação for um prefixo válido de campo na mesma entidade, ou quando a navegação tiver dois ou mais níveis. Em casos sem ambiguidade, o `_` é opcional mas melhora a legibilidade.
 
 ### Contagem, existência e deleção
 
