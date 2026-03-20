@@ -51,6 +51,7 @@
 
 26. [Configuração do Spring Boot para Banco de Dados](#26-configuração-do-spring-boot-para-banco-de-dados)
 27. [Configuração do PostgreSQL — Performance e Segurança](#27-configuração-do-postgresql-performance-e-segurança)
+28. [Testes de Repositório com @DataJpaTest](#28-testes-de-repositório-com-datajpatest)
 
 ---
 
@@ -7016,6 +7017,625 @@ SELECT pg_stat_statements_reset();
 | `password_encryption` | `scram-sha-256` | `scram-sha-256` |
 | `listen_addresses` | `'localhost'` | IP específico |
 | `pg_hba.conf` | `trust` / `md5` local | `scram-sha-256` + SSL |
+
+---
+
+## 28. Testes de Repositório com @DataJpaTest
+
+`@DataJpaTest` carrega apenas o slice de JPA do contexto Spring: entidades, repositories, `EntityManager` e configuração de datasource — sem controllers, services ou outros beans. Cada teste roda em transação com **rollback automático** ao final, mantendo o banco limpo entre os testes.
+
+```
+@DataJpaTest configura:
+  ✔ EntityManagerFactory + TransactionManager
+  ✔ Spring Data repositories
+  ✔ @Sql, TestEntityManager
+  ✗ @Service, @Component, @Controller (não carregados)
+  ✗ Web layer, Security, Scheduling
+```
+
+### Dependências (`pom.xml`)
+
+```xml
+<!-- Já incluído com spring-boot-starter-test -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-test</artifactId>
+    <scope>test</scope>
+</dependency>
+
+<!-- Testcontainers — para testar contra PostgreSQL real -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-testcontainers</artifactId>
+    <scope>test</scope>
+</dependency>
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+### Teste básico com H2 (in-memory)
+
+Por padrão, `@DataJpaTest` substitui o datasource configurado por um banco H2 em memória. Útil para testes rápidos de lógica simples sem dependências de PostgreSQL.
+
+```java
+@DataJpaTest
+class AlunoRepositoryTest {
+
+    @Autowired
+    private AlunoRepository repository;
+
+    @Autowired
+    private TestEntityManager em;  // alternativa ao repository para setup
+
+    @Test
+    void deveSalvarERecuperarAluno() {
+        var aluno = new Aluno("Maria Silva", "RA2024001", StatusAluno.ATIVO);
+        em.persistAndFlush(aluno);
+        em.clear(); // garante que o SELECT vem do banco, não do cache
+
+        var encontrado = repository.findByRa("RA2024001");
+
+        assertThat(encontrado).isPresent();
+        assertThat(encontrado.get().getNome()).isEqualTo("Maria Silva");
+    }
+
+    @Test
+    void deveRetornarVazioParaRaInexistente() {
+        assertThat(repository.findByRa("RA9999")).isEmpty();
+    }
+}
+```
+
+> `TestEntityManager` é um wrapper de `EntityManager` com métodos convenientes para testes: `persistAndFlush()`, `find()`, `clear()`. Prefira-o ao `EntityManager` direto nos testes.
+
+### Teste com PostgreSQL real via Testcontainers (recomendado)
+
+H2 não suporta funcionalidades do PostgreSQL (window functions, `JSONB`, `= ANY`, full-text search). Para garantir paridade com produção, use Testcontainers:
+
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE) // ← não substituir pelo H2
+@Testcontainers
+class AlunoRepositoryIntegrationTest {
+
+    @Container
+    @ServiceConnection  // Spring Boot 3.1+ — configura o datasource automaticamente
+    static PostgreSQLContainer<?> postgres =
+        new PostgreSQLContainer<>("postgres:16-alpine")
+            .withDatabaseName("testdb")
+            .withUsername("test")
+            .withPassword("test");
+
+    @Autowired
+    private AlunoRepository repository;
+
+    @Autowired
+    private TestEntityManager em;
+
+    @BeforeEach
+    void setup() {
+        var curso = new Curso("Sistemas de Informação", 3200);
+        em.persistAndFlush(curso);
+
+        em.persistAndFlush(new Aluno("Ana Costa",   "RA001", StatusAluno.ATIVO,   curso));
+        em.persistAndFlush(new Aluno("Bruno Lima",  "RA002", StatusAluno.ATIVO,   curso));
+        em.persistAndFlush(new Aluno("Carla Dias",  "RA003", StatusAluno.INATIVO, curso));
+        em.clear();
+    }
+
+    @Test
+    void deveListarAlunosAtivos() {
+        var ativos = repository.findByStatus(StatusAluno.ATIVO);
+
+        assertThat(ativos).hasSize(2)
+            .extracting(Aluno::getNome)
+            .containsExactlyInAnyOrder("Ana Costa", "Bruno Lima");
+    }
+}
+```
+
+> `@ServiceConnection` (Spring Boot 3.1+) configura automaticamente `spring.datasource.url/username/password` a partir do container. Em versões anteriores use `@DynamicPropertySource`:
+> ```java
+> @DynamicPropertySource
+> static void configureProperties(DynamicPropertyRegistry registry) {
+>     registry.add("spring.datasource.url",      postgres::getJdbcUrl);
+>     registry.add("spring.datasource.username", postgres::getUsername);
+>     registry.add("spring.datasource.password", postgres::getPassword);
+> }
+> ```
+
+### Teste de derived query
+
+```java
+@Test
+void deveBuscarPorNomeContendo() {
+    var resultado = repository.findByNomeContainingIgnoreCase("costa");
+
+    assertThat(resultado).hasSize(1);
+    assertThat(resultado.get(0).getRa()).isEqualTo("RA001");
+}
+
+@Test
+void deveVerificarExistenciaPorRa() {
+    assertThat(repository.existsByRa("RA001")).isTrue();
+    assertThat(repository.existsByRa("RA999")).isFalse();
+}
+
+@Test
+void deveContarPorStatus() {
+    assertThat(repository.countByStatus(StatusAluno.ATIVO)).isEqualTo(2);
+    assertThat(repository.countByStatus(StatusAluno.INATIVO)).isEqualTo(1);
+}
+```
+
+### Teste de `@Query` JPQL
+
+```java
+@Test
+void deveBuscarProjecaoDeNomeEStatus() {
+    List<AlunoResumo> resumos = repository.findResumoByStatus(StatusAluno.ATIVO);
+
+    assertThat(resumos).hasSize(2)
+        .extracting(AlunoResumo::getNome)
+        .doesNotContain("Carla Dias");
+}
+
+@Test
+void deveRetornarAlunosPorCurso() {
+    // getReferenceById não dispara SELECT — só usa o id como FK
+    var curso = em.find(Curso.class, cursoId);
+    List<Aluno> alunos = repository.findByCurso(curso);
+
+    assertThat(alunos).hasSize(3);
+}
+```
+
+### Teste de query nativa
+
+```java
+@Test
+void deveExecutarQueryNativaPostgreSQL() {
+    // Verifica que a query nativa executa sem erro e retorna dados coerentes
+    List<Object[]> ranking = repository.findRankingPorCurso(cursoId);
+
+    assertThat(ranking).isNotEmpty();
+    // Verificar estrutura da primeira linha
+    Object[] primeira = ranking.get(0);
+    assertThat(primeira).hasSize(3); // [ra, nome, posicao]
+}
+
+@Test
+void deveExecutarQueryComOperadorAny() {
+    // Testa funcionalidade específica do PostgreSQL
+    List<Long> ids = List.of(1L, 2L, 999L);
+    Set<Long> existentes = repository.findExistingIds(ids);
+
+    assertThat(existentes).containsExactlyInAnyOrder(1L, 2L);
+}
+```
+
+### Teste de paginação
+
+```java
+@Test
+void devePaginarResultados() {
+    var pagina = repository.findByStatus(
+        StatusAluno.ATIVO,
+        PageRequest.of(0, 1, Sort.by("nome"))
+    );
+
+    assertThat(pagina.getTotalElements()).isEqualTo(2);
+    assertThat(pagina.getTotalPages()).isEqualTo(2);
+    assertThat(pagina.getContent()).hasSize(1);
+    assertThat(pagina.getContent().get(0).getNome()).isEqualTo("Ana Costa");
+}
+
+@Test
+void deveRetornarSegundaPagina() {
+    var pagina = repository.findByStatus(
+        StatusAluno.ATIVO,
+        PageRequest.of(1, 1, Sort.by("nome"))
+    );
+
+    assertThat(pagina.getContent().get(0).getNome()).isEqualTo("Bruno Lima");
+    assertThat(pagina.isLast()).isTrue();
+}
+```
+
+### Teste de Specification
+
+```java
+@Test
+void deveFiltrarPorSpecificationComposta() {
+    Specification<Aluno> spec = AlunoSpecs.comStatus(StatusAluno.ATIVO)
+        .and(AlunoSpecs.nomeContendo("costa"));
+
+    List<Aluno> resultado = repository.findAll(spec);
+
+    assertThat(resultado).hasSize(1);
+    assertThat(resultado.get(0).getRa()).isEqualTo("RA001");
+}
+
+@Test
+void deveRetornarTodosQuandoSpecificationNula() {
+    List<Aluno> resultado = repository.findAll(Specification.where(null));
+
+    assertThat(resultado).hasSize(3);
+}
+```
+
+### Carga de dados com `@Sql`
+
+Para cenários com muitos dados de fixture, prefira arquivos SQL ao `@BeforeEach` programático:
+
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+@Testcontainers
+@Sql("/sql/alunos-fixture.sql")           // roda antes de cada teste
+@Sql(scripts = "/sql/cleanup.sql",        // roda após cada teste
+     executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
+class AlunoRepositoryFixtureTest {
+
+    @Autowired
+    private AlunoRepository repository;
+
+    @Test
+    void deveCarregarFixture() {
+        assertThat(repository.count()).isGreaterThan(0);
+    }
+}
+```
+
+```sql
+-- src/test/resources/sql/alunos-fixture.sql
+INSERT INTO cursos (id, nome, carga_horaria)
+VALUES (100, 'Engenharia de Software', 4000);
+
+INSERT INTO alunos (id, nome, ra, status, curso_id)
+VALUES (1, 'Ana Costa',  'RA001', 'ATIVO',   100),
+       (2, 'Bruno Lima', 'RA002', 'ATIVO',   100),
+       (3, 'Carla Dias', 'RA003', 'INATIVO', 100);
+```
+
+### Desabilitar rollback para inspecionar o estado
+
+Por padrão, cada teste faz rollback ao final. Para inspecionar o banco após o teste (debug), use `@Rollback(false)` — mas nunca em CI:
+
+```java
+@Test
+@Rollback(false)   // ← dados persistem no banco após o teste
+@Commit            // equivalente a @Rollback(false)
+void debugPersistencia() {
+    var aluno = repository.save(new Aluno("Debug", "RA999", StatusAluno.ATIVO));
+    // estado visível em ferramentas como DBeaver enquanto o teste roda
+    System.out.println("ID gerado: " + aluno.getId());
+}
+```
+
+### Configuração de properties para testes (`application-test.yml`)
+
+```yaml
+# src/test/resources/application-test.yml
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+        generate_statistics: false
+        # Garantir que o schema bate com as entidades
+        hbm2ddl.auto: validate   # ou create-drop para testes isolados
+  flyway:
+    enabled: true   # rodar migrations no container PostgreSQL
+```
+
+Ative o profile de teste na classe ou via `@ActiveProfiles`:
+
+```java
+@DataJpaTest
+@ActiveProfiles("test")
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+@Testcontainers
+class AlunoRepositoryTest { /* ... */ }
+```
+
+### Compartilhar o container entre testes (performance)
+
+Subir um container PostgreSQL por classe de teste é lento. Para compartilhá-lo entre todas as classes do módulo, use um companion object estático com `@Container` em uma classe base:
+
+```java
+// src/test/java/com/exemplo/BaseRepositoryTest.java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+@Testcontainers
+public abstract class BaseRepositoryTest {
+
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres =
+        new PostgreSQLContainer<>("postgres:16-alpine")
+            .withReuse(true);  // ← reutiliza o container entre reinicializações da JVM
+}
+
+// Cada teste herda o container
+class AlunoRepositoryTest extends BaseRepositoryTest {
+    @Autowired AlunoRepository repository;
+    // ...
+}
+
+class MatriculaRepositoryTest extends BaseRepositoryTest {
+    @Autowired MatriculaRepository repository;
+    // ...
+}
+```
+
+> `withReuse(true)` requer `testcontainers.reuse.enable=true` em `~/.testcontainers.properties`. Em CI, omita para garantir isolamento.
+
+### Testes com usuário logado (Spring Security)
+
+`@DataJpaTest` não carrega Spring Security por padrão. Para testar queries e repositories que dependem do principal autenticado — SpEL com `?#{principal}`, `@PreAuthorize`, `@PostFilter`, filtros por tenant — é preciso popular o `SecurityContext` manualmente ou via anotações do `spring-security-test`.
+
+#### Dependência adicional
+
+```xml
+<dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-test</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+#### Abordagem 1 — `SecurityContextHolder` manual (sem dependência de config)
+
+A forma mais direta: constrói um `Authentication` e o coloca no contexto antes do teste. Não requer nenhum bean de segurança carregado.
+
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+@Testcontainers
+class MatriculaRepositorySecurityTest extends BaseRepositoryTest {
+
+    @Autowired
+    private MatriculaRepository repository;
+
+    @Autowired
+    private TestEntityManager em;
+
+    @AfterEach
+    void limparSecurityContext() {
+        SecurityContextHolder.clearContext();  // ← obrigatório para não vazar entre testes
+    }
+
+    private void loginComo(String username, String... roles) {
+        var authorities = Arrays.stream(roles)
+            .map(SimpleGrantedAuthority::new)
+            .toList();
+        var auth = new UsernamePasswordAuthenticationToken(username, null, authorities);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+    }
+
+    @Test
+    void deveRetornarSomenteMatriculasDoAlunoLogado() {
+        // setup: dois alunos com matrículas
+        var ana   = em.persistAndFlush(new Aluno("Ana Costa",  "RA001", StatusAluno.ATIVO));
+        var bruno = em.persistAndFlush(new Aluno("Bruno Lima", "RA002", StatusAluno.ATIVO));
+        var curso = em.persistAndFlush(new Curso("SI", 3200));
+        em.persistAndFlush(new Matricula(ana,   curso));
+        em.persistAndFlush(new Matricula(bruno, curso));
+        em.clear();
+
+        loginComo("RA001", "ROLE_ALUNO");   // ← simula aluno logado
+
+        // query usa SpEL: WHERE a.ra = ?#{principal}
+        var minhas = repository.findMinhasMatriculas();
+
+        assertThat(minhas).hasSize(1);
+        assertThat(minhas.get(0).getAluno().getRa()).isEqualTo("RA001");
+    }
+}
+```
+
+O repository usa SpEL para filtrar pelo principal:
+
+```java
+// MatriculaRepository
+@Query("SELECT m FROM Matricula m JOIN m.aluno a WHERE a.ra = ?#{principal}")
+List<Matricula> findMinhasMatriculas();
+```
+
+> Para que o SpEL `?#{principal}` funcione no `@DataJpaTest`, é preciso carregar o `SecurityEvaluationContextExtension`. Adicione via `@Import`:
+>
+> ```java
+> @DataJpaTest
+> @Import(SecurityEvaluationContextExtension.class)   // ← habilita SpEL de security em queries
+> class MatriculaRepositorySecurityTest { /* ... */ }
+> ```
+
+#### Abordagem 2 — `@WithMockUser` (declarativa)
+
+Para repositories que usam `@PreAuthorize` ou `@PostFilter`, `@WithMockUser` é mais expressivo. Requer `@Import` do `MethodSecurityConfig` da aplicação.
+
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+@Testcontainers
+@Import({
+    SecurityEvaluationContextExtension.class,
+    MethodSecurityConfig.class        // sua classe com @EnableMethodSecurity
+})
+class AlunoRepositoryPreAuthorizeTest extends BaseRepositoryTest {
+
+    @Autowired
+    private AlunoRepository repository;
+
+    @Autowired
+    private TestEntityManager em;
+
+    @BeforeEach
+    void setup() {
+        em.persistAndFlush(new Aluno("Ana Costa",  "RA001", StatusAluno.ATIVO));
+        em.persistAndFlush(new Aluno("Bruno Lima", "RA002", StatusAluno.ATIVO));
+        em.clear();
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void adminDeveListarTodosOsAlunos() {
+        // @PreAuthorize("hasRole('ADMIN')") no repository
+        List<Aluno> todos = repository.findAllAtivos();
+
+        assertThat(todos).hasSize(2);
+    }
+
+    @Test
+    @WithMockUser(roles = "ALUNO")
+    void alunoNaoDeveAcessarListagemGeral() {
+        assertThatThrownBy(() -> repository.findAllAtivos())
+            .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @WithMockUser(username = "RA001", roles = "ALUNO")
+    void alunoDeveVerSomenteSeusPropriosDados() {
+        // @PostFilter("filterObject.ra == authentication.name") no repository
+        List<Aluno> resultado = repository.findAlunosPorStatus(StatusAluno.ATIVO);
+
+        assertThat(resultado).hasSize(1);
+        assertThat(resultado.get(0).getRa()).isEqualTo("RA001");
+    }
+}
+```
+
+#### Abordagem 3 — `@WithUserDetails` com `UserDetailsService` customizado
+
+Quando o `principal` não é uma `String` mas um objeto de domínio (`UsuarioAutenticado`, `CustomUserDetails`), use `@WithUserDetails` apontando para um `UserDetailsService` de teste.
+
+```java
+// Bean de test: retorna um UsuarioAutenticado com dados completos
+@TestConfiguration
+class SecurityTestConfig {
+
+    @Bean
+    UserDetailsService userDetailsService() {
+        return username -> switch (username) {
+            case "RA001" -> new UsuarioAutenticado(1L, "RA001", "senha",
+                                List.of(new SimpleGrantedAuthority("ROLE_ALUNO")));
+            case "admin" -> new UsuarioAutenticado(99L, "admin", "senha",
+                                List.of(new SimpleGrantedAuthority("ROLE_ADMIN")));
+            default -> throw new UsernameNotFoundException(username);
+        };
+    }
+}
+```
+
+```java
+@DataJpaTest
+@AutoConfigureTestDatabase(replace = Replace.NONE)
+@Testcontainers
+@Import({SecurityEvaluationContextExtension.class, SecurityTestConfig.class})
+class MatriculaComPrincipalObjetoTest extends BaseRepositoryTest {
+
+    @Autowired
+    private MatriculaRepository repository;
+
+    @Test
+    @WithUserDetails("RA001")                  // ← usa o UserDetailsService do SecurityTestConfig
+    void deveUsarIdDoPrincipalNaQuery() {
+        // query usa ?#{principal.id} (campo do UsuarioAutenticado, não só username)
+        List<Matricula> matriculas = repository.findByAlunoId();
+
+        assertThat(matriculas).allSatisfy(m ->
+            assertThat(m.getAluno().getId()).isEqualTo(1L)
+        );
+    }
+}
+```
+
+O repository aproveita o `id` do objeto principal:
+
+```java
+// ?#{principal.id} acessa o campo id do UsuarioAutenticado
+@Query("SELECT m FROM Matricula m WHERE m.aluno.id = ?#{principal.id}")
+List<Matricula> findByAlunoId();
+```
+
+#### Abordagem 4 — Anotação customizada `@WithAluno`
+
+Para reutilizar a mesma configuração de usuário em muitos testes, crie uma anotação própria que implementa `WithSecurityContextFactory`:
+
+```java
+// Anotação de teste
+@Retention(RetentionPolicy.RUNTIME)
+@WithSecurityContext(factory = WithAlunoSecurityContextFactory.class)
+public @interface WithAluno {
+    String ra() default "RA001";
+    long id()   default 1L;
+}
+
+// Factory que monta o SecurityContext
+public class WithAlunoSecurityContextFactory
+        implements WithSecurityContextFactory<WithAluno> {
+
+    @Override
+    public SecurityContext createSecurityContext(WithAluno annotation) {
+        var principal = new UsuarioAutenticado(
+            annotation.id(), annotation.ra(), "senha",
+            List.of(new SimpleGrantedAuthority("ROLE_ALUNO"))
+        );
+        var auth = new UsernamePasswordAuthenticationToken(
+            principal, null, principal.getAuthorities()
+        );
+        var context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(auth);
+        return context;
+    }
+}
+```
+
+```java
+// Uso — limpo e declarativo
+@Test
+@WithAluno(ra = "RA001", id = 1L)
+void deveListarMatriculasDaAna() {
+    var matriculas = repository.findMinhasMatriculas();
+    assertThat(matriculas).hasSize(1);
+}
+
+@Test
+@WithAluno(ra = "RA002", id = 2L)
+void deveListarMatriculasDoBruno() {
+    var matriculas = repository.findMinhasMatriculas();
+    assertThat(matriculas).hasSize(1);
+}
+```
+
+#### Resumo das abordagens
+
+| Abordagem | Quando usar | Principal disponível |
+|---|---|---|
+| `SecurityContextHolder` manual | Queries com SpEL simples; sem config de security | `String` ou objeto customizado |
+| `@WithMockUser` | `@PreAuthorize` / `@PostFilter`; principal é `String` | `String` (username) |
+| `@WithUserDetails` | Principal é objeto de domínio; `UserDetailsService` disponível | Objeto completo |
+| `@WithAluno` (customizado) | Muitos testes com o mesmo tipo de usuário | Objeto completo, reutilizável |
+
+### Armadilhas comuns
+
+| Problema | Causa | Solução |
+|---|---|---|
+| `NoSuchBeanDefinitionException` para `@Service` | `@DataJpaTest` não carrega a camada de serviço | Use `@SpringBootTest` ou adicione o bean com `@Import` |
+| Query nativa falha no H2 | H2 não suporta sintaxe PostgreSQL | Use `@AutoConfigureTestDatabase(replace = NONE)` + Testcontainers |
+| `LazyInitializationException` no teste | Acesso a coleção lazy fora de transação | Chame `em.clear()` antes do assert, ou use `JOIN FETCH` na query |
+| Teste passa isolado mas falha em sequência | Estado vazando entre testes | Verifique se todos os testes usam rollback (padrão) ou `@Sql` de cleanup |
+| `@Rollback(false)` em CI | Dados sujos afetam testes seguintes | Nunca use `@Rollback(false)` em CI; só para debug local |
+| Flyway / Liquibase executam no teste | Migrations incompatíveis com `create-drop` | Desabilite com `spring.flyway.enabled=false` ou use `create-drop` só em H2 |
+| Container lento a subir | Testcontainers sobe por classe | Use `BaseRepositoryTest` com container estático compartilhado |
+| SpEL `?#{principal}` não resolvido | `SecurityEvaluationContextExtension` não carregado | Adicione `@Import(SecurityEvaluationContextExtension.class)` |
+| `SecurityContext` vaza entre testes | `SecurityContextHolder` não limpo | Adicione `@AfterEach void limpar() { SecurityContextHolder.clearContext(); }` |
+| `@WithMockUser` sem efeito em `@DataJpaTest` | `MethodSecurity` não carregado | Adicione `@Import(MethodSecurityConfig.class)` na classe de teste |
 
 ---
 

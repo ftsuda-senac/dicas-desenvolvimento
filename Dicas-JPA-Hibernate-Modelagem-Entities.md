@@ -2400,6 +2400,205 @@ public class Pagamento extends BaseEntity {
 | `insertable=true, updatable=false` | Sim | Não | Valor imutável (data de criação, valor original) |
 | `insertable=false, updatable=true` | Não | Sim | Campo preenchido pelo banco, editável depois |
 
+### Campo JSONB reconhecido pelo PostgreSQL
+
+O PostgreSQL possui o tipo nativo `JSONB` (JSON binário indexável), que é diferente de `TEXT` ou `JSON` simples. Existem duas abordagens para mapear esse tipo com Hibernate 6+.
+
+#### Abordagem 1 — @JdbcTypeCode(SqlTypes.JSON) (recomendada)
+
+Hibernate 6 tem suporte nativo a JSON. Use `@JdbcTypeCode(SqlTypes.JSON)` combinado com `columnDefinition = "JSONB"` para que o PostgreSQL reconheça o tipo corretamente:
+
+```java
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+@Entity
+@Table(name = "produtos")
+public class Produto extends BaseEntity {
+
+    @Column(nullable = false, length = 200)
+    private String nome;
+
+    // Map<String, Object> — JSON livre
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSONB")
+    private Map<String, Object> atributos;
+
+    // Record tipado — Hibernate serializa/desserializa via Jackson
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSONB")
+    private Dimensoes dimensoes;
+
+    // Java record mapeado como JSONB
+    public record Dimensoes(
+        double largura,
+        double altura,
+        double profundidade,
+        String unidade
+    ) {}
+}
+```
+
+Dependência necessária (Jackson é usado internamente pelo Hibernate para JSON):
+
+```xml
+<!-- pom.xml — já incluso pelo Spring Boot starter -->
+<dependency>
+    <groupId>com.fasterxml.jackson.core</groupId>
+    <artifactId>jackson-databind</artifactId>
+</dependency>
+```
+
+Uso no repositório e consultas JSONB:
+
+```java
+// Salvar
+var produto = new Produto();
+produto.setNome("Mesa Gamer");
+produto.setAtributos(Map.of("cor", "preta", "material", "MDF", "peso_kg", 25));
+produto.setDimensoes(new Produto.Dimensoes(120, 75, 60, "cm"));
+repository.save(produto);
+
+// Buscar — Hibernate desserializa automaticamente para Map / Record
+Produto p = repository.findById(id).orElseThrow();
+String cor = (String) p.getAtributos().get("cor"); // "preta"
+double altura = p.getDimensoes().altura();          // 75.0
+```
+
+Consultas nativas com operadores JSONB do PostgreSQL:
+
+```java
+public interface ProdutoRepository extends JpaRepository<Produto, Long> {
+
+    // Extrai valor de campo JSONB como texto (->>)
+    @Query(value = """
+        SELECT p.* FROM produtos p
+        WHERE p.atributos->>'cor' = :cor
+        """, nativeQuery = true)
+    List<Produto> findByCor(@Param("cor") String cor);
+
+    // Verifica se JSONB contém subconjunto (@>)
+    @Query(value = """
+        SELECT p.* FROM produtos p
+        WHERE p.atributos @> CAST(:filtro AS JSONB)
+        """, nativeQuery = true)
+    List<Produto> findByAtributos(@Param("filtro") String filtroJson);
+
+    // Uso:
+    // repository.findByAtributos("{\"material\": \"MDF\"}");
+}
+```
+
+Migration Flyway para criar o índice GIN (permite buscas eficientes em JSONB):
+
+```sql
+-- V3__index_jsonb_atributos.sql
+CREATE INDEX idx_produtos_atributos_gin
+    ON produtos USING GIN (atributos);
+
+-- Índice em campo específico do JSON (mais seletivo)
+CREATE INDEX idx_produtos_cor
+    ON produtos ((atributos->>'cor'));
+```
+
+#### Abordagem 2 — AttributeConverter genérico (compatível com qualquer banco)
+
+Quando é necessário suporte a múltiplos bancos ou controle total da serialização:
+
+```java
+// Converter genérico reutilizável
+public abstract class JsonbConverter<T> implements AttributeConverter<T, String> {
+
+    private final Class<T> tipo;
+    private final ObjectMapper mapper = new ObjectMapper();
+
+    protected JsonbConverter(Class<T> tipo) {
+        this.tipo = tipo;
+    }
+
+    @Override
+    public String convertToDatabaseColumn(T objeto) {
+        if (objeto == null) return null;
+        try {
+            return mapper.writeValueAsString(objeto);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Erro ao serializar JSONB", e);
+        }
+    }
+
+    @Override
+    public T convertToEntityAttribute(String json) {
+        if (json == null) return null;
+        try {
+            return mapper.readValue(json, tipo);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Erro ao desserializar JSONB", e);
+        }
+    }
+}
+
+// Converter concreto por tipo
+@Converter
+public class DimensoesConverter extends JsonbConverter<Produto.Dimensoes> {
+    public DimensoesConverter() {
+        super(Produto.Dimensoes.class);
+    }
+}
+
+// Para Map<String, Object> — usando TypeReference
+@Converter
+public class MapStringObjectConverter implements AttributeConverter<Map<String, Object>, String> {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final TypeReference<Map<String, Object>> TYPE_REF = new TypeReference<>() {};
+
+    @Override
+    public String convertToDatabaseColumn(Map<String, Object> map) {
+        if (map == null) return null;
+        try { return MAPPER.writeValueAsString(map); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException(e); }
+    }
+
+    @Override
+    public Map<String, Object> convertToEntityAttribute(String json) {
+        if (json == null) return null;
+        try { return MAPPER.readValue(json, TYPE_REF); }
+        catch (JsonProcessingException e) { throw new IllegalArgumentException(e); }
+    }
+}
+```
+
+Uso na entidade com `AttributeConverter`:
+
+```java
+@Entity
+public class Produto extends BaseEntity {
+
+    @Convert(converter = MapStringObjectConverter.class)
+    @Column(columnDefinition = "JSONB")   // ou "TEXT" para outros bancos
+    private Map<String, Object> atributos;
+
+    @Convert(converter = DimensoesConverter.class)
+    @Column(columnDefinition = "JSONB")
+    private Produto.Dimensoes dimensoes;
+}
+```
+
+#### Comparação entre as abordagens
+
+| Critério | `@JdbcTypeCode(SqlTypes.JSON)` | `AttributeConverter` |
+|---|---|---|
+| Suporte nativo Hibernate 6+ | Sim | Não (padrão JPA) |
+| Compatibilidade multi-banco | Depende do driver | Sim — qualquer banco |
+| Configuração | Mínima | Mais verbosa (uma classe por tipo) |
+| Tipos complexos aninhados | Sim (Jackson cuida) | Sim (Jackson cuida) |
+| Consultas JPQL no campo JSON | Não (nativo apenas) | Não (nativo apenas) |
+| Recomendação | Projetos novos com PostgreSQL | Projetos multi-banco ou JPA < 6 |
+
+> **Configuração extra para PostgreSQL**: com `@JdbcTypeCode`, certifique-se de que o driver `postgresql` está na versão 42.6+ e que não há conflito com o Hibernate Dialect. O `columnDefinition = "JSONB"` é necessário para que o DDL gerado use o tipo correto — sem ele, Hibernate gera `TEXT`.
+
+---
+
 #### Referência completa dos atributos de @Column
 
 | Atributo | Tipo | Default | Efeito |
@@ -3246,6 +3445,143 @@ O `@ColumnDefault` é preferível porque não acopla a definição de tipo com o
 
 **Regra prática:** use `@ColumnDefault` quando o valor default é relevante para o banco (outros clientes SQL, migrações de dados, consistência). Use inicialização em Java quando o default é puramente lógica da aplicação.
 
+### UUID gerado pelo banco (PostgreSQL)
+
+Há três estratégias para mapear um campo UUID, dependendo de quem é responsável pela geração:
+
+#### Estratégia 1 — Hibernate gera o UUID (padrão JPA)
+
+A forma mais simples: Hibernate gera um UUID v4 (aleatório) em memória antes do INSERT.
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    // Hibernate gera UUID antes de persistir — sem depender do banco
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(updatable = false, nullable = false)
+    private UUID id;
+
+    // Ou: UUID como chave alternativa (além do id Long)
+    @Column(unique = true, updatable = false, nullable = false,
+            columnDefinition = "UUID DEFAULT gen_random_uuid()")
+    @UuidGenerator                  // Hibernate 6.2+ — equivalente a @GeneratedValue(UUID)
+    private UUID codigoPublico;
+}
+```
+
+#### Estratégia 2 — UUIDv7 gerado pelo Hibernate (ordenável no tempo)
+
+UUID v7 é baseado em timestamp — é ordenável e mais eficiente como chave de índice B-tree do que UUID v4 aleatório:
+
+```java
+import org.hibernate.annotations.UuidGenerator;
+import org.hibernate.annotations.UuidGenerator.Style;
+
+@Entity
+public class Evento extends BaseEntity {
+
+    @Id
+    @UuidGenerator(style = Style.TIME_BASED_EPOCH)  // UUID v7
+    @Column(updatable = false, nullable = false)
+    private UUID id;
+}
+```
+
+> UUID v7 exige Hibernate 6.2+. É preferível a UUID v4 como `@Id` porque mantém localidade de escrita no índice, reduzindo fragmentação no PostgreSQL.
+
+#### Estratégia 3 — UUID gerado pelo PostgreSQL (recomendada para campo extra)
+
+Quando o UUID não é a PK (que já usa `IDENTITY`), mas um campo público de identificação gerado pelo banco:
+
+```java
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
+
+@Entity
+@Table(name = "contratos")
+public class Contrato extends BaseEntity {
+
+    // PK numérica normal
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    // UUID gerado pelo PostgreSQL via gen_random_uuid()
+    @Generated(EventType.INSERT)            // Hibernate relê o valor após INSERT
+    @ColumnDefault("gen_random_uuid()")     // Define DEFAULT no DDL
+    @Column(
+        unique      = true,
+        updatable   = false,
+        nullable    = false,
+        columnDefinition = "UUID DEFAULT gen_random_uuid()"
+    )
+    private UUID codigoPublico;
+
+    // Demais campos...
+}
+```
+
+`@Generated(EventType.INSERT)` instrui o Hibernate a fazer um `SELECT` após o `INSERT` para recuperar o UUID gerado pelo banco. Sem essa anotação, `codigoPublico` permaneceria `null` até o próximo `findById`.
+
+DDL equivalente (gerado pelo Hibernate ou criado via Flyway):
+
+```sql
+CREATE TABLE contratos (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    codigo_publico  UUID NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+    -- ...
+);
+
+CREATE UNIQUE INDEX idx_contratos_codigo_publico ON contratos (codigo_publico);
+```
+
+Uso no serviço — o UUID está disponível imediatamente após o save:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class ContratoService {
+
+    private final ContratoRepository repository;
+
+    public ContratoResponseDTO criar(ContratoRequestDTO dto) {
+        var contrato = new Contrato();
+        contrato.setTitulo(dto.titulo());
+        // NÃO seta codigoPublico — banco gera automaticamente
+
+        Contrato salvo = repository.save(contrato);
+        // salvo.getCodigoPublico() já tem o UUID gerado pelo banco!
+        return new ContratoResponseDTO(salvo.getId(), salvo.getCodigoPublico());
+    }
+
+    public ContratoResponseDTO buscarPorCodigoPublico(UUID codigo) {
+        return repository.findByCodigoPublico(codigo)
+            .map(c -> new ContratoResponseDTO(c.getId(), c.getCodigoPublico()))
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+    }
+}
+```
+
+Método no repositório para buscar por UUID público:
+
+```java
+public interface ContratoRepository extends JpaRepository<Contrato, Long> {
+    Optional<Contrato> findByCodigoPublico(UUID codigoPublico);
+}
+```
+
+#### Comparação das estratégias de UUID
+
+| Estratégia | Quem gera | Quando disponível | Uso típico |
+|---|---|---|---|
+| `GenerationType.UUID` | Hibernate (v4) | Antes do INSERT | PK UUID simples |
+| `@UuidGenerator(TIME_BASED_EPOCH)` | Hibernate (v7) | Antes do INSERT | PK UUID com ordenação temporal |
+| `@Generated(INSERT)` + `@ColumnDefault` | PostgreSQL | Após o INSERT (SELECT automático) | Campo público não-PK, UUID gerado centralmente |
+
+> **Boas práticas**: exponha apenas o UUID público nas APIs REST (nunca o `id` numérico interno). O `id` Long é mais eficiente para JOINs internos; o UUID é opaco para o cliente externo, dificultando enumeração de recursos.
+
 ---
 
 ## Parte 6 — Timestamps e Tipos Temporais
@@ -3959,14 +4295,303 @@ public class Produto {
 }
 ```
 
-### @Filter — filtro dinâmico para multi-tenancy
+### @Filter / @FilterDef — filtro dinâmico para multi-tenancy
+
+`@Filter` aplica uma cláusula `WHERE` condicional a todas as queries JPQL e Criteria que envolvem a entidade anotada. Ao contrário de `@SQLRestriction` (que é sempre ativo), o `@Filter` precisa ser **ativado explicitamente** na sessão — o que o torna ideal para multi-tenancy por discriminador de linha (*row-level*), onde o isolamento deve ser configurado por requisição.
+
+#### Declaração na entidade
+
+`@FilterDef` define o contrato do filtro (nome, parâmetros e tipo). `@Filter` aplica o filtro à entidade com a condição SQL.
 
 ```java
 @Entity
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = Long.class))
-@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
-public class Documento { }
+@Table(name = "documentos")
+@FilterDef(
+    name    = "tenantFilter",
+    defaultCondition = "tenant_id = :tenantId",    // pode ser sobrescrita pelo @Filter
+    parameters = @ParamDef(name = "tenantId", type = Long.class)
+)
+@Filter(name = "tenantFilter")   // usa defaultCondition do @FilterDef
+public class Documento {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "tenant_id", nullable = false, updatable = false)
+    private Long tenantId;
+
+    @Column(nullable = false)
+    private String titulo;
+}
 ```
+
+Para condição diferente por entidade (ex.: coluna com nome distinto):
+
+```java
+@Entity
+@FilterDef(
+    name = "tenantFilter",
+    parameters = @ParamDef(name = "tenantId", type = Long.class)
+)
+@Filter(name = "tenantFilter", condition = "empresa_id = :tenantId")
+public class Contrato { }
+```
+
+> `@FilterDef` pode ser declarada em qualquer classe anotada com `@Entity` ou em um `package-info.java` do pacote — útil quando o filtro é compartilhado por muitas entidades:
+> ```java
+> // com/exemplo/entity/package-info.java
+> @FilterDef(
+>     name = "tenantFilter",
+>     parameters = @ParamDef(name = "tenantId", type = Long.class)
+> )
+> package com.exemplo.entity;
+> ```
+
+#### Aplicar o filtro em coleções `@OneToMany` / `@ManyToMany`
+
+O `@Filter` na entidade filha **não** se propaga automaticamente quando a coleção é carregada via join. Para filtrar a coleção também, anote-a:
+
+```java
+@Entity
+public class Empresa {
+
+    @OneToMany(mappedBy = "empresa", fetch = FetchType.LAZY)
+    @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
+    private List<Documento> documentos;
+}
+```
+
+#### Ativar o filtro manualmente na sessão
+
+O filtro é **inativo por padrão** em cada sessão Hibernate. Deve ser ativado via `Session` (API nativa do Hibernate):
+
+```java
+@Service
+@Transactional(readOnly = true)
+public class DocumentoService {
+
+    @PersistenceContext
+    private EntityManager em;
+
+    public List<Documento> listar(Long tenantId) {
+        // Obtém a Session Hibernate subjacente
+        Session session = em.unwrap(Session.class);
+
+        // Ativa e parametriza o filtro para esta sessão
+        session.enableFilter("tenantFilter")
+               .setParameter("tenantId", tenantId);
+
+        return em.createQuery("SELECT d FROM Documento d", Documento.class)
+                 .getResultList();
+        // SQL gerado: SELECT ... FROM documentos WHERE tenant_id = ?
+    }
+}
+```
+
+#### Ativação automática por requisição — 3 abordagens
+
+Ativar manualmente em cada método de serviço é repetitivo e propenso a esquecimentos. O padrão recomendado é ativar o filtro centralmente, uma vez por requisição.
+
+##### Abordagem 1 — `HandlerInterceptor` (Spring MVC)
+
+Intercepta cada requisição HTTP antes dos controllers, ativa o filtro com o `tenantId` extraído do `SecurityContext` ou header, e desativa ao final.
+
+```java
+@Component
+@RequiredArgsConstructor
+public class TenantFilterInterceptor implements HandlerInterceptor {
+
+    private final EntityManager em;
+
+    @Override
+    public boolean preHandle(HttpServletRequest request,
+                             HttpServletResponse response,
+                             Object handler) {
+
+        Long tenantId = resolverTenantId();   // ver implementação abaixo
+        if (tenantId != null) {
+            em.unwrap(Session.class)
+              .enableFilter("tenantFilter")
+              .setParameter("tenantId", tenantId);
+        }
+        return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request,
+                                HttpServletResponse response,
+                                Object handler, Exception ex) {
+        em.unwrap(Session.class)
+          .disableFilter("tenantFilter");
+    }
+}
+```
+
+Registro do interceptor:
+
+```java
+@Configuration
+@RequiredArgsConstructor
+public class WebConfig implements WebMvcConfigurer {
+
+    private final TenantFilterInterceptor tenantFilterInterceptor;
+
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(tenantFilterInterceptor)
+                .addPathPatterns("/api/**")
+                .excludePathPatterns("/api/auth/**", "/actuator/**");
+    }
+}
+```
+
+##### Abordagem 2 — `@Aspect` (AOP sobre `@Transactional`)
+
+Útil quando o filtro deve ser ativado para qualquer método transacional, independente de caminho HTTP (jobs agendados, consumers de mensagens, etc.).
+
+```java
+@Aspect
+@Component
+@RequiredArgsConstructor
+public class TenantFilterAspect {
+
+    private final EntityManager em;
+
+    @Around("@annotation(org.springframework.transaction.annotation.Transactional)")
+    public Object aplicarFiltroTenant(ProceedingJoinPoint pjp) throws Throwable {
+        Long tenantId = resolverTenantId();
+
+        Session session = em.unwrap(Session.class);
+        if (tenantId != null) {
+            session.enableFilter("tenantFilter")
+                   .setParameter("tenantId", tenantId);
+        }
+        try {
+            return pjp.proceed();
+        } finally {
+            session.disableFilter("tenantFilter");
+        }
+    }
+}
+```
+
+##### Abordagem 3 — Bean `@RequestScope` + injeção no `EntityManagerFactory`
+
+Para aplicações que precisam de controle mais granular (múltiplos datasources, tenant resolvido de forma assíncrona), um bean com escopo de requisição armazena o contexto de tenant e os serviços o consultam antes de executar queries.
+
+```java
+@Component
+@RequestScope
+public class TenantContext {
+
+    private Long tenantId;
+
+    public void set(Long tenantId)  { this.tenantId = tenantId; }
+    public Long get()               { return tenantId; }
+    public boolean isPresente()     { return tenantId != null; }
+}
+```
+
+```java
+@Service
+@RequiredArgsConstructor
+public class DocumentoService {
+
+    private final EntityManager em;
+    private final TenantContext tenantContext;
+
+    @Transactional(readOnly = true)
+    public List<Documento> listar() {
+        if (tenantContext.isPresente()) {
+            em.unwrap(Session.class)
+              .enableFilter("tenantFilter")
+              .setParameter("tenantId", tenantContext.get());
+        }
+        return em.createQuery("SELECT d FROM Documento d", Documento.class)
+                 .getResultList();
+    }
+}
+```
+
+#### Resolver o `tenantId` do contexto de segurança
+
+As três abordagens acima chamam `resolverTenantId()`. Implementações comuns:
+
+```java
+// A partir do Spring Security (usuário logado com campo tenantId)
+private Long resolverTenantId() {
+    return Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+        .filter(Authentication::isAuthenticated)
+        .map(Authentication::getPrincipal)
+        .filter(p -> p instanceof UsuarioAutenticado)
+        .map(p -> ((UsuarioAutenticado) p).getTenantId())
+        .orElse(null);
+}
+
+// A partir de um header HTTP (ex.: X-Tenant-ID)
+private Long resolverTenantId(HttpServletRequest request) {
+    String header = request.getHeader("X-Tenant-ID");
+    return header != null ? Long.parseLong(header) : null;
+}
+
+// A partir de subdomínio (ex.: empresa1.app.com → tenant 1)
+private Long resolverTenantId(HttpServletRequest request) {
+    String host = request.getServerName();             // "empresa1.app.com"
+    String subdominio = host.split("\\.")[0];          // "empresa1"
+    return tenantRepository.findIdBySubdominio(subdominio);
+}
+```
+
+#### Múltiplos filtros combinados
+
+`@Filter` e `@SQLRestriction` podem coexistir na mesma entidade. O Hibernate combina ambos com `AND`:
+
+```java
+@Entity
+@SQLRestriction("deletado_em IS NULL")          // sempre ativo (soft delete)
+@FilterDef(
+    name = "tenantFilter",
+    parameters = @ParamDef(name = "tenantId", type = Long.class)
+)
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")  // ativado por requisição
+public class Documento { }
+
+// SQL gerado quando tenantFilter está ativo:
+// SELECT ... FROM documentos WHERE deletado_em IS NULL AND tenant_id = ?
+```
+
+#### Fluxo completo de uma requisição
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant I as TenantInterceptor
+    participant S as DocumentoService
+    participant H as Hibernate Session
+    participant DB as Banco
+
+    C->>I: GET /api/documentos (token JWT)
+    I->>I: resolverTenantId() → 42
+    I->>H: enableFilter("tenantFilter").setParameter(42)
+    I->>S: preHandle OK → chama controller
+    S->>H: createQuery("SELECT d FROM Documento d")
+    H->>DB: SELECT * FROM documentos<br/>WHERE deletado_em IS NULL<br/>AND tenant_id = 42
+    DB->>S: resultado filtrado
+    S->>C: 200 OK [documentos do tenant 42]
+    I->>H: afterCompletion → disableFilter("tenantFilter")
+```
+
+#### Limitações e cuidados
+
+| Aspecto | Comportamento |
+|---|---|
+| Queries nativas (`nativeQuery = true`) | **Não** aplica o filtro — adicionar `AND tenant_id = :tenantId` manualmente |
+| Bulk `UPDATE` / `DELETE` via `@Modifying` | **Não** aplica o filtro — adicionar condição na query |
+| `findById` / `getReferenceById` | Aplica o filtro — retorna `null`/erro se o id pertencer a outro tenant |
+| `@SQLRestriction` | Coexiste e combina com `AND` |
+| Thread-safety | `Session` é single-thread; o filtro é por sessão, não global — seguro |
+| Escopo do filtro | Válido apenas enquanto a `Session` estiver aberta — desativar em `finally` |
 
 ### @NaturalId — cache e lookup por chave natural
 
@@ -4275,10 +4900,221 @@ public class DeletedAtConverter implements AttributeConverter<Boolean, OffsetDat
 }
 ```
 
-### Unique constraints com soft delete — partial index
+### Unique constraints com soft delete
+
+#### O problema
+
+Um campo com `UNIQUE` convencional impede que o mesmo e-mail seja reutilizado após uma deleção lógica — mesmo que o registro anterior esteja "deletado":
+
+```
+alunos
+┌────┬─────────────────────┬────────────┬──────────────────────────┐
+│ id │ email               │ deleted    │ deletado_em              │
+├────┼─────────────────────┼────────────┼──────────────────────────┤
+│  1 │ ana@email.com       │ true       │ 2024-03-01 10:00:00-03   │  ← deletado
+│  2 │ ana@email.com       │ false      │ null                     │  ← ERRO: violação de unique!
+└────┴─────────────────────┴────────────┴──────────────────────────┘
+```
+
+`@Column(unique = true)` e `@UniqueConstraint` geram constraints que se aplicam a **todas** as linhas, inclusive as deletadas. Nenhuma das anotações JPA padrão suporta cláusula `WHERE` condicional.
+
+#### Estratégia 1 — Partial index (recomendada)
+
+Cria um índice único que se aplica somente aos registros ativos. Registros deletados ficam fora do índice e podem repetir o valor.
+
+**Para coluna booleana (`deleted`):**
 
 ```sql
-CREATE UNIQUE INDEX uq_aluno_ra_ativo ON aluno (ra) WHERE deleted = false;
+-- Flyway: V3__unique_email_ativo.sql
+CREATE UNIQUE INDEX uq_aluno_email_ativo
+    ON aluno (email)
+ WHERE deleted = false;
+```
+
+**Para coluna de timestamp (`deletado_em IS NULL` = ativo):**
+
+```sql
+CREATE UNIQUE INDEX uq_aluno_email_ativo
+    ON aluno (email)
+ WHERE deletado_em IS NULL;
+```
+
+Múltiplas deleções do mesmo e-mail têm timestamps diferentes — cada linha deletada é distinta fora do índice:
+
+```
+┌────┬─────────────────────┬──────────────────────────┐
+│ id │ email               │ deletado_em              │
+├────┼─────────────────────┼──────────────────────────┤
+│  1 │ ana@email.com       │ 2024-01-15 09:00:00-03   │  ← fora do índice
+│  2 │ ana@email.com       │ 2024-06-20 14:00:00-03   │  ← fora do índice
+│  3 │ ana@email.com       │ null                     │  ← no índice (único ativo)
+└────┴─────────────────────┴──────────────────────────┘
+```
+
+**Mapeamento JPA — suprimir a constraint automática:**
+
+```java
+@Entity
+@Table(name = "aluno")
+// NÃO declare uniqueConstraints aqui para o email — o índice parcial vem do Flyway
+public class Aluno {
+
+    // unique = false (padrão) — deixa o índice parcial do Flyway controlar
+    @Column(name = "email", nullable = false)
+    private String email;
+}
+```
+
+> Nunca use `@Column(unique = true)` ou `@UniqueConstraint` para campos com regra de unicidade condicional. O JPA geraria uma constraint global que entraria em conflito com a lógica de soft delete.
+
+#### Estratégia 2 — Composite unique com valor sentinela
+
+Transforma o campo de controle em parte da unicidade. Em vez de `null` para registros ativos, usa um valor fixo sentinela (timestamp de época, `0`, etc.) que representa "ativo" e compõe a constraint com o campo de negócio.
+
+```sql
+-- O campo "deletado_em" usa EPOCH (1970-01-01) para registros ativos
+-- e o timestamp real para deletados
+ALTER TABLE aluno
+    ADD CONSTRAINT uq_aluno_email_deletado_em
+    UNIQUE (email, deletado_em);
+```
+
+```
+┌────┬─────────────────────┬──────────────────────────┐
+│ id │ email               │ deletado_em              │
+├────┼─────────────────────┼──────────────────────────┤
+│  1 │ ana@email.com       │ 1970-01-01 00:00:00+00   │  ← deletado 1ª vez (sentinela?)
+```
+
+**Problema:** com `UNIQUE(email, deletado_em)`, dois registros ativos teriam `(email, null)` e em PostgreSQL `null ≠ null` para fins de unicidade — a constraint **não impede** dois ativos com o mesmo e-mail. Para funcionar, o campo não pode ser `null` no estado ativo; precisa de um valor sentinela fixo.
+
+```java
+@Entity
+@SoftDelete(columnName = "deletado_em", converter = DeletedAtSentinelaConverter.class)
+@Table(name = "aluno",
+    uniqueConstraints = @UniqueConstraint(
+        name = "uq_aluno_email_deletado_em",
+        columnNames = {"email", "deletado_em"}
+    )
+)
+public class Aluno { }
+```
+
+```java
+public class DeletedAtSentinelaConverter
+        implements AttributeConverter<Boolean, OffsetDateTime> {
+
+    // Valor fixo que representa "ativo" — distinguível de qualquer deleção real
+    private static final OffsetDateTime ATIVO =
+        OffsetDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC);
+
+    @Override
+    public OffsetDateTime convertToDatabaseColumn(Boolean deleted) {
+        return deleted ? OffsetDateTime.now() : ATIVO;
+    }
+
+    @Override
+    public Boolean convertToEntityAttribute(OffsetDateTime deletedAt) {
+        return !ATIVO.equals(deletedAt);
+    }
+}
+```
+
+```
+┌────┬─────────────────────┬──────────────────────────┐
+│ id │ email               │ deletado_em              │
+├────┼─────────────────────┼──────────────────────────┤
+│  1 │ ana@email.com       │ 2024-01-15 09:00:00-03   │  ← deletado (timestamp real)
+│  2 │ ana@email.com       │ 2024-06-20 14:00:00-03   │  ← deletado (timestamp real)
+│  3 │ ana@email.com       │ 1970-01-01 00:00:00+00   │  ← ativo (sentinela fixo) ✔ único
+└────┴─────────────────────┴──────────────────────────┘
+```
+
+> **Desvantagem:** o valor sentinela `1970-01-01` pode ser confuso em relatórios e queries analíticas. Prefira a estratégia 1 (partial index) sempre que o banco suportar.
+
+#### Estratégia 3 — Ofuscação do campo na deleção
+
+Na deleção lógica, sobrescreve o campo único com um valor único derivado do `id` e mantém o valor original em coluna separada. O campo original fica livre para reutilização.
+
+```java
+@Entity
+@Table(name = "aluno",
+    uniqueConstraints = @UniqueConstraint(name = "uq_aluno_email", columnNames = "email")
+)
+public class Aluno {
+
+    @Column(name = "email", nullable = false, unique = false)
+    private String email;
+
+    @Column(name = "email_original")   // preserva para histórico/auditoria
+    private String emailOriginal;
+
+    @Column(name = "deletado_em")
+    private OffsetDateTime deletadoEm;
+
+    public void deletar() {
+        this.deletadoEm = OffsetDateTime.now();
+        this.emailOriginal = this.email;
+        // Ofusca o campo unique — id garante que seja único entre deletados
+        this.email = "deleted-" + this.id + "@noreply.invalid";
+    }
+}
+```
+
+```
+┌────┬────────────────────────────────┬─────────────────────┬──────────────────────────┐
+│ id │ email                          │ email_original      │ deletado_em              │
+├────┼────────────────────────────────┼─────────────────────┼──────────────────────────┤
+│  1 │ deleted-1@noreply.invalid      │ ana@email.com       │ 2024-03-01 10:00:00-03   │
+│  2 │ deleted-2@noreply.invalid      │ ana@email.com       │ 2024-09-10 08:00:00-03   │
+│  3 │ ana@email.com                  │ null                │ null                     │  ← ativo ✔
+└────┴────────────────────────────────┴─────────────────────┴──────────────────────────┘
+```
+
+> **Quando usar:** quando portabilidade entre bancos é requisito (ex.: H2 em testes sem partial index) ou quando o banco não suporta índices parciais.
+
+#### Comparação das estratégias
+
+| | Partial index | Sentinela | Ofuscação |
+|---|---|---|---|
+| Implementação | Flyway + sem `unique` no JPA | Converter + `@UniqueConstraint` | Lógica no `deletar()` + coluna extra |
+| Valor original preservado | Sim (no próprio campo) | Sim (no próprio campo) | Apenas em `email_original` |
+| Suporte a múltiplas deleções | Sim | Sim (timestamps distintos) | Sim (`id` único) |
+| Portável (sem SQL específico) | Não (requer partial index) | Sim | Sim |
+| Impacto em relatórios | Nenhum | Sentinela `1970-01-01` visível | Valores `deleted-N@noreply` visíveis |
+| **Recomendada** | **PostgreSQL (produção)** | Bancos sem partial index | Multi-banco / legado |
+
+#### Validação antecipada no service
+
+Independente da estratégia escolhida, valide a unicidade **antes** do `save()` para retornar mensagem de negócio em vez de `DataIntegrityViolationException`:
+
+```java
+@Service
+@Transactional
+public class AlunoService {
+
+    private final AlunoRepository repository;
+
+    public Aluno cadastrar(CadastrarAlunoRequest request) {
+        // Verifica se já existe ativo com o mesmo e-mail
+        if (repository.existsByEmailAndDeletadoEmIsNull(request.email())) {
+            throw new EmailJaCadastradoException(request.email());
+        }
+        return repository.save(new Aluno(request));
+    }
+
+    public void deletar(Long id) {
+        var aluno = repository.findById(id)
+            .orElseThrow(() -> new AlunoNaoEncontradoException(id));
+        aluno.deletar();   // seta deletadoEm = now()
+        // O repository.save() implícito pelo dirty checking persiste a mudança
+    }
+}
+```
+
+```java
+// Repository — consulta apenas ativos
+boolean existsByEmailAndDeletadoEmIsNull(String email);
 ```
 
 ### Consultar deletados — query nativa
