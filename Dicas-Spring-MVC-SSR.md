@@ -339,15 +339,6 @@ auto-configuração do Spring Boot — sem nenhuma linha de código adicional:
     <artifactId>thymeleaf-extras-springsecurity6</artifactId>
 </dependency>
 
-<!-- OpenAPI / Swagger UI -->
-<!-- ✅ Auto-configura: /api-docs e /swagger-ui.html quando no classpath -->
-<dependency>
-    <groupId>org.springdoc</groupId>
-    <!-- Spring Boot 4: usar springdoc-openapi-starter-webmvc-ui versão 3.x -->
-    <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-    <version>2.8.8</version>
-</dependency>
-
 <!-- Webjars para SSR (Bootstrap, Font Awesome) -->
 <!-- ✅ Auto-configura: /webjars/** mapeado automaticamente pelo ResourceHandlerRegistry -->
 <dependency>
@@ -357,7 +348,12 @@ auto-configuração do Spring Boot — sem nenhuma linha de código adicional:
 <dependency>
     <groupId>org.webjars</groupId>
     <artifactId>bootstrap</artifactId>
-    <version>5.3.3</version>
+    <version>5.3.8</version>
+</dependency>
+<dependency>
+    <groupId>org.webjars</groupId>
+    <artifactId>font-awesome</artifactId>
+    <version>7.2.0</version>
 </dependency>
 ```
 
@@ -560,21 +556,6 @@ spring:
         max-page-size: 100         # ✅ Default: 2000 — SEMPRE reduzir em produção
         one-indexed-parameters: false  # ✅ Default: false (página começa em 0)
 
-# ─── SpringDoc OpenAPI — OpenApiAutoConfiguration ────────────────────────────
-# ⚠️  Não é um starter do Spring Boot oficial — configuração própria do SpringDoc
-springdoc:
-  api-docs:
-    path: /api-docs           # Default: /v3/api-docs
-    groups:
-      enabled: true
-  swagger-ui:
-    path: /swagger-ui.html    # Default: /swagger-ui.html
-    tags-sorter: alpha
-    operations-sorter: method
-    display-request-duration: true
-    try-it-out-enabled: true
-  default-produces-media-type: application/json
-  show-actuator: false
 ```
 
 ---

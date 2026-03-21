@@ -2,11 +2,11 @@
 
 Documentação consolidada com apoio de agentes de IA (Claude Code).
 
-* [Dicas-Desenvolvimento-Web-Frontend.md](Dicas-Desenvolvimento-Web-Frontend.md) — Usabilidade, acessibilidade, heurísticas de Nielsen, mobile-first, Figma, HTML, CSS moderno e SCSS
-* [Dicas-Javascript-Typescript.md](Dicas-Javascript-Typescript.md) — JavaScript (fundamentos, ES2015+, DOM, JSON, Promise, Fetch) e TypeScript (tipos, interfaces, generics, projeto com Node.js)
-* [Frontend-Angular.md](Frontend-Angular.md) — Angular 21: fundamentos, Signals, NgRx Store/SignalStore, Resource API, formulários reativos, @ngx-translate, date-fns e autenticação JWT com roles
-* [Frontend-React.md](Frontend-React.md) — React 19 com TypeScript: fundamentos, React Router, Redux Toolkit, Zustand, TanStack Query, RTK Query, React Hook Form + Zod, react-i18next, date-fns e autenticação JWT com roles
-* [Frontend-Vue.md](Frontend-Vue.md) — Vue 3.5 com TypeScript: Composition API, Pinia, Vue Router, VeeValidate + Zod, Vue I18n, TanStack Query, date-fns e autenticação JWT com roles
+* [Dicas-Desenvolvimento-Web-Frontend.md](Dicas-Desenvolvimento-Web-Frontend.md) — Usabilidade, acessibilidade. mobile-first, Figma, HTML, CSS moderno e SCSS
+* [Dicas-Javascript-Typescript.md](Dicas-Javascript-Typescript.md)
+* [Frontend-Angular.md](Frontend-Angular.md) — Visão geral do Angular 21
+* [Frontend-React.md](Frontend-React.md) — Visão geral do React 19 com TypeScript
+* [Frontend-Vue.md](Frontend-Vue.md) — Visão geral do Vue 3.5 com TypeScript
 
 ---
 

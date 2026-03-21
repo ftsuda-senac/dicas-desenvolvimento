@@ -310,9 +310,8 @@ auto-configuração do Spring Boot — sem nenhuma linha de código adicional:
 <!-- ✅ Auto-configura: /api-docs e /swagger-ui.html quando no classpath -->
 <dependency>
     <groupId>org.springdoc</groupId>
-    <!-- Spring Boot 4: usar springdoc-openapi-starter-webmvc-ui versão 3.x -->
     <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-    <version>2.8.8</version>
+    <version>2.8.16</version> <!-- Spring Boot 4: usar springdoc-openapi-starter-webmvc-ui versão 3.0.2+ -->
 </dependency>
 
 ```
