@@ -166,9 +166,9 @@ projeto-maven-java
 |       \---java
 |           \---<ESTRUTURA DE DIRETÓRIOS DO PACKAGE CRIADO>
 \---target
-    +---classes
+    +---classes    # NÃO ESCREVER ARQUIVOS NESTE DIRETÓRIO!!!
     |   \---<ARQUIVOS .class COMPILADOS A PARTIR DO .java>
-    |   <OUTROS ARQUIVOS RESULTANTES DA COMPILAÇÃO>
+    |       <OUTROS ARQUIVOS RESULTANTES DA COMPILAÇÃO>
 ```
 
 ## Java moderno (8+)

@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(python -:*)",
+      "Bash(node -e \":*)",
+      "Bash(cd /c)",
+      "Bash(node -e \"const fs=require\\(''fs''\\);const s=fs.readFileSync\\(''e:/projetos/senac/dicas-desenvolvimento/Dicas-Spring-MVC-REST-SSR.md'',''utf8''\\);const lines=s.split\\(''\\\\n''\\);process.stdout.write\\(''lines:''+lines.length+''\\\\n''\\);\")",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(node build-rest-doc.js)",
+      "Bash(node -e \"const fs=require\\(''fs''\\);const lines=fs.readFileSync\\(''Dicas-Spring-MVC-REST.md'',''utf8''\\).split\\(''\\\\n''\\);lines.forEach\\(\\(l,i\\)=>{if\\(l.match\\(/^## /\\)\\)console.log\\(i+1,l\\);}\\);\")",
+      "Bash(node check2.js)",
+      "Bash(node verify.js)",
+      "Bash(node verify2.js)",
+      "Bash(node verify3.js)",
+      "Bash(node:*)",
+      "Bash(python _build_inicial.py)",
+      "Bash(del \"e:\\\\projetos\\\\senac\\\\dicas-desenvolvimento\\\\_build_inicial.py\")",
+      "Bash(python _fix_quotes.py)"
+    ]
+  }
+}
