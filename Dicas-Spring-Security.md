@@ -4,33 +4,35 @@
 
 ---
 
+
 ## Sumário
 
 1. [Arquitetura e Conceitos Fundamentais](#1-arquitetura-e-conceitos-fundamentais)
+   - [1.4 Interfaces Fundamentais: UserDetails, GrantedAuthority e UserDetailsService](#14-interfaces-fundamentais-userdetails-grantedauthority-e-userdetailsservice)
 2. [Dependências Maven](#2-dependências-maven)
 3. [SecurityConfig — Configuração Básica](#3-securityconfig--configuração-básica)
-4. [Múltiplas SecurityFilterChains no Mesmo Projeto](#4-múltiplas-securityfilterchains-no-mesmo-projeto)
-5. [HTTP Basic Authentication](#5-http-basic-authentication)
-6. [Form Login](#6-form-login)
-7. [Multi-Factor Authentication, OTP e One-Time Token](#7-multi-factor-authentication-otp-e-one-time-token)
+4. [HTTP Basic Authentication](#4-http-basic-authentication)
+5. [Form Login](#5-form-login)
+6. [CORS](#6-cors)
+7. [Boas Práticas OWASP](#7-boas-práticas-owasp)
 8. [JWT com Nimbus JOSE+JWT](#8-jwt-com-nimbus-josejwt)
-9. [Method Security (@PreAuthorize / @PostAuthorize)](#9-method-security-preauthorize--postauthorize)
-10. [SpEL Customizado para Anotações de Segurança](#10-spel-customizado-para-anotações-de-segurança)
-11. [PermissionEvaluator — Permissões por Domínio](#11-permissionevaluator--permissões-por-domínio)
-12. [OAuth2 Resource Server](#12-oauth2-resource-server)
-13. [OAuth2 Client](#13-oauth2-client)
-14. [Integração com Keycloak](#14-integração-com-keycloak)
-15. [Identity Providers Externos (Google, Microsoft, GitHub)](#15-identity-providers-externos-google-microsoft-github)
-16. [Spring Authorization Server — Criando um Identity Provider](#16-spring-authorization-server--criando-um-identity-provider)
-17. [Integração com SAML2](#17-integração-com-saml2)
-18. [Integração com LDAP](#18-integração-com-ldap)
-19. [Boas Práticas OWASP](#19-boas-práticas-owasp)
-20. [CORS](#20-cors)
-21. [WebSocket Security](#21-websocket-security)
-22. [SecurityContext em Contextos Assíncronos](#22-securitycontext-em-contextos-assíncronos)
-23. [Session Management Avançado](#23-session-management-avançado)
-24. [ACL Module — Permissões por Instância de Objeto](#24-acl-module--permissões-por-instância-de-objeto)
-25. [Hierarquia de Roles (RoleHierarchy)](#25-hierarquia-de-roles-rolehierarchy)
+9. [Múltiplas SecurityFilterChains no Mesmo Projeto](#9-múltiplas-securityfilterchains-no-mesmo-projeto)
+10. [SecurityContext em Contextos Assíncronos](#10-securitycontext-em-contextos-assíncronos)
+11. [Session Management Avançado](#11-session-management-avançado)
+12. [Method Security (@PreAuthorize / @PostAuthorize)](#12-method-security-preauthorize--postauthorize)
+13. [Hierarquia de Roles (RoleHierarchy)](#13-hierarquia-de-roles-rolehierarchy)
+14. [SpEL Customizado para Anotações de Segurança](#14-spel-customizado-para-anotações-de-segurança)
+15. [PermissionEvaluator — Permissões por Domínio](#15-permissionevaluator--permissões-por-domínio)
+16. [ACL Module — Permissões por Instância de Objeto](#16-acl-module--permissões-por-instância-de-objeto)
+17. [Multi-Factor Authentication, OTP e One-Time Token](#17-multi-factor-authentication-otp-e-one-time-token)
+18. [OAuth2 Resource Server](#18-oauth2-resource-server)
+19. [OAuth2 Client](#19-oauth2-client)
+20. [Integração com Keycloak](#20-integração-com-keycloak)
+21. [Identity Providers Externos (Google, Microsoft, GitHub)](#21-identity-providers-externos-google-microsoft-github)
+22. [Spring Authorization Server — Criando um Identity Provider](#22-spring-authorization-server--criando-um-identity-provider)
+23. [Integração com SAML2](#23-integração-com-saml2)
+24. [Integração com LDAP](#24-integração-com-ldap)
+25. [WebSocket Security](#25-websocket-security)
 26. [Segurança do Spring Boot Actuator](#26-segurança-do-spring-boot-actuator)
 27. [Autenticação Mútua com Certificados (mTLS / X.509)](#27-autenticação-mútua-com-certificados-mtls--x509)
 28. [Testes de Segurança](#28-testes-de-segurança)
@@ -38,9 +40,7 @@
 ---
 
 ## 1. Arquitetura e Conceitos Fundamentais
-
 ### 1.1 Pipeline de Filtros
-
 O Spring Security opera como uma cadeia de `Servlet Filters` delegada via `DelegatingFilterProxy`. Cada `SecurityFilterChain` é avaliada em ordem de prioridade (`@Order`).
 
 ```mermaid
@@ -62,7 +62,6 @@ flowchart TD
 ```
 
 ### 1.2 Filtros na Ordem de Execução
-
 ```
 SecurityFilterChain (ordem de execução)
 ├── DisableEncodeUrlFilter              ← Remove jsessionid da URL
@@ -86,7 +85,6 @@ SecurityFilterChain (ordem de execução)
 ```
 
 ### 1.3 Modelo de Objetos
-
 ```mermaid
 classDiagram
     class SecurityContext {
@@ -128,10 +126,215 @@ classDiagram
     GrantedAuthority <|.. SimpleGrantedAuthority
 ```
 
+### 1.4 Interfaces Fundamentais: UserDetails, GrantedAuthority e UserDetailsService
+
+Estas três interfaces formam o núcleo do modelo de identidade do Spring Security. Compreendê-las é pré-requisito para qualquer mecanismo de autenticação — HTTP Basic, Form Login, JWT ou OAuth2.
+
+---
+
+#### `UserDetails`
+
+Representa o **usuário autenticado** dentro do Spring Security. O framework não conhece a sua entidade de domínio (`UsuarioEntity`, `Funcionario`, etc.) — ele opera exclusivamente sobre `UserDetails`.
+
+```java
+public interface UserDetails extends Serializable {
+
+    // Identificador do usuário (geralmente login ou e-mail)
+    String getUsername();
+
+    // Senha codificada (BCrypt, Argon2, etc.) — nunca plain text
+    String getPassword();
+
+    // Permissões e roles do usuário
+    Collection<? extends GrantedAuthority> getAuthorities();
+
+    // Controles de ciclo de vida da conta:
+    boolean isEnabled();               // false → conta desativada
+    boolean isAccountNonExpired();     // false → conta expirada
+    boolean isAccountNonLocked();      // false → conta bloqueada (ex: tentativas erradas)
+    boolean isCredentialsNonExpired(); // false → senha expirada (forçar troca)
+}
+```
+
+> **Atenção:** Retornar `false` em qualquer um dos quatro métodos de ciclo de vida faz o `DaoAuthenticationProvider` lançar uma subclasse específica de `AuthenticationException`, permitindo mensagens de erro diferenciadas.
+
+**Implementação mínima com o builder do Spring:**
+
+```java
+// Uso rápido — não recomendado para produção (sem controles de ciclo de vida customizados)
+UserDetails user = User.withUsername("joao")
+    .password(passwordEncoder.encode("senha123"))
+    .roles("USER", "ADMIN")          // internamente adiciona prefixo ROLE_
+    .build();
+```
+
+**Implementação de produção — adaptador da entidade de domínio:**
+
+```java
+// Adapta sua entidade de domínio à interface UserDetails
+// sem poluir o modelo com dependências do Spring Security
+public class UserDetailsAdapter implements UserDetails {
+
+    private final UsuarioEntity usuario;
+
+    public UserDetailsAdapter(UsuarioEntity usuario) {
+        this.usuario = usuario;
+    }
+
+    @Override
+    public String getUsername() {
+        return usuario.getEmail();
+    }
+
+    @Override
+    public String getPassword() {
+        return usuario.getSenhaHash();
+    }
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+        return usuario.getRoles().stream()
+            .map(role -> new SimpleGrantedAuthority("ROLE_" + role.name()))
+            .toList();
+    }
+
+    @Override public boolean isEnabled()               { return usuario.isAtivo(); }
+    @Override public boolean isAccountNonExpired()     { return true; }
+    @Override public boolean isAccountNonLocked()      { return !usuario.isBloqueado(); }
+    @Override public boolean isCredentialsNonExpired() { return true; }
+
+    // Acesso à entidade original quando necessário em código de aplicação
+    public UsuarioEntity getUsuario() { return usuario; }
+}
+```
+
+---
+
+#### `GrantedAuthority`
+
+Representa uma **permissão ou role** atribuída ao usuário. É uma interface simples com um único método:
+
+```java
+public interface GrantedAuthority extends Serializable {
+    // Retorna a string que representa a authority, ex: "ROLE_ADMIN" ou "produto:write"
+    // Retornar null indica uma authority complexa (avaliada por AccessDecisionVoter/PermissionEvaluator)
+    String getAuthority();
+}
+```
+
+**Implementações disponíveis:**
+
+| Classe | Uso |
+|--------|-----|
+| `SimpleGrantedAuthority` | Caso geral — encapsula uma `String` |
+| `SwitchUserGrantedAuthority` | Criada internamente pelo `SwitchUserFilter` |
+| Implementação própria | Quando `getAuthority()` retorna `null` (permissões complexas avaliadas por `PermissionEvaluator`) |
+
+**Convenção de nomenclatura:**
+
+```java
+// Roles — prefixo ROLE_ obrigatório para hasRole() e .hasRole() no DSL
+new SimpleGrantedAuthority("ROLE_ADMIN")   // verificado por hasRole("ADMIN")
+new SimpleGrantedAuthority("ROLE_USER")    // verificado por hasRole("USER")
+
+// Permissões granulares — sem prefixo, verificadas por hasAuthority()
+new SimpleGrantedAuthority("produto:read")
+new SimpleGrantedAuthority("produto:write")
+new SimpleGrantedAuthority("relatorio:exportar")
+```
+
+> **Regra:** `hasRole("ADMIN")` equivale a `hasAuthority("ROLE_ADMIN")`. O prefixo `ROLE_` é adicionado automaticamente pelo framework. Use `hasAuthority()` para permissões sem esse prefixo.
+
+---
+
+#### `UserDetailsService`
+
+É o **ponto de integração** entre o Spring Security e a fonte de dados de usuários (banco de dados, LDAP, memória, API externa). O `DaoAuthenticationProvider` chama esta interface para carregar o usuário pelo username durante a autenticação.
+
+```java
+public interface UserDetailsService {
+    // Chamado pelo DaoAuthenticationProvider durante a autenticação
+    // Lança UsernameNotFoundException se o usuário não existir
+    UserDetails loadUserByUsername(String username) throws UsernameNotFoundException;
+}
+```
+
+**Fluxo de autenticação com `DaoAuthenticationProvider`:**
+
+```
+AuthenticationManager
+  └── DaoAuthenticationProvider
+        ├── UserDetailsService.loadUserByUsername(username)  ← sua implementação
+        │     └── retorna UserDetails (ou lança UsernameNotFoundException)
+        ├── PasswordEncoder.matches(rawPassword, encodedPassword)
+        │     └── verifica se a senha está correta
+        └── verifica isEnabled(), isAccountNonLocked(), etc.
+              └── lança AuthenticationException específica se false
+```
+
+**Implementação com Spring Data JPA:**
+
+```java
+@Service
+@RequiredArgsConstructor
+public class AppUserDetailsService implements UserDetailsService {
+
+    private final UsuarioRepository usuarioRepository;
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        return usuarioRepository.findByEmail(username)
+            .map(UserDetailsAdapter::new)
+            .orElseThrow(() -> new UsernameNotFoundException(
+                "Usuário não encontrado: " + username));
+    }
+}
+```
+
+> **Segurança:** Nunca revele na mensagem de `UsernameNotFoundException` se o problema foi "usuário não existe" ou "senha errada". O Spring Security por padrão lança `BadCredentialsException` em ambos os casos (configurável via `hideUserNotFoundExceptions`).
+
+**Implementações prontas do Spring Security:**
+
+| Implementação | Quando usar |
+|---------------|-------------|
+| `InMemoryUserDetailsManager` | Testes e desenvolvimento |
+| `JdbcUserDetailsManager` | Banco de dados com schema padrão do Spring Security |
+| `LdapUserDetailsService` | Autenticação via LDAP |
+| Implementação própria | Qualquer outra fonte de dados (recomendado para produção) |
+
+**Registrando o `UserDetailsService` como bean:**
+
+```java
+@Configuration
+public class SecurityConfig {
+
+    @Bean
+    public UserDetailsService userDetailsService(UsuarioRepository repo) {
+        return new AppUserDetailsService(repo);
+        // A presença deste bean faz back-off do InMemoryUserDetailsManager automático
+        // e é injetado automaticamente no DaoAuthenticationProvider
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder(12);
+    }
+}
+```
+
+---
+
+**Resumo da responsabilidade de cada interface:**
+
+| Interface | Responsabilidade | Quem implementa |
+|-----------|-----------------|-----------------|
+| `UserDetails` | Representa o usuário com suas authorities e status da conta | Você (adaptador da sua entidade) |
+| `GrantedAuthority` | Representa uma permission/role atribuída ao usuário | `SimpleGrantedAuthority` ou implementação própria |
+| `UserDetailsService` | Carrega o `UserDetails` a partir de um identificador (username) | Você (integração com banco de dados ou outra fonte) |
+
 ---
 
 ## 2. Dependências Maven
-
 ```xml
 <!-- Spring Security Core (incluso em spring-boot-starter-web) -->
 <dependency>
@@ -178,9 +381,7 @@ classDiagram
 ---
 
 ## 3. SecurityConfig — Configuração Básica
-
 ### 3.1 `@EnableWebSecurity` — Esclarecimento Importante
-
 Há uma confusão frequente por analogia com `@EnableWebMvc`: acredita-se que `@EnableWebSecurity` desabilita a auto-configuração padrão do `spring-boot-starter-security`, assim como `@EnableWebMvc` desabilita a auto-configuração MVC. **Isso não é verdade.**
 
 #### O que a anotação realmente faz
@@ -290,7 +491,6 @@ public class SecurityConfig {
 ---
 
 ### 3.2 Estrutura Mínima
-
 ```java
 @Configuration
 @EnableWebSecurity
@@ -318,7 +518,6 @@ public class SecurityConfig {
 ```
 
 ### 3.3 SecurityFilterChain para API REST (Stateless)
-
 ```java
 @Bean
 @Order(1)
@@ -360,7 +559,6 @@ public SecurityFilterChain apiSecurityFilterChain(
 
 
 ### 3.4 SecurityConfig para Início de Desenvolvimento (Acesso Total)
-
 Durante as primeiras etapas do desenvolvimento — antes de definir as regras de autenticação e autorização da aplicação — é útil ter uma configuração que desabilite completamente a segurança, permitindo que toda requisição seja processada sem credenciais. Isso evita que a tela de login padrão do Spring Security interrompa os primeiros testes de endpoints.
 
 ```java
@@ -463,136 +661,8 @@ curl -i http://localhost:8080/api/v1/qualquer-endpoint
 
 ---
 
-## 4. Múltiplas SecurityFilterChains no Mesmo Projeto
-
-Projetos que expõem tanto uma API REST quanto páginas web precisam de configurações de segurança diferentes para cada grupo de rotas.
-
-```mermaid
-flowchart LR
-    subgraph Requests
-        A["/api/**"] 
-        B["/admin/**"]
-        C["/actuator/**"]
-        D["/**"]
-    end
-
-    subgraph SecurityFilterChains
-        SFC1["Chain @Order(1)<br>API — JWT Bearer<br>stateless, csrf.disable"]
-        SFC2["Chain @Order(2)<br>Admin — Basic Auth<br>stateless"]
-        SFC3["Chain @Order(3)<br>Actuator — Basic Auth<br>stateless"]
-        SFC4["Chain @Order(4)<br>Web — Form Login<br>stateful, csrf enabled"]
-    end
-
-    A --> SFC1
-    B --> SFC2
-    C --> SFC3
-    D --> SFC4
-```
-
-```java
-@Configuration
-@EnableWebSecurity
-@EnableMethodSecurity
-public class MultiChainSecurityConfig {
-
-    // =========================================================
-    // Chain 1 — API REST com JWT
-    // =========================================================
-    @Bean
-    @Order(1)
-    public SecurityFilterChain apiChain(HttpSecurity http,
-                                         JwtAuthenticationFilter jwtFilter) throws Exception {
-        return http
-            .securityMatcher("/api/**")
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(ex -> ex
-                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/v1/auth/**").permitAll()
-                .anyRequest().authenticated())
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
-            .build();
-    }
-
-    // =========================================================
-    // Chain 2 — Painel Administrativo com HTTP Basic
-    // =========================================================
-    @Bean
-    @Order(2)
-    public SecurityFilterChain adminChain(HttpSecurity http) throws Exception {
-        return http
-            .securityMatcher("/admin/**")
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .httpBasic(basic -> basic.realmName("Admin Area"))
-            .authorizeHttpRequests(auth -> auth
-                .anyRequest().hasRole("ADMIN"))
-            .build();
-    }
-
-    // =========================================================
-    // Chain 3 — Actuator com Basic Auth (apenas internamente)
-    // =========================================================
-    @Bean
-    @Order(3)
-    public SecurityFilterChain actuatorChain(HttpSecurity http) throws Exception {
-        return http
-            .securityMatcher("/actuator/**")
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .httpBasic(Customizer.withDefaults())
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                .anyRequest().hasRole("ACTUATOR"))
-            .build();
-    }
-
-    // =========================================================
-    // Chain 4 — Aplicação Web com Form Login (catch-all)
-    // =========================================================
-    @Bean
-    @Order(4)
-    public SecurityFilterChain webChain(HttpSecurity http) throws Exception {
-        return http
-            .securityMatcher("/**")
-            .csrf(Customizer.withDefaults())           // CSRF habilitado para web
-            .sessionManagement(s -> s
-                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                .maximumSessions(1)                    // Apenas 1 sessão por usuário
-                .maxSessionsPreventsLogin(false))      // Nova sessão expulsa a anterior
-            .formLogin(form -> form
-                .loginPage("/login")
-                .loginProcessingUrl("/login")
-                .defaultSuccessUrl("/dashboard", true)
-                .failureUrl("/login?error")
-                .permitAll())
-            .logout(logout -> logout
-                .logoutUrl("/logout")
-                .logoutSuccessUrl("/login?logout")
-                .invalidateHttpSession(true)
-                .deleteCookies("JSESSIONID")
-                .permitAll())
-            .rememberMe(remember -> remember
-                .key("${app.security.remember-me-key}")
-                .tokenValiditySeconds(86400 * 30))
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/", "/login", "/css/**", "/js/**", "/images/**").permitAll()
-                .requestMatchers("/admin/**").hasRole("ADMIN")
-                .anyRequest().authenticated())
-            .build();
-    }
-}
-```
-
-> **Regra crítica de ordem:** O `securityMatcher` define qual cadeia processa cada requisição. A primeira cadeia com matcher correspondente "vence". A cadeia sem `securityMatcher` (ou com `/**`) deve ter o maior `@Order` (número mais alto = menor prioridade).
-
----
-
-## 5. HTTP Basic Authentication
-
-### 5.1 Configuração
-
+## 4. HTTP Basic Authentication
+### 4.1 Configuração
 ```java
 @Bean
 @Order(2)
@@ -617,8 +687,7 @@ public SecurityFilterChain basicAuthChain(HttpSecurity http) throws Exception {
 }
 ```
 
-### 5.2 BasicAuthenticationEntryPoint Customizado
-
+### 4.2 BasicAuthenticationEntryPoint Customizado
 `BasicAuthenticationEntryPoint` é a interface chamada pelo `ExceptionTranslationFilter` quando uma requisição chega sem credenciais (ou com credenciais inválidas) em uma rota protegida por HTTP Basic. O método `commence` é o ponto de entrada que define como o servidor responde ao cliente.
 
 #### Comportamento padrão vs customizado
@@ -761,8 +830,7 @@ public SecurityFilterChain basicAuthChain(
 
 ---
 
-### 5.3 BasicAuthenticationFilter Customizado
-
+### 4.3 BasicAuthenticationFilter Customizado
 `BasicAuthenticationFilter` é o filtro responsável por extrair o header `Authorization: Basic <base64>`, decodificar as credenciais, delegar ao `AuthenticationManager` e, em caso de sucesso, popular o `SecurityContext`.
 
 #### Fluxo interno do filtro
@@ -1001,8 +1069,7 @@ public class BasicAuthSecurityConfig {
 > **`addFilterAt` vs `addFilterBefore`/`addFilterAfter`:** `addFilterAt` posiciona o filtro customizado exatamente onde `BasicAuthenticationFilter` estaria na cadeia padrão, sem duplicá-lo. Se `.httpBasic()` fosse chamado junto, haveria dois filtros Basic na cadeia — o padrão e o customizado. Ao usar `addFilterAt` sem `.httpBasic()`, apenas o customizado é registrado.
 
 
-### 5.4 UserDetailsService com Banco de Dados
-
+### 4.4 UserDetailsService com Banco de Dados
 ```java
 @Service
 @RequiredArgsConstructor
@@ -1046,10 +1113,8 @@ public class AppUserDetailsService implements UserDetailsService {
 
 ---
 
-## 6. Form Login
-
-### 6.1 SecurityFilterChain Completa
-
+## 5. Form Login
+### 5.1 SecurityFilterChain Completa
 ```java
 @Bean
 public SecurityFilterChain formLoginChain(HttpSecurity http) throws Exception {
@@ -1094,8 +1159,7 @@ public SecurityFilterChain formLoginChain(HttpSecurity http) throws Exception {
 }
 ```
 
-### 6.2 Handlers Customizados
-
+### 5.2 Handlers Customizados
 ```java
 @Component
 public class CustomAuthSuccessHandler implements AuthenticationSuccessHandler {
@@ -1156,8 +1220,7 @@ public class CustomAuthFailureHandler implements AuthenticationFailureHandler {
 }
 ```
 
-### 6.3 Template Thymeleaf com CSRF
-
+### 5.3 Template Thymeleaf com CSRF
 ```html
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org"
@@ -1195,3545 +1258,115 @@ public class CustomAuthFailureHandler implements AuthenticationFailureHandler {
 
 ---
 
-## 7. Multi-Factor Authentication, OTP e One-Time Token
+## 6. CORS
+CORS (Cross-Origin Resource Sharing) é o mecanismo que permite ou bloqueia requisições HTTP entre origens distintas (protocolo + domínio + porta). O Spring Security integra-se ao CORS do Spring MVC mas requer configuração explícita — sem ela, requisições preflight (`OPTIONS`) podem ser bloqueadas antes de chegar ao controller.
 
-### 7.1 Conceitos e Comparativo
-
-```mermaid
-mindmap
-  root((Segundo Fator<br>de Autenticação))
-    TOTP
-      RFC 6238
-      Google Authenticator
-      Authy / Microsoft Auth
-      Segredo compartilhado
-      Janela de 30 segundos
-    OTP via Canal
-      Email
-      SMS
-      Código numérico
-      Expiração curta
-      Sem app externo
-    One-Time Token
-      Spring Security 6.4+
-      Magic link por email
-      Token opaco de uso único
-      Login sem senha
-```
-
-| Mecanismo | Padrão | Requer App? | Canal externo | Spring Security nativo? |
-|-----------|--------|-------------|---------------|------------------------|
-| **TOTP** (Google Auth) | RFC 6238 | Sim | Não | Não — biblioteca externa |
-| **OTP por email** | — | Não | Email | Parcialmente |
-| **OTP por SMS** | — | Não | SMS (Twilio) | Não |
-| **One-Time Token** | — | Não | Email | **Sim — Spring Security 6.4+** |
-
-> **Distinção chave:** OTP (One-Time Password) é um código numérico de uso único gerado por algoritmo (TOTP/HOTP). OTT (One-Time Token) é um token opaco gerado pelo servidor — a implementação nativa do Spring Security 6.4 para login por magic link.
-
----
-
-### 7.2 TOTP — One-Time Password Baseado em Tempo
-
-TOTP (RFC 6238) gera códigos numéricos de 6 dígitos que mudam a cada 30 segundos, derivados de um segredo compartilhado entre o servidor e o app autenticador do usuário.
-
-```mermaid
-sequenceDiagram
-    participant U as Usuário
-    participant APP as Authenticator App
-    participant S as Servidor
-
-    Note over U,S: Etapa 1 — Enrollment (uma vez)
-    U->>S: Solicita ativação de MFA
-    S->>S: Gera segredo TOTP (Base32, 20 bytes)
-    S-->>U: QR Code com otpauth://totp/...?secret=BASE32SECRET
-    U->>APP: Escaneia QR Code
-    APP-->>U: Exibe código de 6 dígitos rotativo
-
-    Note over U,S: Etapa 2 — Autenticação (toda vez)
-    U->>S: POST /login {username, password}
-    S-->>U: Redirect para /mfa/verify (sessão parcial)
-    U->>APP: Consulta código atual
-    APP-->>U: 123456
-    U->>S: POST /mfa/verify {code: 123456}
-    S->>S: Valida TOTP com segredo do usuário
-    S-->>U: Autenticação completa — redirect /dashboard
-```
-
-#### Dependência
-
-```xml
-<!-- Biblioteca TOTP — implementa RFC 6238 e RFC 4226 -->
-<dependency>
-    <groupId>dev.samstevens.totp</groupId>
-    <artifactId>totp-spring-boot-starter</artifactId>
-    <version>1.7.1</version>
-</dependency>
-```
-
-#### TotpService — Geração e Validação
-
-```java
-@Service
-@RequiredArgsConstructor
-public class TotpService {
-
-    private final SecretGenerator secretGenerator;
-    private final CodeGenerator codeGenerator;
-    private final CodeVerifier codeVerifier;
-    private final QrDataFactory qrDataFactory;
-    private final QrGenerator qrGenerator;
-
-    private static final String APP_NAME = "MyApp";
-
-    /**
-     * Gera um novo segredo TOTP para o usuário.
-     * Deve ser armazenado criptografado no banco de dados.
-     */
-    public String generateSecret() {
-        return secretGenerator.generate();  // Base32, 160 bits
-    }
-
-    /**
-     * Gera a URI otpauth:// para exibição como QR Code.
-     * O app autenticador (Google Auth, Authy) lê este QR para configurar o TOTP.
-     */
-    public String generateQrCodeImageUri(String secret, String userEmail) {
-        QrData qrData = qrDataFactory.newBuilder()
-            .label(userEmail)
-            .secret(secret)
-            .issuer(APP_NAME)
-            .algorithm(HashingAlgorithm.SHA1)  // RFC 6238 padrão
-            .digits(6)
-            .period(30)                        // 30 segundos por janela
-            .build();
-
-        try {
-            byte[] imageData = qrGenerator.generate(qrData);
-            String mimeType = qrGenerator.getImageMimeType();
-            return "data:" + mimeType + ";base64," +
-                Base64.getEncoder().encodeToString(imageData);
-        } catch (QrGenerationException e) {
-            throw new MfaSetupException("Falha ao gerar QR Code", e);
-        }
-    }
-
-    /**
-     * Valida o código TOTP informado pelo usuário.
-     * Aceita a janela atual e as adjacentes (±30s) para tolerância de clock skew.
-     */
-    public boolean validateCode(String secret, String code) {
-        try {
-            return codeVerifier.isValidCode(secret, code);
-        } catch (CodeVerificationException e) {
-            return false;
-        }
-    }
-
-    /**
-     * Valida o código e lança exceção se inválido — use em fluxos de autenticação.
-     */
-    public void validateCodeOrThrow(String secret, String code) {
-        if (!validateCode(secret, code)) {
-            throw new InvalidMfaCodeException("Código TOTP inválido ou expirado");
-        }
-    }
-}
-```
-
-#### Entidade e repositório
-
-```java
-@Entity
-@Table(name = "user_mfa_config")
-@Getter @Setter
-public class UserMfaConfig {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false, unique = true)
-    private UserEntity user;
-
-    @Column(name = "totp_secret", nullable = false)
-    @Convert(converter = EncryptedStringConverter.class) // criptografia em repouso
-    private String totpSecret;
-
-    @Column(name = "mfa_enabled", nullable = false)
-    private boolean mfaEnabled = false;
-
-    @Column(name = "enrolled_at")
-    private Instant enrolledAt;
-
-    // Códigos de recuperação (backup codes) — hash BCrypt
-    @ElementCollection
-    @CollectionTable(name = "user_mfa_backup_codes",
-                     joinColumns = @JoinColumn(name = "mfa_config_id"))
-    @Column(name = "code_hash")
-    private List<String> backupCodeHashes = new ArrayList<>();
-}
-```
-
-#### MfaController — Enrollment e Verificação
-
-```java
-@Controller
-@RequestMapping("/mfa")
-@RequiredArgsConstructor
-public class MfaController {
-
-    private final TotpService totpService;
-    private final UserMfaService userMfaService;
-
-    // ── Enrollment ────────────────────────────────────────────
-
-    @GetMapping("/setup")
-    @PreAuthorize("isAuthenticated()")
-    public String setupMfa(Model model, Authentication auth) {
-        String secret = totpService.generateSecret();
-        // Armazena temporariamente na sessão — confirmado apenas após validação
-        model.addAttribute("secret", secret);
-        model.addAttribute("qrCodeUri",
-            totpService.generateQrCodeImageUri(secret, auth.getName()));
-        return "mfa/setup";
-    }
-
-    @PostMapping("/setup/confirm")
-    @PreAuthorize("isAuthenticated()")
-    public String confirmSetup(@RequestParam String secret,
-                               @RequestParam String code,
-                               Authentication auth,
-                               RedirectAttributes attrs) {
-        try {
-            totpService.validateCodeOrThrow(secret, code);
-            userMfaService.enableMfa(auth.getName(), secret);
-            attrs.addFlashAttribute("success", "MFA ativado com sucesso!");
-            return "redirect:/dashboard";
-        } catch (InvalidMfaCodeException e) {
-            attrs.addFlashAttribute("error", "Código inválido. Tente novamente.");
-            return "redirect:/mfa/setup";
-        }
-    }
-
-    // ── Verificação (segundo fator no login) ─────────────────
-
-    @GetMapping("/verify")
-    public String verifyMfaPage() {
-        return "mfa/verify";
-    }
-
-    @PostMapping("/verify")
-    public String verifyMfa(@RequestParam String code,
-                            HttpSession session,
-                            RedirectAttributes attrs) {
-        // Recupera usuário da sessão parcial (pré-MFA)
-        String username = (String) session.getAttribute("PRE_MFA_USERNAME");
-        if (username == null) {
-            return "redirect:/login";
-        }
-
-        String secret = userMfaService.getTotpSecret(username);
-        try {
-            totpService.validateCodeOrThrow(secret, code);
-            // Promove sessão parcial para totalmente autenticada
-            userMfaService.completeAuthentication(username, session);
-            session.removeAttribute("PRE_MFA_USERNAME");
-            return "redirect:/dashboard";
-        } catch (InvalidMfaCodeException e) {
-            attrs.addFlashAttribute("error", "Código TOTP inválido.");
-            return "redirect:/mfa/verify";
-        }
-    }
-}
-```
-
-#### MfaAuthenticationFilter — Intercepta o Segundo Fator
-
-```java
-/**
- * Filtro que intercepta logins bem-sucedidos de usuários com MFA habilitado.
- * Em vez de autenticar completamente, cria uma sessão parcial e redireciona
- * para a página de verificação do segundo fator.
- */
-@Component
-@RequiredArgsConstructor
-public class MfaAuthenticationFilter extends UsernamePasswordAuthenticationFilter {
-
-    private final UserMfaService userMfaService;
-
-    @Override
-    protected void successfulAuthentication(HttpServletRequest request,
-                                            HttpServletResponse response,
-                                            FilterChain chain,
-                                            Authentication authResult)
-            throws IOException, ServletException {
-
-        UserDetails user = (UserDetails) authResult.getPrincipal();
-
-        if (userMfaService.isMfaEnabled(user.getUsername())) {
-            // Salva usuário na sessão mas NÃO persiste no SecurityContext ainda
-            request.getSession().setAttribute("PRE_MFA_USERNAME", user.getUsername());
-
-            // Limpa qualquer autenticação prévia no contexto
-            SecurityContextHolder.clearContext();
-
-            response.sendRedirect("/mfa/verify");
-            return;
-        }
-
-        // MFA não habilitado — autenticação normal
-        super.successfulAuthentication(request, response, chain, authResult);
-    }
-}
-```
-
-#### Template Thymeleaf — Verificação MFA
-
-```html
-<!-- mfa/verify.html -->
-<form th:action="@{/mfa/verify}" method="post">
-    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
-
-    <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
-
-    <label>Código do autenticador (6 dígitos)</label>
-    <input type="text"
-           name="code"
-           maxlength="6"
-           pattern="[0-9]{6}"
-           autocomplete="one-time-code"  <!-- hint para autofill do browser -->
-           inputmode="numeric"
-           autofocus
-           required/>
-
-    <button type="submit">Verificar</button>
-    <a th:href="@{/mfa/backup}">Usar código de recuperação</a>
-</form>
-```
-
-#### Compatibilidade com Múltiplos Apps Autenticadores
-
-O QR Code gerado usa o URI scheme `otpauth://totp/` padronizado (RFC 6238), suportado por qualquer app TOTP compatível. A validação do servidor é idêntica independentemente do app — o protocolo é o mesmo.
-
-| App | Algoritmo | Dígitos | Período | Backup na Nuvem | Deep Link |
-|-----|-----------|---------|---------|-----------------|-----------|
-| **Google Authenticator** | SHA-1 | 6 | 30s | Sim (Google Account) | Não |
-| **Microsoft Authenticator** | SHA-1 | 6 | 30s | Sim (Microsoft Account) | Sim (`ms-auth-authenticator://`) |
-| **Authy** | SHA-1 | 6/8 | 30s | Sim (Twilio) | Não |
-| **1Password** | SHA-1/256/512 | 6/8 | 30s/60s | Sim | Não |
-
-> **Observação de algoritmo:** Embora a biblioteca `dev.samstevens.totp` suporte SHA-256 e SHA-512, **use sempre SHA-1 para TOTP**. Google Authenticator e Microsoft Authenticator na prática suportam apenas SHA-1 em contas de terceiros — os outros algoritmos são aceitos no QR mas ignorados silenciosamente, gerando códigos que falham na validação.
-
----
-
-#### Microsoft Authenticator — Integração Específica
-
-O Microsoft Authenticator funciona com o mesmo `otpauth://totp/` URI do Google Authenticator, mas tem dois comportamentos distintos que exigem atenção:
-
-**1. Formato do label no URI**
-
-O Microsoft Authenticator é mais rigoroso na interpretação do campo `label`. Para exibição correta do nome da conta na interface do app, o label deve seguir o formato `issuer:account`:
-
-```
-otpauth://totp/MyApp:alice@example.com?secret=BASE32SECRET&issuer=MyApp&algorithm=SHA1&digits=6&period=30
-```
-
-Se o `issuer` no parâmetro de query não corresponder ao prefixo do label, o Microsoft Authenticator pode exibir o nome da conta de forma incorreta ou mostrar um aviso de configuração inválida.
-
-**2. Deep link para adição direta no mobile**
-
-O Microsoft Authenticator suporta o scheme `ms-auth-authenticator://` para adicionar contas diretamente via link, sem escanear QR Code — útil em fluxos mobile-first onde a câmera para QR pode ser inconveniente.
-
-```
-ms-auth-authenticator://authasking?authString=otpauth%3A%2F%2Ftotp%2FMyApp%3Aalice%40example.com%3F...
-```
-
-#### TotpService — Suporte a Microsoft Authenticator e Deep Link
-
-```java
-@Service
-@RequiredArgsConstructor
-public class TotpService {
-
-    private final SecretGenerator secretGenerator;
-    private final CodeVerifier codeVerifier;
-    private final QrDataFactory qrDataFactory;
-    private final QrGenerator qrGenerator;
-
-    @Value("${app.mfa.issuer:MyApp}")
-    private String issuer;
-
-    // ── Geração de segredo ────────────────────────────────────
-
-    public String generateSecret() {
-        return secretGenerator.generate();  // Base32, 160 bits
-    }
-
-    // ── Construção do URI otpauth:// ──────────────────────────
-
-    /**
-     * Monta o URI otpauth:// compatível com todos os apps autenticadores.
-     *
-     * Formato do label: "issuer:account" — obrigatório para exibição correta
-     * no Microsoft Authenticator. Google Authenticator aceita qualquer formato.
-     *
-     * @param secret   segredo TOTP em Base32
-     * @param account  identificador do usuário (normalmente o e-mail)
-     */
-    public String buildOtpauthUri(String secret, String account) {
-        // Label no formato "issuer:account" — compatível com Google e Microsoft Auth
-        String label = issuer + ":" + account;
-
-        return UriComponentsBuilder.newInstance()
-            .scheme("otpauth")
-            .host("totp")
-            .path("/" + UriUtils.encode(label, StandardCharsets.UTF_8))
-            .queryParam("secret", secret)
-            .queryParam("issuer", issuer)
-            .queryParam("algorithm", "SHA1")   // SHA1 é o único suportado na prática
-            .queryParam("digits", 6)
-            .queryParam("period", 30)
-            .build(true)
-            .toUriString();
-    }
-
-    // ── QR Code para desktop ──────────────────────────────────
-
-    /**
-     * Gera o QR Code como Data URI Base64 para exibição em <img>.
-     * Compatível com Google Authenticator, Microsoft Authenticator e Authy.
-     */
-    public String generateQrCodeDataUri(String secret, String account) {
-        QrData qrData = qrDataFactory.newBuilder()
-            .label(issuer + ":" + account)     // formato "issuer:account"
-            .secret(secret)
-            .issuer(issuer)
-            .algorithm(HashingAlgorithm.SHA1)
-            .digits(6)
-            .period(30)
-            .build();
-
-        try {
-            byte[] imageData = qrGenerator.generate(qrData);
-            String mimeType  = qrGenerator.getImageMimeType();
-            return "data:" + mimeType + ";base64," +
-                Base64.getEncoder().encodeToString(imageData);
-        } catch (QrGenerationException e) {
-            throw new MfaSetupException("Falha ao gerar QR Code", e);
-        }
-    }
-
-    // ── Deep link para Microsoft Authenticator (mobile) ──────
-
-    /**
-     * Gera o deep link ms-auth-authenticator:// para adição direta da conta
-     * no Microsoft Authenticator via botão/link, sem necessidade de câmera.
-     *
-     * Formato: ms-auth-authenticator://authasking?authString=<otpauth_uri_encoded>
-     *
-     * Fluxo: usuário toca o botão no mobile → sistema operacional abre o
-     * Microsoft Authenticator → conta é adicionada automaticamente.
-     *
-     * Fallback: se o app não estiver instalado, redirecionar para a store.
-     */
-    public String generateMicrosoftAuthDeepLink(String secret, String account) {
-        String otpauthUri = buildOtpauthUri(secret, account);
-        String encodedUri = UriUtils.encode(otpauthUri, StandardCharsets.UTF_8);
-        return "ms-auth-authenticator://authasking?authString=" + encodedUri;
-    }
-
-    /**
-     * Retorna todos os dados de enrollment em um único objeto.
-     * O controller repassa ao template para exibir QR + deep link + chave manual.
-     */
-    public MfaEnrollmentData buildEnrollmentData(String secret, String account) {
-        return new MfaEnrollmentData(
-            secret,
-            generateQrCodeDataUri(secret, account),
-            buildOtpauthUri(secret, account),
-            generateMicrosoftAuthDeepLink(secret, account),
-            formatSecretForDisplay(secret)  // blocos de 4 para entrada manual
-        );
-    }
-
-    // ── Validação ─────────────────────────────────────────────
-
-    public boolean validateCode(String secret, String code) {
-        try {
-            return codeVerifier.isValidCode(secret, code);
-        } catch (CodeVerificationException e) {
-            return false;
-        }
-    }
-
-    public void validateCodeOrThrow(String secret, String code) {
-        if (!validateCode(secret, code)) {
-            throw new InvalidMfaCodeException("Código TOTP inválido ou expirado");
-        }
-    }
-
-    // ── Utilitários ───────────────────────────────────────────
-
-    /**
-     * Formata o segredo Base32 em blocos de 4 caracteres para entrada manual.
-     * Exemplo: "JBSWY3DP" → "JBSW Y3DP"
-     */
-    private String formatSecretForDisplay(String secret) {
-        return String.join(" ",
-            secret.replaceAll("(.{4})", "$1 ").trim().split(" "));
-    }
-
-    // ── Record de retorno ─────────────────────────────────────
-
-    public record MfaEnrollmentData(
-        String secret,
-        String qrCodeDataUri,
-        String otpauthUri,
-        String microsoftAuthDeepLink,
-        String secretFormatted        // ex: "JBSW Y3DP XYZW ABCD" para entrada manual
-    ) {}
-}
-```
-
-#### MfaController — Enrollment com Suporte a Microsoft Authenticator
-
-```java
-@Controller
-@RequestMapping("/mfa")
-@RequiredArgsConstructor
-public class MfaController {
-
-    private final TotpService totpService;
-    private final UserMfaService userMfaService;
-
-    @GetMapping("/setup")
-    @PreAuthorize("isAuthenticated()")
-    public String setupMfa(Model model, Authentication auth) {
-        String secret = totpService.generateSecret();
-
-        // Passa todos os dados de enrollment para o template de uma vez
-        TotpService.MfaEnrollmentData enrollment =
-            totpService.buildEnrollmentData(secret, auth.getName());
-
-        model.addAttribute("enrollment", enrollment);
-        return "mfa/setup";
-    }
-
-    @PostMapping("/setup/confirm")
-    @PreAuthorize("isAuthenticated()")
-    public String confirmSetup(@RequestParam String secret,
-                               @RequestParam String code,
-                               Authentication auth,
-                               RedirectAttributes attrs) {
-        try {
-            totpService.validateCodeOrThrow(secret, code);
-            userMfaService.enableMfa(auth.getName(), secret);
-            attrs.addFlashAttribute("success", "Autenticação em dois fatores ativada!");
-            return "redirect:/dashboard";
-        } catch (InvalidMfaCodeException e) {
-            attrs.addFlashAttribute("error", "Código inválido. Tente novamente.");
-            return "redirect:/mfa/setup";
-        }
-    }
-
-    @GetMapping("/verify")
-    public String verifyPage() { return "mfa/verify"; }
-
-    @PostMapping("/verify")
-    public String verifyMfa(@RequestParam String code,
-                            HttpSession session,
-                            RedirectAttributes attrs) {
-        String username = (String) session.getAttribute("PRE_MFA_USERNAME");
-        if (username == null) return "redirect:/login";
-
-        String secret = userMfaService.getTotpSecret(username);
-        try {
-            totpService.validateCodeOrThrow(secret, code);
-            userMfaService.completeAuthentication(username, session);
-            session.removeAttribute("PRE_MFA_USERNAME");
-            return "redirect:/dashboard";
-        } catch (InvalidMfaCodeException e) {
-            attrs.addFlashAttribute("error", "Código TOTP inválido.");
-            return "redirect:/mfa/verify";
-        }
-    }
-}
-```
-
-#### Template Thymeleaf — Setup com QR Code e Deep Link
-
-```html
-<!-- mfa/setup.html -->
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Configurar Autenticação em Dois Fatores</title></head>
-<body>
-
-<h2>Ativar autenticação em dois fatores (2FA)</h2>
-
-<!-- ── Passo 1: escolha o app ─────────────────────────────── -->
-<section>
-    <h3>Passo 1 — Escolha seu app autenticador</h3>
-    <ul>
-        <li><strong>Microsoft Authenticator</strong> — recomendado (backup automático)</li>
-        <li>Google Authenticator</li>
-        <li>Authy</li>
-    </ul>
-</section>
-
-<!-- ── Passo 2: adicione a conta ──────────────────────────── -->
-<section>
-    <h3>Passo 2 — Adicione a conta ao seu app</h3>
-
-    <!-- QR Code — funciona com todos os apps via câmera -->
-    <div>
-        <p><strong>Escaneie o QR Code com seu app autenticador:</strong></p>
-        <img th:src="${enrollment.qrCodeDataUri}"
-             alt="QR Code para configuração do autenticador"
-             width="200" height="200"
-             style="border: 8px solid white;"/>  <!--
-             Margem branca obrigatória para leitura confiável pelo scanner -->
-    </div>
-
-    <!-- Deep Link — abre o Microsoft Authenticator diretamente no mobile -->
-    <div>
-        <p><strong>Ou adicione diretamente no Microsoft Authenticator:</strong></p>
-
-        <!--
-            O deep link ms-auth-authenticator:// abre o Microsoft Authenticator
-            e adiciona a conta automaticamente, sem precisar escanear o QR Code.
-            Em desktop (sem o app instalado) o link simplesmente não faz nada —
-            por isso o QR Code é sempre exibido como alternativa.
-        -->
-        <a th:href="${enrollment.microsoftAuthDeepLink}"
-           class="btn btn-primary">
-            <!-- Ícone do Microsoft Authenticator -->
-            Adicionar no Microsoft Authenticator
-        </a>
-
-        <!--
-            Fallback: link direto para a store caso o app não esteja instalado.
-            Detectável via JavaScript: se o deep link não abrir em ~1s, redireciona.
-        -->
-        <script th:attr="nonce=${_cspNonce}">
-            document.querySelector('a[href^="ms-auth"]')?.addEventListener('click', () => {
-                setTimeout(() => {
-                    const isAndroid = /Android/i.test(navigator.userAgent);
-                    const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
-                    if (isAndroid) {
-                        window.location.href =
-                          'https://play.google.com/store/apps/details?id=com.azure.authenticator';
-                    } else if (isIOS) {
-                        window.location.href =
-                          'https://apps.apple.com/app/microsoft-authenticator/id983156458';
-                    }
-                }, 1500); // aguarda 1,5s para o deep link abrir antes de redirecionar
-            });
-        </script>
-    </div>
-
-    <!-- Entrada manual — alternativa quando a câmera não está disponível -->
-    <details>
-        <summary>Não consigo escanear o QR Code — inserir manualmente</summary>
-        <p>Abra o app, toque em <em>Adicionar conta</em> → <em>Outra conta</em>
-           → <em>Inserir código manualmente</em> e preencha:</p>
-        <dl>
-            <dt>Nome da conta (Issuer)</dt>
-            <dd th:text="${enrollment.otpauthUri.split('issuer=')[1]?.split('&')[0]}">MyApp</dd>
-            <dt>Chave secreta</dt>
-            <!-- Exibe em blocos de 4 para facilitar a digitação -->
-            <dd><code th:text="${enrollment.secretFormatted}">JBSW Y3DP XYZW ABCD</code></dd>
-        </dl>
-        <small>Tipo: baseado em tempo (TOTP) · Dígitos: 6 · Período: 30 segundos</small>
-    </details>
-</section>
-
-<!-- ── Passo 3: confirme com o código gerado ──────────────── -->
-<section>
-    <h3>Passo 3 — Confirme o código gerado pelo app</h3>
-
-    <form th:action="@{/mfa/setup/confirm}" method="post">
-        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
-        <!--
-            O secret é retornado para o servidor para confirmar o enrollment.
-            Em produção, considere armazená-lo temporariamente na sessão do servidor
-            em vez de em um campo hidden, para evitar manipulação.
-        -->
-        <input type="hidden" name="secret" th:value="${enrollment.secret}"/>
-
-        <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
-
-        <label>Código de 6 dígitos gerado pelo app</label>
-        <input type="text"
-               name="code"
-               maxlength="6"
-               minlength="6"
-               pattern="[0-9]{6}"
-               autocomplete="one-time-code"
-               inputmode="numeric"
-               placeholder="000000"
-               autofocus
-               required/>
-
-        <button type="submit">Confirmar e ativar 2FA</button>
-    </form>
-</section>
-
-</body>
-</html>
-```
-
-#### Pontos de Atenção com Microsoft Authenticator
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                   Microsoft Authenticator — Resumo Técnico              │
-├─────────────────────┬───────────────────────────────────────────────────┤
-│ Protocolo TOTP      │ RFC 6238 — idêntico ao Google Authenticator        │
-│ URI scheme          │ otpauth://totp/ (padrão de mercado)               │
-│ Algoritmo suportado │ SHA-1 (único confiável para contas de terceiros)   │
-│ Label recomendado   │ "issuer:account" — obrigatório para nome correto   │
-│ Deep link mobile    │ ms-auth-authenticator://authasking?authString=...  │
-│ Backup automático   │ Sim — sincronizado via conta Microsoft             │
-│ Validação servidor  │ Idêntica — nenhuma mudança no backend necessária   │
-└─────────────────────┴───────────────────────────────────────────────────┘
-```
-
-> **SHA-1 e segurança:** O uso de SHA-1 no TOTP **não é uma vulnerabilidade**. O SHA-1 é inseguro para assinaturas digitais e colisões, mas no TOTP ele é usado como HMAC (HMAC-SHA1), que permanece seguro para este propósito específico. Todos os apps autenticadores do mercado usam HMAC-SHA1 por padrão.
-
----
-
-### 7.3 OTP por Email ou SMS
-
-OTP por canal externo (email ou SMS) é alternativa ao TOTP quando não se quer exigir um app autenticador. O servidor gera um código numérico aleatório, envia ao usuário e valida dentro de uma janela de tempo.
-
-```mermaid
-sequenceDiagram
-    participant U as Usuário
-    participant S as Servidor
-    participant E as Email / SMS
-
-    U->>S: POST /login {username, password}
-    S->>S: Gera OTP (6 dígitos, TTL 10 min)
-    S->>S: Salva hash(OTP) no cache/banco
-    S->>E: Envia código ao email/telefone do usuário
-    S-->>U: Redirect /otp/verify
-
-    U->>E: Lê código recebido
-    U->>S: POST /otp/verify {code: 847291}
-    S->>S: Compara hash(code) com o armazenado
-    S->>S: Verifica TTL e uso único
-    S-->>U: Autenticação completa
-```
-
-#### OtpService
-
-```java
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class OtpService {
-
-    private final Cache<String, String> otpCache;      // Caffeine — TTL 10 min
-    private final PasswordEncoder passwordEncoder;      // BCrypt para hash do OTP
-    private final EmailService emailService;
-    private final SmsService smsService;
-
-    private static final int OTP_LENGTH  = 6;
-    private static final SecureRandom RANDOM = new SecureRandom();
-
-    /**
-     * Gera e envia OTP por email.
-     * A chave de cache é prefixada por canal para evitar colisão.
-     */
-    public void generateAndSendByEmail(String username, String email) {
-        String otp = generateOtp();
-        // Armazena o hash — nunca o OTP em texto claro no cache
-        otpCache.put("email:" + username, passwordEncoder.encode(otp));
-        emailService.sendOtp(email, otp);
-        log.info("OTP por email gerado para usuário: {}", username);
-    }
-
-    public void generateAndSendBySms(String username, String phoneNumber) {
-        String otp = generateOtp();
-        otpCache.put("sms:" + username, passwordEncoder.encode(otp));
-        smsService.sendOtp(phoneNumber, otp);
-    }
-
-    /**
-     * Valida o OTP informado pelo usuário.
-     * Remove do cache após validação bem-sucedida (uso único).
-     */
-    public boolean validateOtp(String channel, String username, String inputCode) {
-        String cacheKey = channel + ":" + username;
-        String storedHash = otpCache.getIfPresent(cacheKey);
-
-        if (storedHash == null) {
-            log.warn("OTP não encontrado ou expirado para: {}", username);
-            return false;
-        }
-
-        boolean valid = passwordEncoder.matches(inputCode, storedHash);
-
-        if (valid) {
-            otpCache.invalidate(cacheKey);  // uso único — invalida imediatamente
-            log.info("OTP válido consumido para: {}", username);
-        } else {
-            log.warn("OTP inválido informado para: {}", username);
-        }
-
-        return valid;
-    }
-
-    private String generateOtp() {
-        // Gera número entre 0 e 999999 e formata com zeros à esquerda
-        int code = RANDOM.nextInt(1_000_000);
-        return String.format("%0" + OTP_LENGTH + "d", code);
-    }
-}
-
-@Configuration
-public class OtpCacheConfig {
-
-    @Bean
-    public Cache<String, String> otpCache() {
-        return Caffeine.newBuilder()
-            .expireAfterWrite(10, TimeUnit.MINUTES)  // OTP expira em 10 minutos
-            .maximumSize(50_000)
-            .build();
-    }
-}
-```
-
-#### OtpController
-
-```java
-@Controller
-@RequestMapping("/otp")
-@RequiredArgsConstructor
-public class OtpController {
-
-    private final OtpService otpService;
-    private final UserService userService;
-
-    @GetMapping("/verify")
-    public String verifyPage() {
-        return "otp/verify";
-    }
-
-    @PostMapping("/verify")
-    public String verifyOtp(@RequestParam String code,
-                            @RequestParam(defaultValue = "email") String channel,
-                            HttpSession session,
-                            RedirectAttributes attrs) {
-
-        String username = (String) session.getAttribute("PRE_OTP_USERNAME");
-        if (username == null) return "redirect:/login";
-
-        if (otpService.validateOtp(channel, username, code)) {
-            userService.completeAuthentication(username, session);
-            session.removeAttribute("PRE_OTP_USERNAME");
-            return "redirect:/dashboard";
-        }
-
-        attrs.addFlashAttribute("error", "Código inválido ou expirado.");
-        return "redirect:/otp/verify";
-    }
-
-    @PostMapping("/resend")
-    public String resendOtp(HttpSession session, RedirectAttributes attrs) {
-        String username = (String) session.getAttribute("PRE_OTP_USERNAME");
-        if (username == null) return "redirect:/login";
-
-        String email = userService.getEmail(username);
-        otpService.generateAndSendByEmail(username, email);
-        attrs.addFlashAttribute("info", "Novo código enviado para seu e-mail.");
-        return "redirect:/otp/verify";
-    }
-}
-```
-
----
-
-### 7.4 One-Time Token (Spring Security 6.4+)
-
-O Spring Security 6.4 (Spring Boot 3.4+) introduziu suporte nativo a **One-Time Token login** — também chamado de **magic link**. O usuário informa apenas o e-mail, recebe um link com um token opaco de uso único, clica e está autenticado — sem senha.
-
-```mermaid
-sequenceDiagram
-    participant U as Usuário
-    participant S as Servidor
-    participant E as Email
-
-    U->>S: POST /ott/generate {username: "alice@example.com"}
-    S->>S: Gera token opaco (UUID seguro, TTL 5 min)
-    S->>S: Persiste token via OneTimeTokenService
-    S->>E: Envia magic link:<br/>https://myapp.com/login/ott?token=<uuid>
-    S-->>U: "Verifique seu e-mail"
-
-    U->>E: Clica no link
-    U->>S: GET /login/ott?token=<uuid>
-    S->>S: Valida token (existência + TTL)
-    S->>S: Invalida token (uso único)
-    S->>S: Carrega UserDetails pelo username
-    S-->>U: Autenticação completa — redirect /dashboard
-```
-
-#### Dependência
-
-O módulo `spring-boot-starter-security` já inclui o suporte. Nenhuma dependência adicional é necessária a partir do Spring Boot 3.4.
-
-#### Configuração da SecurityFilterChain
-
-```java
-@Bean
-public SecurityFilterChain ottSecurityChain(HttpSecurity http,
-        OneTimeTokenGenerationSuccessHandler ottSuccessHandler) throws Exception {
-
-    return http
-        .oneTimeTokenLogin(ott -> ott
-            // Handler chamado após geração do token — responsável por enviar o e-mail
-            .tokenGenerationSuccessHandler(ottSuccessHandler)
-            // URL onde o usuário solicita o magic link (padrão: /ott/generate)
-            .generateTokenUrl("/ott/generate")
-            // URL de consumo do token no link enviado por email (padrão: /login/ott)
-            .loginProcessingUrl("/login/ott")
-            // Redireciona para esta URL após autenticação bem-sucedida
-            .defaultSuccessUrl("/dashboard", true)
-        )
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/ott/**", "/login").permitAll()
-            .anyRequest().authenticated())
-        .build();
-}
-```
-
-#### OneTimeTokenGenerationSuccessHandler — Envio do Magic Link
-
-```java
-/**
- * Chamado pelo Spring Security após gerar o token.
- * Responsabilidade: enviar o magic link ao usuário.
- */
-@Component
-@RequiredArgsConstructor
-@Slf4j
-public class MagicLinkOneTimeTokenHandler
-        implements OneTimeTokenGenerationSuccessHandler {
-
-    private final EmailService emailService;
-    private final RedirectStrategy redirectStrategy = new DefaultRedirectStrategy();
-
-    @Override
-    public void handle(HttpServletRequest request,
-                       HttpServletResponse response,
-                       OneTimeToken token) throws IOException {
-
-        // Monta a URL completa do magic link
-        String magicLink = UriComponentsBuilder
-            .fromHttpUrl(getBaseUrl(request))
-            .path("/login/ott")
-            .queryParam("token", token.getTokenValue())
-            .build()
-            .toUriString();
-
-        // Envia e-mail ao usuário
-        String username = token.getUsername();
-        log.info("Enviando magic link para: {}", username);
-        emailService.sendMagicLink(username, magicLink);
-
-        // Redireciona para página de confirmação
-        redirectStrategy.sendRedirect(request, response, "/ott/sent");
-    }
-
-    private String getBaseUrl(HttpServletRequest request) {
-        String scheme = Optional.ofNullable(request.getHeader("X-Forwarded-Proto"))
-            .orElse(request.getScheme());
-        String host = Optional.ofNullable(request.getHeader("X-Forwarded-Host"))
-            .orElse(request.getServerName());
-        int port = request.getServerPort();
-
-        if ((scheme.equals("http")  && port == 80) ||
-            (scheme.equals("https") && port == 443)) {
-            return scheme + "://" + host;
-        }
-        return scheme + "://" + host + ":" + port;
-    }
-}
-```
-
-#### OneTimeTokenService — Persistência Customizada
-
-O Spring Security fornece `InMemoryOneTimeTokenService` para desenvolvimento. Em produção, implemente `OneTimeTokenService` com banco de dados:
-
-```java
-/**
- * Implementação de OneTimeTokenService com persistência em banco de dados.
- * Substitui o InMemoryOneTimeTokenService padrão.
- */
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class PersistentOneTimeTokenService implements OneTimeTokenService {
-
-    private final OneTimeTokenRepository tokenRepository;
-    private static final Duration TOKEN_TTL = Duration.ofMinutes(5);
-
-    @Override
-    @Transactional
-    public OneTimeToken generate(GenerateOneTimeTokenRequest request) {
-        // Invalida tokens anteriores do mesmo usuário (evita acúmulo)
-        tokenRepository.deleteByUsername(request.getUsername());
-
-        String tokenValue = UUID.randomUUID().toString();
-        Instant expiresAt = Instant.now().plus(TOKEN_TTL);
-
-        OneTimeTokenEntity entity = new OneTimeTokenEntity();
-        entity.setTokenValue(tokenValue);
-        entity.setUsername(request.getUsername());
-        entity.setExpiresAt(expiresAt);
-        tokenRepository.save(entity);
-
-        log.debug("OTT gerado para usuário: {}, expira em: {}",
-            request.getUsername(), expiresAt);
-
-        return new DefaultOneTimeToken(tokenValue, request.getUsername(), expiresAt);
-    }
-
-    @Override
-    @Transactional
-    public OneTimeToken consume(ConsumeOneTimeTokenRequest request) {
-        return tokenRepository.findByTokenValue(request.getToken())
-            .map(entity -> {
-                tokenRepository.delete(entity);  // uso único — remove imediatamente
-
-                if (entity.getExpiresAt().isBefore(Instant.now())) {
-                    log.warn("OTT expirado consumido para: {}", entity.getUsername());
-                    throw new InvalidOneTimeTokenException("Token expirado");
-                }
-
-                log.info("OTT consumido com sucesso para: {}", entity.getUsername());
-                return (OneTimeToken) new DefaultOneTimeToken(
-                    entity.getTokenValue(),
-                    entity.getUsername(),
-                    entity.getExpiresAt());
-            })
-            .orElseThrow(() -> {
-                log.warn("OTT não encontrado: {}", request.getToken());
-                return new InvalidOneTimeTokenException("Token inválido ou já utilizado");
-            });
-    }
-}
-```
-
-#### Entidade JPA e Repositório
-
-```java
-@Entity
-@Table(name = "one_time_tokens",
-       indexes = @Index(name = "idx_ott_token", columnList = "token_value", unique = true))
-@Getter @Setter
-@NoArgsConstructor
-public class OneTimeTokenEntity {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(name = "token_value", nullable = false, unique = true, length = 36)
-    private String tokenValue;
-
-    @Column(name = "username", nullable = false)
-    private String username;
-
-    @Column(name = "expires_at", nullable = false)
-    private Instant expiresAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    @CreationTimestamp
-    private Instant createdAt;
-}
-
-public interface OneTimeTokenRepository extends JpaRepository<OneTimeTokenEntity, Long> {
-    Optional<OneTimeTokenEntity> findByTokenValue(String tokenValue);
-    void deleteByUsername(String username);
-
-    // Job de limpeza — remove tokens expirados
-    @Modifying
-    @Query("DELETE FROM OneTimeTokenEntity t WHERE t.expiresAt < :now")
-    void deleteExpiredTokens(@Param("now") Instant now);
-}
-```
-
-#### Registro dos Beans no SecurityConfig
-
-```java
-@Configuration
-@EnableWebSecurity
-public class SecurityConfig {
-
-    /**
-     * Registra a implementação persistente em vez do InMemoryOneTimeTokenService.
-     * O Spring Security auto-descobre o bean via @Service.
-     */
-    @Bean
-    public OneTimeTokenService oneTimeTokenService(OneTimeTokenRepository repo) {
-        return new PersistentOneTimeTokenService(repo);
-    }
-
-    @Bean
-    public OneTimeTokenGenerationSuccessHandler ottSuccessHandler(EmailService emailService) {
-        return new MagicLinkOneTimeTokenHandler(emailService);
-    }
-}
-```
-
-#### Template — Formulário de Solicitação do Magic Link
-
-```html
-<!-- ott/request.html -->
-<form th:action="@{/ott/generate}" method="post">
-    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
-
-    <h2>Login sem senha</h2>
-    <p>Informe seu e-mail e enviaremos um link de acesso.</p>
-
-    <label>E-mail</label>
-    <input type="email"
-           name="username"       <!-- O Spring Security usa o campo "username" -->
-           placeholder="seu@email.com"
-           autocomplete="email"
-           required/>
-
-    <button type="submit">Enviar link de acesso</button>
-</form>
-
-<!-- ott/sent.html -->
-<div class="alert alert-success">
-    <h4>Link enviado!</h4>
-    <p>Verifique sua caixa de entrada. O link expira em <strong>5 minutos</strong>.</p>
-    <small>Não recebeu? Verifique o spam ou
-        <a th:href="@{/ott/request}">solicite um novo link</a>.
-    </small>
-</div>
-```
-
----
-
-### 7.5 Comparativo de Implementação
-
-| Aspecto | TOTP | OTP por Canal | One-Time Token |
-|---------|------|---------------|----------------|
-| **UX** | Requer app externo | Simples | Mais simples (só e-mail) |
-| **Segurança** | Alta (offline, sem canal externo) | Média (depende do canal) | Alta (token opaco + TTL curto) |
-| **Implementação** | Biblioteca + filtro customizado | Service + cache + envio | Spring Security nativo 6.4+ |
-| **Dependência externa** | App autenticador | SMTP / Twilio | SMTP |
-| **Segundo fator?** | Sim (complementa senha) | Sim (complementa senha) | Não (substitui senha) |
-| **Backup** | Códigos de recuperação | Reenvio | Novo token |
-| **Melhor para** | Alta segurança, usuários técnicos | Usuários não técnicos | Apps sem senha (passwordless) |
-
----
-
-## 8. JWT com Nimbus JOSE+JWT
-
-### 8.1 Arquitetura do Fluxo JWT
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant A as AuthController
-    participant JS as JwtService
-    participant PR as Protected Resource
-
-    C->>A: POST /api/v1/auth/login<br/>{username, password}
-    A->>JS: generateToken(userDetails)
-    JS-->>A: JWT (access + refresh)
-    A-->>C: 200 OK {accessToken, refreshToken, expiresIn}
-
-    C->>PR: GET /api/v1/users<br/>Authorization: Bearer <token>
-    PR->>JS: validateToken(token)
-    JS-->>PR: Claims extraídos
-    PR-->>C: 200 OK [data]
-
-    C->>A: POST /api/v1/auth/refresh<br/>{refreshToken}
-    A->>JS: validateRefreshToken + generateToken
-    JS-->>A: Novo accessToken
-    A-->>C: 200 OK {accessToken, expiresIn}
-```
-
-### 8.2 JwtService com Nimbus
-
-```java
-@Service
-@Slf4j
-public class JwtService {
-
-    private final RSAKey rsaKey;
-    private final JWSAlgorithm algorithm = JWSAlgorithm.RS256;
-
-    // Expiração do access token: 15 minutos
-    private static final Duration ACCESS_TOKEN_TTL  = Duration.ofMinutes(15);
-    // Expiração do refresh token: 7 dias
-    private static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(7);
-
-    public JwtService(@Value("${app.security.jwt.private-key}") RSAPrivateKey privateKey,
-                      @Value("${app.security.jwt.public-key}")  RSAPublicKey  publicKey) {
-        this.rsaKey = new RSAKey.Builder(publicKey)
-            .privateKey(privateKey)
-            .keyID(UUID.randomUUID().toString())
-            .build();
-    }
-
-    /**
-     * Gera um access token JWT assinado com RSA-256.
-     */
-    public String generateAccessToken(UserDetails userDetails) {
-        return buildToken(userDetails, ACCESS_TOKEN_TTL, "access");
-    }
-
-    /**
-     * Gera um refresh token JWT — sem claims de roles.
-     */
-    public String generateRefreshToken(UserDetails userDetails) {
-        return buildToken(userDetails, REFRESH_TOKEN_TTL, "refresh");
-    }
-
-    private String buildToken(UserDetails user, Duration ttl, String tokenType) {
-        Instant now = Instant.now();
-
-        // Claims padrão (registered claims)
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
-            .subject(user.getUsername())
-            .issuer("https://myapp.example.com")
-            .audience("myapp-api")
-            .issueTime(Date.from(now))
-            .expirationTime(Date.from(now.plus(ttl)))
-            .jwtID(UUID.randomUUID().toString())
-            // Claims customizados
-            .claim("token_type", tokenType)
-            .claim("roles", extractRoles(user))
-            .claim("permissions", extractPermissions(user))
-            .build();
-
-        try {
-            SignedJWT jwt = new SignedJWT(
-                new JWSHeader.Builder(algorithm)
-                    .keyID(rsaKey.getKeyID())
-                    .type(JOSEObjectType.JWT)
-                    .build(),
-                claims);
-
-            jwt.sign(new RSASSASigner(rsaKey));
-            return jwt.serialize();
-
-        } catch (JOSEException e) {
-            throw new TokenGenerationException("Falha ao gerar token JWT", e);
-        }
-    }
-
-    /**
-     * Valida e extrai claims de um token JWT.
-     * Lança exceção se o token for inválido, expirado ou com assinatura incorreta.
-     */
-    public JWTClaimsSet validateAndExtractClaims(String token) {
-        try {
-            SignedJWT jwt = SignedJWT.parse(token);
-
-            // Verifica assinatura
-            JWSVerifier verifier = new RSASSAVerifier(rsaKey.toRSAPublicKey());
-            if (!jwt.verify(verifier)) {
-                throw new InvalidTokenException("Assinatura JWT inválida");
-            }
-
-            JWTClaimsSet claims = jwt.getJWTClaimsSet();
-
-            // Verifica expiração
-            if (claims.getExpirationTime().before(new Date())) {
-                throw new TokenExpiredException("Token JWT expirado");
-            }
-
-            // Verifica issuer
-            if (!"https://myapp.example.com".equals(claims.getIssuer())) {
-                throw new InvalidTokenException("Issuer inválido");
-            }
-
-            return claims;
-
-        } catch (ParseException | JOSEException e) {
-            throw new InvalidTokenException("Token JWT malformado", e);
-        }
-    }
-
-    public String extractUsername(String token) {
-        return validateAndExtractClaims(token).getSubject();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> extractRoles(UserDetails user) {
-        return user.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .filter(a -> a.startsWith("ROLE_"))
-            .map(a -> a.substring(5))
-            .toList();
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> extractPermissions(UserDetails user) {
-        return user.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .filter(a -> !a.startsWith("ROLE_"))
-            .toList();
-    }
-}
-```
-
-### 8.3 Geração de Par de Chaves RSA
-
-```java
-@Configuration
-public class JwtKeyConfig {
-
-    /**
-     * Lê a chave privada RSA de variável de ambiente (PEM base64).
-     * Em produção, usar AWS Secrets Manager, Vault ou similar.
-     */
-    @Bean
-    public RSAPrivateKey jwtPrivateKey(
-            @Value("${app.security.jwt.private-key-pem}") String pemBase64)
-            throws Exception {
-
-        byte[] decoded = Base64.getDecoder().decode(pemBase64.replaceAll("\\s", ""));
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
-        return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
-    }
-
-    @Bean
-    public RSAPublicKey jwtPublicKey(
-            @Value("${app.security.jwt.public-key-pem}") String pemBase64)
-            throws Exception {
-
-        byte[] decoded = Base64.getDecoder().decode(pemBase64.replaceAll("\\s", ""));
-        X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
-        return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
-    }
-}
-```
-
-```bash
-# Geração do par de chaves RSA 2048 bits (use 4096 em produção):
-openssl genrsa -out private.pem 2048
-openssl rsa -in private.pem -pubout -out public.pem
-
-# Converter para base64 (uma linha):
-base64 -w 0 private.pem
-base64 -w 0 public.pem
-```
-
-### 8.4 JwtAuthenticationFilter
-
-```java
-@Component
-@RequiredArgsConstructor
-@Slf4j
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
-
-    private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
-
-    private static final String BEARER_PREFIX = "Bearer ";
-
-    @Override
-    protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain)
-            throws ServletException, IOException {
-
-        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
-
-        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        String token = authHeader.substring(BEARER_PREFIX.length());
-
-        try {
-            String username = jwtService.extractUsername(token);
-
-            if (username != null &&
-                SecurityContextHolder.getContext().getAuthentication() == null) {
-
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-                JWTClaimsSet claims = jwtService.validateAndExtractClaims(token);
-
-                // Verifica que é um access token (não refresh)
-                if (!"access".equals(claims.getStringClaim("token_type"))) {
-                    throw new InvalidTokenException("Tipo de token inválido para autenticação");
-                }
-
-                UsernamePasswordAuthenticationToken authToken =
-                    new UsernamePasswordAuthenticationToken(
-                        userDetails, null, userDetails.getAuthorities());
-
-                authToken.setDetails(
-                    new WebAuthenticationDetailsSource().buildDetails(request));
-
-                SecurityContextHolder.getContext().setAuthentication(authToken);
-            }
-
-        } catch (InvalidTokenException | TokenExpiredException e) {
-            log.debug("Token JWT inválido: {}", e.getMessage());
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.setContentType("application/json");
-            response.getWriter().write(
-                "{\"error\": \"invalid_token\", \"message\": \"%s\"}"
-                    .formatted(e.getMessage()));
-            return;
-        }
-
-        filterChain.doFilter(request, response);
-    }
-
-    /**
-     * Não filtrar rotas públicas de autenticação.
-     */
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-        return path.startsWith("/api/v1/auth/") ||
-               path.startsWith("/api/v1/public/");
-    }
-}
-```
-
-### 8.5 AuthController
-
-```java
-@RestController
-@RequestMapping("/api/v1/auth")
-@RequiredArgsConstructor
-@Tag(name = "Authentication")
-public class AuthController {
-
-    private final AuthenticationManager authenticationManager;
-    private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
-
-    @PostMapping("/login")
-    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
-        Authentication auth = authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(
-                request.username(), request.password()));
-
-        UserDetails userDetails = (UserDetails) auth.getPrincipal();
-        String accessToken  = jwtService.generateAccessToken(userDetails);
-        String refreshToken = jwtService.generateRefreshToken(userDetails);
-
-        return ResponseEntity.ok(new AuthResponse(
-            accessToken,
-            refreshToken,
-            "Bearer",
-            jwtService.getAccessTokenTtlSeconds()));
-    }
-
-    @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(
-            @RequestBody RefreshTokenRequest request) {
-
-        String username = jwtService.extractUsernameFromRefreshToken(request.refreshToken());
-        UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-        String newAccessToken = jwtService.generateAccessToken(userDetails);
-
-        return ResponseEntity.ok(new AuthResponse(
-            newAccessToken,
-            request.refreshToken(),
-            "Bearer",
-            jwtService.getAccessTokenTtlSeconds()));
-    }
-
-    // DTOs como Records (Java 16+)
-    public record LoginRequest(
-        @NotBlank String username,
-        @NotBlank String password) {}
-
-    public record RefreshTokenRequest(
-        @NotBlank String refreshToken) {}
-
-    public record AuthResponse(
-        String accessToken,
-        String refreshToken,
-        String tokenType,
-        long expiresIn) {}
-}
-```
-
-### 8.6 Refresh Token em Cookie HTTP-Only
-
-Retornar o refresh token no corpo da resposta JSON expõe-o a roubo via XSS: qualquer script malicioso injetado na página pode lê-lo do `localStorage` ou da memória do aplicativo. Armazená-lo em um cookie `HttpOnly; Secure; SameSite=Strict` torna-o inacessível a JavaScript, eliminando esse vetor.
-
-#### Por que cookie HTTP-Only é mais seguro para o refresh token
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                  Refresh Token no Body  vs  Cookie HTTP-Only                │
-├──────────────────────────────┬──────────────────────────────────────────────┤
-│ Body / localStorage          │ Cookie HttpOnly                              │
-├──────────────────────────────┼──────────────────────────────────────────────┤
-│ Legível por JavaScript       │ Inacessível a qualquer script                │
-│ Vulnerável a XSS             │ Imune a XSS                                 │
-│ Enviado manualmente (fetch)  │ Enviado automaticamente pelo browser         │
-│ Precisa de lógica de storage │ Gerenciado pelo browser                     │
-│ Vulnerável a CSRF? Não       │ Vulnerável a CSRF? Sim → mitigar com        │
-│                              │ SameSite=Strict + CSRF token no refresh      │
-└──────────────────────────────┴──────────────────────────────────────────────┘
-```
-
-O **access token** continua sendo retornado no body e armazenado em memória (variável JavaScript) — não em `localStorage`. Ele tem TTL curto (15 min) e é enviado manualmente no header `Authorization`. O **refresh token** vai no cookie e nunca é acessado por JavaScript.
-
-#### Diagrama do fluxo completo
-
-```mermaid
-sequenceDiagram
-    participant C as Browser (SPA)
-    participant S as AuthController
-    participant JS as JwtService
-
-    Note over C,S: Login
-    C->>S: POST /api/v1/auth/login
-    Note over C,S: Body: username + password
-    S->>JS: generateAccessToken + generateRefreshToken
-    S-->>C: 200 OK
-    Note over S,C: Body: accessToken + expiresIn<br>Set-Cookie: refresh_token (HttpOnly Secure SameSite=Strict)
-
-    Note over C,S: Chamada autenticada
-    C->>S: GET /api/v1/resource
-    Note over C,S: Header: Authorization Bearer accessToken
-    S-->>C: 200 OK
-
-    Note over C,S: Renovação (access token expirado)
-    C->>S: POST /api/v1/auth/refresh
-    Note over C,S: Cookie refresh_token enviado automaticamente pelo browser
-    S->>JS: validateRefreshToken + generateAccessToken
-    S-->>C: 200 OK
-    Note over S,C: Body: novo accessToken<br>Set-Cookie: refresh_token renovado
-
-    Note over C,S: Logout
-    C->>S: POST /api/v1/auth/logout
-    Note over C,S: Cookie refresh_token enviado automaticamente
-    S-->>C: 200 OK
-    Note over S,C: Set-Cookie: refresh_token vazio com Max-Age=0
-```
-
-#### CookieTokenService — criação e leitura do cookie
-
-```java
-/**
- * Serviço responsável por emitir e consumir o cookie HttpOnly
- * que transporta o refresh token.
- *
- * Atributos do cookie:
- * - HttpOnly   → inacessível a JavaScript (proteção XSS)
- * - Secure     → transmitido apenas em HTTPS (proteção man-in-the-middle)
- * - SameSite=Strict → não enviado em requisições cross-site (proteção CSRF)
- * - Path=/api/v1/auth → enviado apenas para os endpoints de autenticação,
- *                        não para cada requisição da API (minimiza exposição)
- * - Max-Age    → TTL explícito; sem Max-Age o cookie seria de sessão e
- *                desapareceria ao fechar o browser
- */
-@Component
-public class CookieTokenService {
-
-    public static final String REFRESH_TOKEN_COOKIE = "refresh_token";
-
-    @Value("${app.security.jwt.refresh-token-ttl-days:30}")
-    private int refreshTokenTtlDays;
-
-    @Value("${app.security.cookie.secure:true}")
-    private boolean secureCookie;   // false apenas em dev-local (HTTP)
-
-    /**
-     * Cria o cookie HttpOnly com o refresh token e o adiciona à resposta.
-     */
-    public void addRefreshTokenCookie(HttpServletResponse response,
-                                      String refreshToken) {
-        ResponseCookie cookie = ResponseCookie
-            .from(REFRESH_TOKEN_COOKIE, refreshToken)
-            .httpOnly(true)                          // bloqueia acesso via JS
-            .secure(secureCookie)                    // HTTPS obrigatório em prod
-            .sameSite("Strict")                      // bloqueia envio cross-site
-            .path("/api/v1/auth")                    // escopo mínimo — só auth endpoints
-            .maxAge(Duration.ofDays(refreshTokenTtlDays))
-            .build();
-
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-    }
-
-    /**
-     * Lê o refresh token do cookie da requisição.
-     * Retorna Optional.empty() se o cookie não estiver presente.
-     */
-    public Optional<String> getRefreshToken(HttpServletRequest request) {
-        return Optional.ofNullable(WebUtils.getCookie(request, REFRESH_TOKEN_COOKIE))
-            .map(Cookie::getValue)
-            .filter(v -> !v.isBlank());
-    }
-
-    /**
-     * Apaga o cookie de refresh token — chamado no logout.
-     * Define Max-Age=0 para instruir o browser a remover o cookie imediatamente.
-     */
-    public void clearRefreshTokenCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie
-            .from(REFRESH_TOKEN_COOKIE, "")
-            .httpOnly(true)
-            .secure(secureCookie)
-            .sameSite("Strict")
-            .path("/api/v1/auth")
-            .maxAge(Duration.ZERO)                   // instrui o browser a apagar
-            .build();
-
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-    }
-}
-```
-
-> **`ResponseCookie` vs `Cookie`:** Use sempre `ResponseCookie` do Spring (não `javax.servlet.http.Cookie`) para definir o atributo `SameSite`. A classe `Cookie` da servlet API não expõe `SameSite` e qualquer workaround via `addHeader` manual é frágil. `ResponseCookie.from(...).sameSite("Strict")` gera o header `Set-Cookie` correto.
-
-#### AuthController refatorado — refresh token no cookie
-
-```java
-@RestController
-@RequestMapping("/api/v1/auth")
-@RequiredArgsConstructor
-@Tag(name = "Authentication")
-public class AuthController {
-
-    private final AuthenticationManager authenticationManager;
-    private final JwtService jwtService;
-    private final UserDetailsService userDetailsService;
-    private final CookieTokenService cookieService;
-
-    // ── Login ─────────────────────────────────────────────────────────────
-
-    @PostMapping("/login")
-    public ResponseEntity<AccessTokenResponse> login(
-            @Valid @RequestBody LoginRequest request,
-            HttpServletResponse response) {
-
-        Authentication auth = authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(
-                request.username(), request.password()));
-
-        UserDetails userDetails = (UserDetails) auth.getPrincipal();
-
-        String accessToken  = jwtService.generateAccessToken(userDetails);
-        String refreshToken = jwtService.generateRefreshToken(userDetails);
-
-        // Refresh token → cookie HttpOnly (nunca no body)
-        cookieService.addRefreshTokenCookie(response, refreshToken);
-
-        // Access token → body (armazenado em memória pelo SPA, não em localStorage)
-        return ResponseEntity.ok(new AccessTokenResponse(
-            accessToken,
-            "Bearer",
-            jwtService.getAccessTokenTtlSeconds()));
-    }
-
-    // ── Refresh ───────────────────────────────────────────────────────────
-
-    /**
-     * Renova o access token usando o refresh token do cookie.
-     *
-     * O cookie é enviado automaticamente pelo browser — o cliente não precisa
-     * ler nem repassar o refresh token explicitamente.
-     *
-     * Proteção CSRF: SameSite=Strict já bloqueia requisições cross-site.
-     * Para defesa em profundidade, valide também o header customizado:
-     * requisições cross-site não conseguem definir headers customizados.
-     */
-    @PostMapping("/refresh")
-    public ResponseEntity<AccessTokenResponse> refresh(
-            HttpServletRequest request,
-            HttpServletResponse response) {
-
-        // Extrai o refresh token do cookie — nunca do body
-        String refreshToken = cookieService.getRefreshToken(request)
-            .orElseThrow(() -> new MissingRefreshTokenException(
-                "Refresh token ausente. Faça login novamente."));
-
-        // Valida e extrai o username do refresh token
-        String username = jwtService.extractUsernameFromRefreshToken(refreshToken);
-        UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-
-        // Gera novo access token
-        String newAccessToken = jwtService.generateAccessToken(userDetails);
-
-        // Gera novo refresh token (rotação — invalida o anterior)
-        String newRefreshToken = jwtService.generateRefreshToken(userDetails);
-        cookieService.addRefreshTokenCookie(response, newRefreshToken);
-
-        return ResponseEntity.ok(new AccessTokenResponse(
-            newAccessToken,
-            "Bearer",
-            jwtService.getAccessTokenTtlSeconds()));
-    }
-
-    // ── Logout ────────────────────────────────────────────────────────────
-
-    /**
-     * Invalida o refresh token e apaga o cookie.
-     * O access token não pode ser revogado (stateless) — expira naturalmente.
-     * Para revogação imediata do access token, implementar uma denylist (Redis).
-     */
-    @PostMapping("/logout")
-    public ResponseEntity<Void> logout(
-            HttpServletRequest request,
-            HttpServletResponse response) {
-
-        // Apaga o cookie de refresh token no browser
-        cookieService.clearRefreshTokenCookie(response);
-
-        // Limpa o SecurityContext da requisição atual
-        SecurityContextHolder.clearContext();
-
-        return ResponseEntity.noContent().build();
-    }
-
-    // ── DTOs ──────────────────────────────────────────────────────────────
-
-    public record LoginRequest(
-        @NotBlank String username,
-        @NotBlank String password) {}
-
-    /**
-     * O refresh token foi removido do response body.
-     * Apenas o access token e seus metadados são retornados.
-     */
-    public record AccessTokenResponse(
-        String accessToken,
-        String tokenType,
-        long   expiresIn) {}
-}
-```
-
-#### Rotação do Refresh Token
-
-A cada chamada ao `/refresh`, um novo refresh token é gerado e o anterior é descartado. Isso limita a janela de uso de um token roubado: se um atacante usar o refresh token comprometido, o token legítimo do usuário também será invalidado na próxima renovação, forçando um novo login.
-
-```java
-// Em JwtService — registro de refresh tokens usados (denylist simples com Redis)
-@Service
-@RequiredArgsConstructor
-public class JwtService {
-
-    private final RedisTemplate<String, String> redisTemplate;
-
-    private static final String REVOKED_PREFIX = "revoked:refresh:";
-
-    /**
-     * Valida o refresh token e garante que não foi revogado.
-     * Após validação, registra o JTI como revogado (uso único).
-     */
-    public String consumeRefreshToken(String token) {
-        JWTClaimsSet claims = validateAndExtractClaims(token);
-
-        String jti = claims.getJWTIDClaim();
-        String revokedKey = REVOKED_PREFIX + jti;
-
-        // Verifica se já foi usado (rotação — cada refresh token é de uso único)
-        if (Boolean.TRUE.equals(redisTemplate.hasKey(revokedKey))) {
-            throw new InvalidTokenException(
-                "Refresh token já utilizado. Possível reutilização — faça login novamente.");
-        }
-
-        // Registra como revogado com TTL igual ao tempo restante do token
-        Instant expiration = claims.getExpirationTime().toInstant();
-        long ttlSeconds = Duration.between(Instant.now(), expiration).getSeconds();
-        if (ttlSeconds > 0) {
-            redisTemplate.opsForValue().set(revokedKey, "1",
-                Duration.ofSeconds(ttlSeconds));
-        }
-
-        return claims.getSubject();
-    }
-}
-```
-
-#### Configuração por perfil — desabilitar Secure em dev-local
-
-```yaml
-# application.yml
-app:
-  security:
-    cookie:
-      secure: true    # HTTPS obrigatório em produção
-
-# application-dev-local.yml
-app:
-  security:
-    cookie:
-      secure: false   # permite HTTP em desenvolvimento local
-    jwt:
-      refresh-token-ttl-days: 1   # TTL reduzido em desenvolvimento
-```
-
-#### Consumo no cliente React (SPA)
-
-O exemplo usa `fetch` nativo e **TanStack Query** (`@tanstack/react-query`) — alinhado com o stack `react-frontend-stack`. O access token é mantido em memória via módulo singleton; o cookie `HttpOnly` com o refresh token é gerenciado exclusivamente pelo browser.
-
-```typescript
-// auth/tokenStore.ts
-// Módulo singleton — access token em memória, nunca em localStorage ou sessionStorage
-let accessToken: string | null = null;
-
-export const tokenStore = {
-  get: (): string | null => accessToken,
-  set: (token: string): void => { accessToken = token; },
-  clear: (): void => { accessToken = null; },
-};
-```
-
-```typescript
-// auth/api.ts — funções de autenticação com fetch nativo
-import { tokenStore } from './tokenStore';
-
-export interface LoginRequest  { username: string; password: string; }
-export interface TokenResponse { accessToken: string; expiresIn: number; }
-
-/** Login — persiste apenas o access token; refresh token vai para cookie HttpOnly. */
-export async function login(credentials: LoginRequest): Promise<void> {
-  const res = await fetch('/api/v1/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',           // recebe o Set-Cookie do servidor
-    body: JSON.stringify(credentials),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message ?? 'Credenciais inválidas.');
-  }
-
-  const data: TokenResponse = await res.json();
-  tokenStore.set(data.accessToken);  // access token em memória
-}
-
-/**
- * Renova o access token usando o cookie HttpOnly.
- * O browser envia o cookie automaticamente — JS nunca o lê ou manipula.
- */
-export async function refreshAccessToken(): Promise<string> {
-  const res = await fetch('/api/v1/auth/refresh', {
-    method: 'POST',
-    credentials: 'include',           // envia cookie refresh_token automaticamente
-  });
-
-  if (!res.ok) {
-    tokenStore.clear();
-    throw new Error('Sessão expirada. Faça login novamente.');
-  }
-
-  const data: TokenResponse = await res.json();
-  tokenStore.set(data.accessToken);
-  return data.accessToken;
-}
-
-/** Logout — limpa o access token em memória e apaga o cookie via servidor. */
-export async function logout(): Promise<void> {
-  await fetch('/api/v1/auth/logout', {
-    method: 'POST',
-    credentials: 'include',           // servidor apaga o cookie com Max-Age=0
-  });
-  tokenStore.clear();
-}
-```
-
-```typescript
-// auth/fetchClient.ts
-// fetch wrapper com renovação automática de token em caso de 401
-import { tokenStore, refreshAccessToken } from './api';
-
-type FetchArgs = [input: RequestInfo | URL, init?: RequestInit];
-
-export async function authFetch(...[input, init]: FetchArgs): Promise<Response> {
-  const token = tokenStore.get();
-
-  const res = await fetch(input, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-
-  // Token expirado — tenta renovar e reenviar uma única vez
-  if (res.status === 401 && token !== null) {
-    try {
-      const newToken = await refreshAccessToken();
-      return fetch(input, {
-        ...init,
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(init?.headers ?? {}),
-          Authorization: `Bearer ${newToken}`,
-        },
-      });
-    } catch {
-      // Refresh falhou — redireciona para login
-      window.location.href = '/login?expired';
-    }
-  }
-
-  return res;
-}
-```
-
-```typescript
-// hooks/useUsers.ts — integração com TanStack Query
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { authFetch } from '../auth/fetchClient';
-
-export interface UserDto {
-  id: number;
-  username: string;
-  email: string;
-}
-
-// Query: lista de usuários com cache e renovação automática de token
-export function useUsers() {
-  return useQuery<UserDto[]>({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const res = await authFetch('/api/v1/users');
-      if (!res.ok) throw new Error('Erro ao carregar usuários.');
-      return res.json();
-    },
-  });
-}
-
-// Mutation: criação de usuário com invalidação do cache
-export function useCreateUser() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (payload: Omit<UserDto, 'id'>) => {
-      const res = await authFetch('/api/v1/users', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error('Erro ao criar usuário.');
-      return res.json() as Promise<UserDto>;
-    },
-    onSuccess: () => {
-      // Invalida o cache para forçar recarregamento da lista
-      queryClient.invalidateQueries({ queryKey: ['users'] });
-    },
-  });
-}
-```
-
-```typescript
-// hooks/useAuth.ts — hook de autenticação com TanStack Query
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { login, logout } from '../auth/api';
-import { tokenStore } from '../auth/tokenStore';
-
-export function useLogin() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: login,
-    onSuccess: () => {
-      // Invalida queries que dependem da autenticação
-      queryClient.invalidateQueries();
-    },
-    onError: (error: Error) => {
-      console.error('Login falhou:', error.message);
-    },
-  });
-}
-
-export function useLogout() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: logout,
-    onSettled: () => {
-      // Limpa todo o cache independente de sucesso ou falha
-      queryClient.clear();
-      tokenStore.clear();
-    },
-  });
-}
-
-/** Verifica se há um access token em memória (não garante validade). */
-export function useIsAuthenticated(): boolean {
-  return tokenStore.get() !== null;
-}
-```
-
-```tsx
-// components/LoginForm.tsx
-import { useLogin } from '../hooks/useAuth';
-
-export function LoginForm() {
-  const { mutate: doLogin, isPending, isError, error } = useLogin();
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    doLogin({
-      username: form.get('username') as string,
-      password: form.get('password') as string,
-    });
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      {isError && <p className="text-danger">{(error as Error).message}</p>}
-      <input name="username" type="text"     required placeholder="Usuário" />
-      <input name="password" type="password" required placeholder="Senha"   />
-      <button type="submit" disabled={isPending}>
-        {isPending ? 'Entrando…' : 'Entrar'}
-      </button>
-    </form>
-  );
-}
-```
-
-#### Configuração CORS para credenciais
-
-O envio de cookies em requisições cross-origin (SPA em porta diferente da API) requer configuração explícita de CORS — tanto no cliente (`credentials: 'include'`) quanto no servidor:
-
-```java
-@Configuration
-public class CorsConfig implements WebMvcConfigurer {
-
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/api/**")
-            // Origens explícitas obrigatórias quando allowCredentials=true
-            // (não é possível usar "*" com credentials)
-            .allowedOrigins(
-                "http://localhost:5173",   // Vite dev server
-                "https://myapp.com")
-            .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
-            .allowedHeaders("*")
-            .allowCredentials(true)        // permite envio de cookies cross-origin
-            .maxAge(3600);
-    }
-}
-```
-
-> **`allowCredentials(true)` e `allowedOrigins("*")` são mutuamente exclusivos** no Spring MVC. Ao usar credenciais, as origens devem ser listadas explicitamente. Em produção, externalize a lista via `@Value("${app.cors.allowed-origins}")`.
-
-
----
-
-## 9. Method Security (@PreAuthorize / @PostAuthorize)
-
-### 9.1 Habilitação
-
-```java
-@Configuration
-@EnableMethodSecurity(
-    prePostEnabled  = true,   // @PreAuthorize, @PostAuthorize, @PreFilter, @PostFilter
-    securedEnabled  = true,   // @Secured (legado)
-    jsr250Enabled   = true    // @RolesAllowed, @PermitAll, @DenyAll (JSR-250)
-)
-public class MethodSecurityConfig {
-    // Configurações adicionais do MethodSecurityExpressionHandler aqui
-}
-```
-
-### 9.2 Exemplos de @PreAuthorize
-
-```java
-@Service
-@RequiredArgsConstructor
-public class UserService {
-
-    private final UserRepository userRepository;
-
-    // Apenas ADMIN pode listar todos os usuários
-    @PreAuthorize("hasRole('ADMIN')")
-    public List<UserDto> findAll() {
-        return userRepository.findAll().stream()
-            .map(UserDto::fromEntity)
-            .toList();
-    }
-
-    // Usuário pode acessar seu próprio perfil; ADMIN pode acessar qualquer um
-    @PreAuthorize("hasRole('ADMIN') or #username == authentication.name")
-    public UserDto findByUsername(String username) {
-        return userRepository.findByUsername(username)
-            .map(UserDto::fromEntity)
-            .orElseThrow(UserNotFoundException::new);
-    }
-
-    // Verifica permissão granular (não apenas role)
-    @PreAuthorize("hasAuthority('USER_WRITE')")
-    public UserDto create(CreateUserRequest request) {
-        // ...
-    }
-
-    // Validação antes E depois (garante que retorna apenas o próprio dado)
-    @PreAuthorize("isAuthenticated()")
-    @PostAuthorize("returnObject.username == authentication.name or hasRole('ADMIN')")
-    public UserDto findById(Long id) {
-        return userRepository.findById(id)
-            .map(UserDto::fromEntity)
-            .orElseThrow(UserNotFoundException::new);
-    }
-
-    // Filtra lista no retorno — remove itens que o usuário não pode ver
-    @PreAuthorize("isAuthenticated()")
-    @PostFilter("filterObject.owner == authentication.name or hasRole('ADMIN')")
-    public List<DocumentDto> findDocuments() {
-        return documentRepository.findAll().stream()
-            .map(DocumentDto::fromEntity)
-            .toList();
-    }
-
-    // Filtra lista de entrada — remove itens não autorizados
-    @PreFilter("filterObject.owner == authentication.name")
-    public void deleteDocuments(List<DocumentDto> documents) {
-        documents.forEach(d -> documentRepository.deleteById(d.id()));
-    }
-}
-```
-
-### 9.3 @PostAuthorize para Verificação de Retorno
-
-```java
-@RestController
-@RequestMapping("/api/v1/orders")
-public class OrderController {
-
-    private final OrderService orderService;
-
-    // Verifica após a execução se o pedido pertence ao usuário autenticado
-    @GetMapping("/{id}")
-    @PostAuthorize("returnObject.customerId == authentication.name " +
-                   "or hasRole('ADMIN')")
-    public OrderDto getOrder(@PathVariable Long id) {
-        return orderService.findById(id);
-    }
-}
-```
-
-### 9.4 @Secured e @RolesAllowed (legado)
-
-```java
-// @Secured — sem SpEL, apenas roles
-@Secured({"ROLE_ADMIN", "ROLE_MANAGER"})
-public void deleteUser(Long id) { ... }
-
-// @RolesAllowed — JSR-250, sem prefixo ROLE_
-@RolesAllowed({"ADMIN", "MANAGER"})
-public void deleteUser(Long id) { ... }
-
-// @PermitAll / @DenyAll — JSR-250
-@PermitAll
-public List<ProductDto> listPublicProducts() { ... }
-
-@DenyAll
-public void dangerousOperation() { ... }
-```
-
----
-
-## 10. SpEL Customizado para Anotações de Segurança
-
-### 10.1 Como Funciona
-
-O Spring Security avalia `@PreAuthorize` usando `SecurityExpressionRoot`, que expõe funções como `hasRole()`, `isAuthenticated()`, etc. Para adicionar funções customizadas, cria-se um `MethodSecurityExpressionHandler` personalizado.
-
+### 6.1 Como o Spring Security Processa CORS
 ```mermaid
 flowchart TD
-    PA["@PreAuthorize('meuMetodo(#param)')"] --> MSEH[MethodSecurityExpressionHandler]
-    MSEH --> CSER[CustomSecurityExpressionRoot]
-    CSER --> MO[MySecurityOperations<br>Bean com lógica customizada]
-    MO --> DB[(Database / Cache)]
-    MO --> AUTH[Authentication<br>object]
+    REQ[Requisição HTTP] --> CORS_FILTER[CorsFilter
+Spring Security]
+    CORS_FILTER --> PREFLIGHT{É preflight?
+METHOD = OPTIONS}
+    PREFLIGHT -->|Sim| EVAL[Avalia CorsConfigurationSource]
+    EVAL --> ALLOWED{Origem
+permitida?}
+    ALLOWED -->|Sim| RESP_OK["200 OK + headers
+Access-Control-Allow-*"]
+    ALLOWED -->|Não| RESP_DENY[403 Forbidden]
+    PREFLIGHT -->|Não — request real| AUTH[Filtros de Autenticação]
+    AUTH --> HANDLER[Controller]
 ```
 
-### 10.2 Implementação Completa
-
-**Passo 1 — Classe com operações customizadas:**
-
-```java
-/**
- * Operações de segurança customizadas disponíveis via SpEL em @PreAuthorize.
- * Exemplo de uso: @PreAuthorize("@security.isOwner(#resourceId)")
- */
-@Component("security")  // Nome do bean usado no SpEL: @security
-@RequiredArgsConstructor
-@Slf4j
-public class SecurityOperations {
-
-    private final ResourceRepository resourceRepository;
-    private final OrganizationService organizationService;
-
-    /**
-     * Verifica se o usuário autenticado é dono do recurso.
-     * Uso: @PreAuthorize("@security.isOwner(#resourceId)")
-     */
-    public boolean isOwner(Long resourceId) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) return false;
-
-        return resourceRepository.findById(resourceId)
-            .map(r -> r.getOwnerUsername().equals(auth.getName()))
-            .orElse(false);
-    }
-
-    /**
-     * Verifica se o usuário pertence à organização especificada.
-     * Uso: @PreAuthorize("@security.belongsToOrg(#orgId)")
-     */
-    public boolean belongsToOrg(Long orgId) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return organizationService.isMember(auth.getName(), orgId);
-    }
-
-    /**
-     * Verifica se o usuário tem permissão específica sobre o recurso.
-     * Uso: @PreAuthorize("@security.canAccess(#resourceId, 'READ')")
-     */
-    public boolean canAccess(Long resourceId, String action) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return resourceRepository.findById(resourceId)
-            .map(r -> hasPermissionForAction(auth, r, action))
-            .orElse(false);
-    }
-
-    /**
-     * Verifica se o tenant do usuário autenticado corresponde ao tenant do parâmetro.
-     * Uso: @PreAuthorize("@security.sameTenant(#tenantId)")
-     */
-    public boolean sameTenant(String tenantId) {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth.getPrincipal() instanceof TenantAwareUserDetails user) {
-            return user.getTenantId().equals(tenantId);
-        }
-        return false;
-    }
-
-    private boolean hasPermissionForAction(Authentication auth, Resource r, String action) {
-        return switch (action.toUpperCase()) {
-            case "READ"   -> r.isPublic() || r.getOwnerUsername().equals(auth.getName());
-            case "WRITE"  -> r.getOwnerUsername().equals(auth.getName()) ||
-                             hasAuthority(auth, "RESOURCE_WRITE");
-            case "DELETE" -> r.getOwnerUsername().equals(auth.getName()) ||
-                             hasRole(auth, "ADMIN");
-            default       -> false;
-        };
-    }
-
-    private boolean hasAuthority(Authentication auth, String authority) {
-        return auth.getAuthorities().stream()
-            .anyMatch(a -> a.getAuthority().equals(authority));
-    }
-
-    private boolean hasRole(Authentication auth, String role) {
-        return hasAuthority(auth, "ROLE_" + role);
-    }
-}
-```
-
-**Passo 2 — Uso nos controladores/serviços:**
-
-```java
-@RestController
-@RequestMapping("/api/v1/resources")
-@RequiredArgsConstructor
-public class ResourceController {
-
-    private final ResourceService resourceService;
-
-    // Verifica se o usuário é dono do recurso antes de retornar
-    @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN') or @security.isOwner(#id)")
-    public ResourceDto getResource(@PathVariable Long id) {
-        return resourceService.findById(id);
-    }
-
-    // Verifica tenant + permissão de escrita
-    @PutMapping("/{id}")
-    @PreAuthorize("@security.canAccess(#id, 'WRITE') and @security.sameTenant(#request.tenantId)")
-    public ResourceDto updateResource(@PathVariable Long id,
-                                      @RequestBody @Valid UpdateResourceRequest request) {
-        return resourceService.update(id, request);
-    }
-
-    // Combina múltiplas verificações customizadas
-    @DeleteMapping("/{id}")
-    @PreAuthorize("@security.isOwner(#id) or (hasRole('ADMIN') and @security.sameTenant(#tenantId))")
-    public ResponseEntity<Void> deleteResource(@PathVariable Long id,
-                                               @RequestParam String tenantId) {
-        resourceService.delete(id);
-        return ResponseEntity.noContent().build();
-    }
-
-    // Usa SpEL puro com acesso ao objeto Authentication
-    @GetMapping("/my-resources")
-    @PreAuthorize("authentication.name != null and isAuthenticated()")
-    public List<ResourceDto> getMyResources() {
-        return resourceService.findByCurrentUser();
-    }
-}
-```
-
-### 10.3 MethodSecurityExpressionHandler Customizado (Alternativa)
-
-Para adicionar funções diretamente no contexto SpEL (sem `@beanName`):
-
-```java
-/**
- * Root de expressão customizada — adiciona métodos disponíveis diretamente no SpEL.
- * Exemplo: @PreAuthorize("isOwnerOf(#id)") em vez de @PreAuthorize("@security.isOwner(#id)")
- */
-public class CustomSecurityExpressionRoot
-        extends SecurityExpressionRoot
-        implements MethodSecurityExpressionOperations {
-
-    private Object filterObject;
-    private Object returnObject;
-    private final ResourceRepository resourceRepository;
-
-    public CustomSecurityExpressionRoot(Authentication auth,
-                                        ResourceRepository resourceRepository) {
-        super(auth);
-        this.resourceRepository = resourceRepository;
-    }
-
-    /**
-     * Disponível diretamente: @PreAuthorize("isOwnerOf(#resourceId)")
-     */
-    public boolean isOwnerOf(Long resourceId) {
-        return resourceRepository.findById(resourceId)
-            .map(r -> r.getOwnerUsername().equals(getAuthentication().getName()))
-            .orElse(false);
-    }
-
-    /**
-     * Verifica se usuário tem nível de acesso >= nível requerido.
-     * Uso: @PreAuthorize("accessLevel(#requiredLevel)")
-     */
-    public boolean accessLevel(int requiredLevel) {
-        if (getAuthentication().getPrincipal() instanceof LeveledUserDetails user) {
-            return user.getAccessLevel() >= requiredLevel;
-        }
-        return false;
-    }
-
-    @Override public void setFilterObject(Object o)  { this.filterObject = o; }
-    @Override public Object getFilterObject()         { return filterObject; }
-    @Override public void setReturnObject(Object o)  { this.returnObject = o; }
-    @Override public Object getReturnObject()         { return returnObject; }
-    @Override public Object getThis()                 { return this; }
-}
-
-/**
- * Handler que injeta o CustomSecurityExpressionRoot.
- */
-public class CustomMethodSecurityExpressionHandler
-        extends DefaultMethodSecurityExpressionHandler {
-
-    private final ResourceRepository resourceRepository;
-
-    public CustomMethodSecurityExpressionHandler(ResourceRepository resourceRepository) {
-        this.resourceRepository = resourceRepository;
-    }
-
-    @Override
-    protected MethodSecurityExpressionOperations createSecurityExpressionRoot(
-            Authentication authentication, MethodInvocation invocation) {
-
-        CustomSecurityExpressionRoot root =
-            new CustomSecurityExpressionRoot(authentication, resourceRepository);
-        root.setPermissionEvaluator(getPermissionEvaluator());
-        root.setTrustResolver(getTrustResolver());
-        root.setRoleHierarchy(getRoleHierarchy());
-        return root;
-    }
-}
-
-/**
- * Registra o handler customizado na configuração.
- */
-@Configuration
-@EnableMethodSecurity
-public class MethodSecurityConfig {
-
-    @Bean
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public MethodSecurityExpressionHandler methodSecurityExpressionHandler(
-            ResourceRepository resourceRepository) {
-        return new CustomMethodSecurityExpressionHandler(resourceRepository);
-    }
-}
-```
+> **Por que CORS no Security e não só no MVC?** O `CorsFilter` do Spring Security fica antes de qualquer filtro de autenticação. Se CORS fosse tratado apenas pelo MVC, requisições preflight `OPTIONS` seriam bloqueadas por `401 Unauthorized` antes de chegar ao `DispatcherServlet` — o browser interpretaria isso como falha de CORS, não de autenticação.
 
 ---
 
-## 11. PermissionEvaluator — Permissões por Domínio
-
-### 11.1 Conceito
-
-`PermissionEvaluator` é a interface usada pelo Spring Security para avaliar `hasPermission()` no SpEL. Permite implementar lógica de autorização baseada em domínio (ACL — Access Control List).
-
-```java
-/**
- * Interface central:
- * hasPermission(authentication, targetDomainObject, permission)
- * hasPermission(authentication, targetId, targetType, permission)
- */
-public interface PermissionEvaluator {
-    boolean hasPermission(Authentication auth, Object targetDomainObject, Object permission);
-    boolean hasPermission(Authentication auth, Serializable targetId,
-                          String targetType, Object permission);
-}
-```
-
-### 11.2 Implementação
-
-```java
-@Component
-@RequiredArgsConstructor
-@Slf4j
-public class AppPermissionEvaluator implements PermissionEvaluator {
-
-    private final DocumentRepository documentRepository;
-    private final ProjectRepository projectRepository;
-    private final AclService aclService;
-
-    @Override
-    public boolean hasPermission(Authentication auth,
-                                  Object targetDomainObject,
-                                  Object permission) {
-
-        if (auth == null || !auth.isAuthenticated()) return false;
-        if (permission == null) return false;
-
-        String perm = permission.toString().toUpperCase();
-
-        return switch (targetDomainObject) {
-            case Document doc   -> evaluateDocumentPermission(auth, doc, perm);
-            case Project project -> evaluateProjectPermission(auth, project, perm);
-            default -> {
-                log.warn("Tipo de domínio não suportado: {}", 
-                    targetDomainObject.getClass().getName());
-                yield false;
-            }
-        };
-    }
-
-    @Override
-    public boolean hasPermission(Authentication auth,
-                                  Serializable targetId,
-                                  String targetType,
-                                  Object permission) {
-
-        if (auth == null || !auth.isAuthenticated()) return false;
-
-        String perm = permission.toString().toUpperCase();
-
-        return switch (targetType) {
-            case "Document" -> documentRepository.findById((Long) targetId)
-                .map(doc -> evaluateDocumentPermission(auth, doc, perm))
-                .orElse(false);
-
-            case "Project"  -> projectRepository.findById((Long) targetId)
-                .map(project -> evaluateProjectPermission(auth, project, perm))
-                .orElse(false);
-
-            default -> {
-                log.warn("Tipo não reconhecido: {}", targetType);
-                yield false;
-            }
-        };
-    }
-
-    private boolean evaluateDocumentPermission(Authentication auth,
-                                                Document doc,
-                                                String permission) {
-        String username = auth.getName();
-        boolean isAdmin = hasRole(auth, "ADMIN");
-
-        return switch (permission) {
-            case "READ"   -> isAdmin || doc.isPublic() || doc.getOwner().equals(username)
-                             || aclService.hasAccess(username, doc.getId(), "READ");
-            case "WRITE"  -> isAdmin || doc.getOwner().equals(username)
-                             || aclService.hasAccess(username, doc.getId(), "WRITE");
-            case "DELETE" -> isAdmin || doc.getOwner().equals(username);
-            case "SHARE"  -> isAdmin || doc.getOwner().equals(username);
-            default       -> false;
-        };
-    }
-
-    private boolean evaluateProjectPermission(Authentication auth,
-                                               Project project,
-                                               String permission) {
-        String username = auth.getName();
-        boolean isOwner = project.getOwner().equals(username);
-        boolean isMember = project.getMembers().contains(username);
-
-        return switch (permission) {
-            case "READ"   -> isOwner || isMember || hasRole(auth, "ADMIN");
-            case "WRITE"  -> isOwner || (isMember && hasAuthority(auth, "PROJECT_WRITE"));
-            case "DELETE" -> isOwner || hasRole(auth, "ADMIN");
-            default       -> false;
-        };
-    }
-
-    private boolean hasRole(Authentication auth, String role) {
-        return auth.getAuthorities().stream()
-            .anyMatch(a -> a.getAuthority().equals("ROLE_" + role));
-    }
-
-    private boolean hasAuthority(Authentication auth, String authority) {
-        return auth.getAuthorities().stream()
-            .anyMatch(a -> a.getAuthority().equals(authority));
-    }
-}
-```
-
-### 11.3 Registrar o PermissionEvaluator
-
+### 6.2 Configuração Recomendada — `CorsConfigurationSource` como Bean
 ```java
 @Configuration
-@EnableMethodSecurity
-public class MethodSecurityConfig {
+public class CorsConfig {
 
+    /**
+     * Bean de CORS reconhecido automaticamente pelo Spring Security (via .cors()).
+     * Define regras por padrão de URL.
+     */
     @Bean
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public MethodSecurityExpressionHandler methodSecurityExpressionHandler(
-            AppPermissionEvaluator permissionEvaluator) {
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration apiConfig = new CorsConfiguration();
+        apiConfig.setAllowedOrigins(List.of(
+            "http://localhost:5173",     // Vite dev server
+            "https://myapp.com",         // produção
+            "https://staging.myapp.com"  // staging
+        ));
+        apiConfig.setAllowedMethods(List.of(
+            "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        apiConfig.setAllowedHeaders(List.of(
+            "Authorization",
+            "Content-Type",
+            "X-Requested-With",
+            "X-CSRF-Token",
+            "X-Tenant-Id"));
+        // Expõe headers customizados para o JavaScript do browser
+        apiConfig.setExposedHeaders(List.of(
+            "Location",
+            "X-Total-Count",
+            "X-Authenticated-User"));
+        // Necessário para envio de cookies (refresh token HttpOnly)
+        apiConfig.setAllowCredentials(true);
+        // Cache do preflight no browser — evita OPTIONS a cada requisição
+        apiConfig.setMaxAge(3600L);
 
-        DefaultMethodSecurityExpressionHandler handler =
-            new DefaultMethodSecurityExpressionHandler();
-        handler.setPermissionEvaluator(permissionEvaluator);
-        return handler;
+        // Configuração mais permissiva para assets públicos
+        CorsConfiguration publicConfig = new CorsConfiguration();
+        publicConfig.setAllowedOrigins(List.of("*"));
+        publicConfig.setAllowedMethods(List.of("GET", "OPTIONS"));
+        publicConfig.setAllowCredentials(false);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**",     apiConfig);
+        source.registerCorsConfiguration("/public/**",  publicConfig);
+        return source;
     }
 }
 ```
 
-### 11.4 Uso com hasPermission()
-
 ```java
-@RestController
-@RequestMapping("/api/v1/documents")
-public class DocumentController {
-
-    @GetMapping("/{id}")
-    // Passa o objeto de domínio diretamente
-    @PreAuthorize("hasPermission(#document, 'READ')")
-    public DocumentDto getDocument(@PathVariable Long id,
-                                   Document document) {  // injetado via @ModelAttribute
-        return DocumentDto.fromEntity(document);
-    }
-
-    @PutMapping("/{id}")
-    // Passa apenas o ID e o tipo (lazy loading — o evaluator faz o lookup)
-    @PreAuthorize("hasPermission(#id, 'Document', 'WRITE')")
-    public DocumentDto updateDocument(@PathVariable Long id,
-                                      @RequestBody @Valid UpdateDocumentRequest req) {
-        return documentService.update(id, req);
-    }
-
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasPermission(#id, 'Document', 'DELETE')")
-    public ResponseEntity<Void> deleteDocument(@PathVariable Long id) {
-        documentService.delete(id);
-        return ResponseEntity.noContent().build();
-    }
-
-    @PostMapping("/{id}/share")
-    @PreAuthorize("hasPermission(#id, 'Document', 'SHARE') and hasAuthority('DOCUMENT_SHARE')")
-    public ResponseEntity<Void> shareDocument(@PathVariable Long id,
-                                              @RequestBody ShareRequest req) {
-        documentService.share(id, req);
-        return ResponseEntity.ok().build();
-    }
-}
-```
-
----
-
-## 12. OAuth2 Resource Server
-
-### 12.1 Configuração para JWT
-
-```yaml
-# application.yml
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          # Opção A: JWKS endpoint (recomendado para Keycloak/IdPs externos)
-          jwk-set-uri: http://localhost:8180/realms/myrealm/protocol/openid-connect/certs
-          
-          # Opção B: Chave pública RSA local
-          # public-key-location: classpath:keys/public.pem
-          
-          issuer-uri: http://localhost:8180/realms/myrealm
-          audiences: myapp-api
-```
-
-```java
+// Na SecurityFilterChain: .cors() usa automaticamente o bean CorsConfigurationSource
 @Bean
-@Order(1)
-public SecurityFilterChain resourceServerChain(HttpSecurity http) throws Exception {
+public SecurityFilterChain apiChain(HttpSecurity http) throws Exception {
     return http
         .securityMatcher("/api/**")
+        // .cors() sem argumento → busca o bean CorsConfigurationSource no contexto
+        .cors(Customizer.withDefaults())
         .csrf(csrf -> csrf.disable())
-        .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .oauth2ResourceServer(oauth2 -> oauth2
-            .jwt(jwt -> jwt
-                .jwtAuthenticationConverter(jwtAuthenticationConverter())))
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/api/v1/public/**").permitAll()
-            .requestMatchers("/api/v1/admin/**").hasAuthority("SCOPE_admin")
-            .anyRequest().authenticated())
-        .build();
-}
-
-/**
- * Converte claims JWT em GrantedAuthorities do Spring Security.
- * Suporta roles do Keycloak (realm_access.roles) e escopos OAuth2.
- */
-@Bean
-public JwtAuthenticationConverter jwtAuthenticationConverter() {
-    JwtGrantedAuthoritiesConverter scopesConverter =
-        new JwtGrantedAuthoritiesConverter();
-    scopesConverter.setAuthorityPrefix("SCOPE_");
-    scopesConverter.setAuthoritiesClaimName("scope");
-
-    // Converter customizado para roles do Keycloak
-    Converter<Jwt, Collection<GrantedAuthority>> keycloakRolesConverter =
-        jwt -> {
-            Map<String, Object> realmAccess =
-                jwt.getClaimAsMap("realm_access");
-            if (realmAccess == null) return Collections.emptyList();
-
-            @SuppressWarnings("unchecked")
-            List<String> roles = (List<String>) realmAccess.get("roles");
-            if (roles == null) return Collections.emptyList();
-
-            return roles.stream()
-                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
-                .collect(Collectors.toList());
-        };
-
-    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-    converter.setJwtGrantedAuthoritiesConverter(jwt ->
-        Stream.concat(
-            scopesConverter.convert(jwt).stream(),
-            keycloakRolesConverter.convert(jwt).stream()
-        ).collect(Collectors.toList()));
-
-    return converter;
-}
-```
-
-### 12.2 Validações Adicionais de JWT
-
-```java
-@Bean
-public JwtDecoder jwtDecoder(
-        @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwksUri) {
-
-    NimbusJwtDecoder decoder = NimbusJwtDecoder
-        .withJwkSetUri(jwksUri)
-        .jwsAlgorithm(SignatureAlgorithm.RS256)
-        .build();
-
-    // Validações adicionais além das padrão (exp, iss, nbf)
-    OAuth2TokenValidator<Jwt> validators = new DelegatingOAuth2TokenValidator<>(
-        JwtValidators.createDefaultWithIssuer("http://localhost:8180/realms/myrealm"),
-        new JwtClaimValidator<List<String>>("aud",
-            aud -> aud != null && aud.contains("myapp-api")),
-        new JwtClaimValidator<String>("token_type",
-            type -> "access".equals(type))
-    );
-
-    decoder.setJwtValidator(validators);
-    return decoder;
-}
-```
-
-
-### 12.3 OpenID Connect (OIDC)
-
-OAuth2 resolve **autorização** — define quem pode fazer o quê. **OpenID Connect (OIDC)** é uma camada de **identidade** construída sobre OAuth2: acrescenta um mecanismo padronizado para que o cliente descubra *quem é o usuário autenticado*, não apenas o que ele pode acessar.
-
-#### 12.3.1 A Diferença Fundamental
-
-```
-OAuth2 puro:
-  Access Token → "este cliente tem permissão para SCOPE_read"
-  Pergunta respondida: O QUE o cliente pode fazer?
-  Pergunta NÃO respondida: QUEM é o usuário?
-
-OAuth2 + OIDC:
-  Access Token  → "este cliente tem permissão para SCOPE_read"
-  ID Token      → "o usuário autenticado é alice@example.com, nome: Alice Silva"
-  Pergunta respondida: O QUE o cliente pode fazer? E QUEM é o usuário?
-```
-
-#### 12.3.2 Fluxo OIDC — Authorization Code
-
-```mermaid
-sequenceDiagram
-    participant C as Cliente (SPA / Web App)
-    participant AS as Authorization Server (IdP)
-    participant RS as Resource Server (API)
-
-    C->>AS: GET /authorize?scope=openid+profile+email<br>&response_type=code&client_id=...
-    AS-->>C: Redirect → Login page
-    C->>AS: POST /login {username, password}
-    AS-->>C: Redirect → /callback?code=AUTH_CODE
-
-    C->>AS: POST /token {code, client_id, client_secret}
-    AS-->>C: {access_token, id_token, refresh_token}
-
-    Note over C: Decodifica id_token (JWT)<br>extrai sub, email, name, etc.
-
-    C->>RS: GET /api/v1/profile<br>Authorization: Bearer access_token
-    RS-->>C: 200 OK {dados protegidos}
-
-    C->>AS: GET /userinfo<br>Authorization: Bearer access_token
-    AS-->>C: {sub, name, email, picture, ...}
-```
-
-#### 12.3.3 ID Token — Estrutura e Claims
-
-O ID Token é um **JWT** emitido exclusivamente pelo Authorization Server, destinado ao **cliente** (não ao Resource Server). Ele nunca deve ser enviado como Bearer Token para APIs.
-
-```json
-// Header
-{
-  "alg": "RS256",
-  "kid": "key-id-abc123",
-  "typ": "JWT"
-}
-
-// Payload — claims padrão do ID Token (OIDC Core 1.0)
-{
-  "iss": "https://auth.example.com",        // Issuer — quem emitiu
-  "sub": "user-uuid-abc123",                // Subject — identificador único do usuário no IdP
-  "aud": "myapp-client",                    // Audience — client_id (não a API!)
-  "exp": 1735689600,                        // Expiração
-  "iat": 1735686000,                        // Issued At
-  "auth_time": 1735685900,                  // Momento da autenticação real
-  "nonce": "abc123",                        // Proteção contra replay (se enviado no request)
-  "acr": "urn:mace:incommon:iap:bronze",   // Authentication Context Class Reference
-  "amr": ["pwd", "otp"],                   // Authentication Methods References
-
-  // Claims de perfil (escopo "profile")
-  "name": "Alice Silva",
-  "given_name": "Alice",
-  "family_name": "Silva",
-  "preferred_username": "alice",
-  "picture": "https://example.com/alice.jpg",
-  "locale": "pt-BR",
-
-  // Claims de email (escopo "email")
-  "email": "alice@example.com",
-  "email_verified": true
-}
-```
-
-**Diferença entre `sub` e `preferred_username`:**
-
-| Campo | Tipo | Estabilidade | Uso |
-|-------|------|-------------|-----|
-| `sub` | UUID opaco | **Imutável** — nunca muda | Chave estrangeira no banco |
-| `preferred_username` | String legível | Pode ser alterado | Exibição na UI |
-| `email` | String | Pode mudar | Comunicação, não como PK |
-
-> Sempre use `sub` como identificador primário do usuário no banco de dados. `preferred_username` e `email` podem ser alterados pelo usuário ou pelo administrador do IdP.
-
-#### 12.3.4 Escopos OIDC e seus Claims
-
-| Escopo | Claims Incluídos |
-|--------|-----------------|
-| `openid` | `sub` — **obrigatório** para emitir ID Token |
-| `profile` | `name`, `family_name`, `given_name`, `middle_name`, `nickname`, `preferred_username`, `profile`, `picture`, `website`, `gender`, `birthdate`, `zoneinfo`, `locale`, `updated_at` |
-| `email` | `email`, `email_verified` |
-| `address` | `address` (objeto com `street_address`, `locality`, `region`, `postal_code`, `country`) |
-| `phone` | `phone_number`, `phone_number_verified` |
-| `offline_access` | Emite `refresh_token` (não adiciona claims ao ID Token) |
-
-#### 12.3.5 ID Token vs Access Token — Quando Usar Cada Um
-
-```
-ID Token:
-  ✓ Lido pelo cliente (SPA, Web App) para saber quem é o usuário
-  ✓ Exibir nome, email e foto na interface
-  ✓ Verificar o método de autenticação (amr) ou nível de segurança (acr)
-  ✗ NUNCA enviar como Bearer Token para APIs
-
-Access Token:
-  ✓ Enviado nas requisições à API: Authorization: Bearer <access_token>
-  ✓ Contém escopos (scope) e roles para autorização no Resource Server
-  ✗ O Resource Server NÃO deve ler dados de identidade do Access Token
-    (o formato não é garantido — pode ser opaco, não necessariamente JWT)
-
-UserInfo Endpoint (/userinfo):
-  ✓ Fonte canônica de atributos do usuário para o cliente
-  ✓ Retorna claims completos mesmo que não estejam no ID Token
-  ✓ Acessível com o Access Token
-  ✓ Dados sempre atualizados (sem cache de token)
-```
-
-#### 12.3.6 Resource Server com OIDC — Validação do ID Token
-
-O Resource Server valida o **Access Token** (não o ID Token). Porém, em alguns fluxos (ex.: SPA com BFF), o backend pode também processar o ID Token para obter claims do usuário:
-
-```java
-/**
- * OidcUserService carrega o usuário a partir do ID Token e do /userinfo endpoint.
- * Utilizado pela chain OAuth2 Client (login web), não pelo Resource Server.
- */
-@Bean
-public OidcUserService oidcUserService() {
-    DefaultOidcUserService delegate = new DefaultOidcUserService();
-
-    return new OidcUserService() {
-        @Override
-        public OidcUser loadUser(OidcUserRequest request)
-                throws OAuth2AuthenticationException {
-
-            OidcUser oidcUser = delegate.loadUser(request);
-
-            // sub — identificador permanente do usuário no IdP
-            String sub   = oidcUser.getSubject();
-            // claims do ID Token
-            String email = oidcUser.getEmail();
-            String name  = oidcUser.getFullName();
-            boolean emailVerified = Boolean.TRUE.equals(oidcUser.getEmailVerified());
-
-            // Sincroniza com banco local usando sub como chave
-            userSyncService.upsert(sub, email, name, emailVerified);
-
-            // Constrói authorities combinando escopos OIDC e roles do banco local
-            Set<GrantedAuthority> authorities = new HashSet<>(oidcUser.getAuthorities());
-            authorities.addAll(userSyncService.loadRoles(sub));
-
-            return new DefaultOidcUser(
-                authorities,
-                oidcUser.getIdToken(),
-                oidcUser.getUserInfo(),
-                "preferred_username");  // atributo usado como getName()
-        }
-    };
-}
-```
-
-#### 12.3.7 Validação do Nonce (proteção contra replay de ID Token)
-
-O `nonce` é um valor aleatório gerado pelo cliente, enviado no Authorization Request e
-incluído pelo IdP no ID Token. Valida que o ID Token foi emitido em resposta a um
-request específico — prevenindo ataques de replay:
-
-```java
-@Component
-public class OidcNonceValidator {
-
-    /**
-     * O Spring Security valida o nonce automaticamente quando presente.
-     * Este exemplo mostra como verificar manualmente se necessário.
-     */
-    public void validateNonce(OidcIdToken idToken, String expectedNonce) {
-        String tokenNonce = idToken.getNonce();
-
-        if (expectedNonce != null && !expectedNonce.equals(tokenNonce)) {
-            throw new OAuth2AuthenticationException(
-                new OAuth2Error("invalid_nonce"),
-                "Nonce inválido no ID Token — possível ataque de replay.");
-        }
-    }
-}
-```
-
-#### 12.3.8 Discovery Document — OpenID Connect Configuration
-
-Todo IdP compatível com OIDC expõe um documento de descoberta em:
-
-```
-GET {issuer-uri}/.well-known/openid-configuration
-```
-
-O Spring Security usa esse endpoint para auto-configurar `JwtDecoder`, `JwkSetUri`,
-`UserInfoEndpoint` e outros parâmetros quando `issuer-uri` é definido:
-
-```yaml
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          # issuer-uri habilita discovery automático:
-          # Spring busca {issuer-uri}/.well-known/openid-configuration
-          # e extrai jwk-set-uri, issuer e outros parâmetros automaticamente
-          issuer-uri: https://auth.example.com/realms/myrealm
-          # NÃO é necessário declarar jwk-set-uri separadamente quando
-          # issuer-uri está configurado — discovery cuida disso
-```
-
-```json
-// Resposta de /.well-known/openid-configuration (campos principais)
-{
-  "issuer": "https://auth.example.com/realms/myrealm",
-  "authorization_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/auth",
-  "token_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/token",
-  "userinfo_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/userinfo",
-  "jwks_uri": "https://auth.example.com/realms/myrealm/protocol/openid-connect/certs",
-  "end_session_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/logout",
-  "scopes_supported": ["openid", "profile", "email", "roles", "offline_access"],
-  "response_types_supported": ["code"],
-  "id_token_signing_alg_values_supported": ["RS256"],
-  "subject_types_supported": ["public"],
-  "claims_supported": ["sub", "iss", "name", "email", "preferred_username", "roles"]
-}
-```
-
-#### 12.3.9 Resumo: OAuth2 vs OIDC vs JWT
-
-| | OAuth2 | OIDC | JWT |
-|---|---|---|---|
-| **É um** | Framework de autorização | Protocolo de identidade (sobre OAuth2) | Formato de token |
-| **Responde** | O que o cliente pode fazer | Quem é o usuário | (apenas formato) |
-| **Token emitido** | Access Token (qualquer formato) | Access Token + **ID Token** | Pode ser usado por ambos |
-| **Escopo obrigatório** | Qualquer | **`openid`** | Não se aplica |
-| **Endpoint adicional** | — | `/userinfo`, `/.well-known/openid-configuration` | — |
-| **Uso no Spring** | `oauth2-resource-server`, `oauth2-client` | `OidcUserService`, `OidcUser` | `JwtDecoder`, `JwtAuthenticationConverter` |
-
-
----
-
-## 13. OAuth2 Client
-
-### 13.1 Configuração
-
-```yaml
-# application.yml
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          keycloak:
-            client-id: myapp-client
-            client-secret: ${KEYCLOAK_CLIENT_SECRET}
-            scope: openid,profile,email,roles
-            authorization-grant-type: authorization_code
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
-        provider:
-          keycloak:
-            issuer-uri: http://localhost:8180/realms/myrealm
-            user-name-attribute: preferred_username
-```
-
-```java
-@Bean
-public SecurityFilterChain oauth2ClientChain(HttpSecurity http) throws Exception {
-    return http
-        .oauth2Login(oauth2 -> oauth2
-            .loginPage("/oauth2/authorization/keycloak")
-            .defaultSuccessUrl("/dashboard", true)
-            .failureUrl("/login?error=oauth2")
-            .userInfoEndpoint(userInfo -> userInfo
-                .oidcUserService(oidcUserService()))
-            .successHandler(oauth2SuccessHandler()))
-        .logout(logout -> logout
-            .logoutSuccessHandler(oidcLogoutSuccessHandler()))
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/", "/login**", "/error").permitAll()
-            .anyRequest().authenticated())
-        .build();
-}
-
-/**
- * Processa o usuário OIDC após login — sincroniza com banco local.
- */
-@Bean
-public OidcUserService oidcUserService() {
-    DefaultOidcUserService delegate = new DefaultOidcUserService();
-
-    return new OidcUserService() {
-        @Override
-        public OidcUser loadUser(OidcUserRequest request) throws OAuth2AuthenticationException {
-            OidcUser oidcUser = delegate.loadUser(request);
-
-            // Sincroniza com banco de dados local
-            userSyncService.syncOidcUser(oidcUser);
-
-            // Adiciona authorities do banco local
-            Set<GrantedAuthority> authorities =
-                new HashSet<>(oidcUser.getAuthorities());
-            authorities.addAll(userSyncService.loadLocalAuthorities(
-                oidcUser.getEmail()));
-
-            return new DefaultOidcUser(
-                authorities,
-                oidcUser.getIdToken(),
-                oidcUser.getUserInfo(),
-                "preferred_username");
-        }
-    };
-}
-
-/**
- * Logout que invalida sessão também no Keycloak (Single Logout).
- */
-@Bean
-public LogoutSuccessHandler oidcLogoutSuccessHandler() {
-    OidcClientInitiatedLogoutSuccessHandler handler =
-        new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository);
-    handler.setPostLogoutRedirectUri("{baseUrl}/login?logout");
-    return handler;
-}
-```
-
----
-
-## 14. Integração com Keycloak
-
-### 14.1 Diagrama de Arquitetura
-
-```mermaid
-flowchart TD
-    subgraph Frontend
-        SPA[React SPA]
-    end
-
-    subgraph Backend
-        API[Spring Boot<br>Resource Server]
-        WEB[Spring Boot<br>OAuth2 Client]
-    end
-
-    subgraph Keycloak
-        KC[Keycloak Server<br>port 8180]
-        REALM[Realm: myrealm]
-        CLI_API[Client: myapp-api<br>bearer-only]
-        CLI_WEB[Client: myapp-web<br>confidential]
-    end
-
-    SPA -->|"Authorization Code + PKCE"| KC
-    KC -->|Access Token JWT| SPA
-    SPA -->|"Bearer Token"| API
-    API -->|Validate via JWKS| KC
-
-    WEB -->|"Authorization Code"| KC
-    KC -->|"OIDC ID Token"| WEB
-    WEB -->|"Session Cookie"| SPA
-```
-
-### 14.2 Propriedades Spring Boot
-
-```yaml
-# Resource Server (API REST)
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}/protocol/openid-connect/certs
-          issuer-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}
-
-# OAuth2 Client (Web MVC)
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          keycloak:
-            provider: keycloak
-            client-id: ${KEYCLOAK_CLIENT_ID:myapp-web}
-            client-secret: ${KEYCLOAK_CLIENT_SECRET}
-            scope: openid,profile,email,roles
-            authorization-grant-type: authorization_code
-        provider:
-          keycloak:
-            issuer-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}
-            user-name-attribute: preferred_username
-```
-
-### 14.3 Converter de Roles do Keycloak
-
-```java
-/**
- * Keycloak retorna roles em:
- * - realm_access.roles         (roles do realm)
- * - resource_access.<client>.roles  (roles do client)
- */
-@Component
-public class KeycloakJwtRolesConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
-
-    private static final String REALM_ACCESS  = "realm_access";
-    private static final String RESOURCE_ACCESS = "resource_access";
-    private static final String ROLES = "roles";
-
-    private final String clientId;
-
-    public KeycloakJwtRolesConverter(
-            @Value("${keycloak.client-id:myapp-api}") String clientId) {
-        this.clientId = clientId;
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public Collection<GrantedAuthority> convert(Jwt jwt) {
-        List<GrantedAuthority> authorities = new ArrayList<>();
-
-        // Realm roles → ROLE_XXX
-        Map<String, Object> realmAccess = jwt.getClaimAsMap(REALM_ACCESS);
-        if (realmAccess != null) {
-            List<String> realmRoles = (List<String>) realmAccess.get(ROLES);
-            if (realmRoles != null) {
-                realmRoles.stream()
-                    .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
-                    .forEach(authorities::add);
-            }
-        }
-
-        // Client roles → ROLE_CLIENT_XXX
-        Map<String, Object> resourceAccess = jwt.getClaimAsMap(RESOURCE_ACCESS);
-        if (resourceAccess != null) {
-            Map<String, Object> clientAccess =
-                (Map<String, Object>) resourceAccess.get(clientId);
-            if (clientAccess != null) {
-                List<String> clientRoles = (List<String>) clientAccess.get(ROLES);
-                if (clientRoles != null) {
-                    clientRoles.stream()
-                        .map(r -> new SimpleGrantedAuthority("ROLE_CLIENT_" + r.toUpperCase()))
-                        .forEach(authorities::add);
-                }
-            }
-        }
-
-        // Scopes OAuth2 → SCOPE_xxx
-        String scope = jwt.getClaimAsString("scope");
-        if (scope != null) {
-            Arrays.stream(scope.split(" "))
-                .filter(s -> !s.isBlank())
-                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s))
-                .forEach(authorities::add);
-        }
-
-        return authorities;
-    }
-}
-```
-
-### 14.4 Docker Compose — Keycloak + Postgres
-
-```yaml
-# docker-compose.yml
-services:
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.0
-    command: start-dev --import-realm
-    environment:
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
-      KC_HOSTNAME: localhost
-      KC_HTTP_PORT: 8180
-    ports:
-      - "8180:8180"
-    volumes:
-      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
-    depends_on:
-      keycloak-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8180 && echo OK"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  keycloak-db:
-    image: postgres:18
-    environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: keycloak
-    volumes:
-      - keycloak-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
-      interval: 10s
-      retries: 5
-
-volumes:
-  keycloak-db-data:
-```
-
----
-
-## 15. Identity Providers Externos (Google, Microsoft, GitHub)
-
-### 15.1 Configuração Multi-Provider
-
-```yaml
-spring:
-  security:
-    oauth2:
-      client:
-        registration:
-          # Google
-          google:
-            client-id: ${GOOGLE_CLIENT_ID}
-            client-secret: ${GOOGLE_CLIENT_SECRET}
-            scope: openid,profile,email
-
-          # Microsoft (Azure AD)
-          microsoft:
-            client-id: ${AZURE_CLIENT_ID}
-            client-secret: ${AZURE_CLIENT_SECRET}
-            scope: openid,profile,email,User.Read
-            authorization-grant-type: authorization_code
-            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
-
-          # GitHub
-          github:
-            client-id: ${GITHUB_CLIENT_ID}
-            client-secret: ${GITHUB_CLIENT_SECRET}
-            scope: user:email,read:user
-
-        provider:
-          microsoft:
-            authorization-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize
-            token-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token
-            jwk-set-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/discovery/v2.0/keys
-            user-info-uri: https://graph.microsoft.com/oidc/userinfo
-            user-name-attribute: email
-```
-
-### 15.2 OAuth2UserService Unificado
-
-```java
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class UnifiedOAuth2UserService
-        extends DefaultOAuth2UserService
-        implements OidcUserService {
-
-    private final UserRepository userRepository;
-    private final DefaultOidcUserService oidcDelegate = new DefaultOidcUserService();
-
-    // Para Google (OIDC)
-    @Override
-    public OidcUser loadUser(OidcUserRequest request) throws OAuth2AuthenticationException {
-        OidcUser oidcUser = oidcDelegate.loadUser(request);
-
-        String email    = oidcUser.getEmail();
-        String name     = oidcUser.getFullName();
-        String provider = request.getClientRegistration().getRegistrationId();
-
-        UserEntity user = syncUser(email, name, provider, oidcUser.getSubject());
-
-        return new DefaultOidcUser(
-            buildAuthorities(user),
-            oidcUser.getIdToken(),
-            oidcUser.getUserInfo());
-    }
-
-    // Para GitHub (OAuth2 simples, sem OIDC)
-    @Override
-    public OAuth2User loadUser(OAuth2UserRequest request) throws OAuth2AuthenticationException {
-        OAuth2User oauth2User = super.loadUser(request);
-
-        String provider = request.getClientRegistration().getRegistrationId();
-        String email    = extractEmail(oauth2User, provider);
-        String name     = oauth2User.getAttribute("name");
-        String sub      = oauth2User.getAttribute("id").toString();
-
-        UserEntity user = syncUser(email, name, provider, sub);
-
-        return new DefaultOAuth2User(
-            buildAuthorities(user),
-            oauth2User.getAttributes(),
-            "login");  // GitHub usa "login" como username attribute
-    }
-
-    private UserEntity syncUser(String email, String name,
-                                 String provider, String providerId) {
-        return userRepository.findByEmail(email)
-            .map(existing -> updateProvider(existing, provider, providerId))
-            .orElseGet(() -> createUser(email, name, provider, providerId));
-    }
-
-    private UserEntity createUser(String email, String name,
-                                   String provider, String providerId) {
-        UserEntity user = new UserEntity();
-        user.setEmail(email);
-        user.setName(name);
-        user.setProvider(provider);
-        user.setProviderId(providerId);
-        user.setEnabled(true);
-        user.getRoles().add(Role.USER);   // Role padrão para novos usuários
-        return userRepository.save(user);
-    }
-
-    private Collection<GrantedAuthority> buildAuthorities(UserEntity user) {
-        return user.getRoles().stream()
-            .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
-            .collect(Collectors.toList());
-    }
-
-    private String extractEmail(OAuth2User user, String provider) {
-        // GitHub pode não retornar email diretamente — requer chamada à API
-        String email = user.getAttribute("email");
-        if (email == null && "github".equals(provider)) {
-            // Em produção, usar WebClient para chamar /user/emails
-            email = user.getAttribute("login") + "@github.noemail";
-        }
-        return email;
-    }
-}
-```
-
-### 15.3 SecurityConfig com Múltiplos Providers
-
-```java
-@Bean
-public SecurityFilterChain socialLoginChain(
-        HttpSecurity http,
-        UnifiedOAuth2UserService userService) throws Exception {
-
-    return http
-        .oauth2Login(oauth2 -> oauth2
-            .loginPage("/login")
-            .userInfoEndpoint(info -> info
-                .userService(userService)           // GitHub, Microsoft
-                .oidcUserService(userService))       // Google (OIDC)
-            .defaultSuccessUrl("/dashboard", true)
-            .failureHandler((req, res, ex) -> {
-                log.error("OAuth2 login failed: {}", ex.getMessage());
-                res.sendRedirect("/login?error=oauth2_failed");
-            }))
-        .logout(logout -> logout
-            .logoutSuccessUrl("/login?logout")
-            .deleteCookies("JSESSIONID"))
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/login**", "/oauth2/**", "/error").permitAll()
-            .anyRequest().authenticated())
+        .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
         .build();
 }
 ```
 
 ---
 
-## 16. Spring Authorization Server — Criando um Identity Provider
-
-O **Spring Authorization Server** (`spring-security-oauth2-authorization-server`) é o módulo oficial do Spring para construir um **Identity Provider (IdP)** próprio com suporte completo a OAuth 2.1 e OpenID Connect 1.0. É a alternativa self-hosted ao Keycloak quando se quer um IdP embutido na própria aplicação Spring Boot ou como serviço separado dentro da organização.
-
-```mermaid
-flowchart TD
-    subgraph Clients
-        SPA[React SPA
-oauth2-client PKCE]
-        API[Service-to-Service
-client_credentials]
-        WEB[Web App
-authorization_code]
-    end
-
-    subgraph AuthServer["Spring Authorization Server (IdP próprio)"]
-        AS[Authorization Endpoint
-/oauth2/authorize]
-        TK[Token Endpoint
-/oauth2/token]
-        JW[JWKS Endpoint
-/oauth2/jwks]
-        UI[UserInfo Endpoint
-/userinfo]
-        DC[Discovery
-/.well-known/openid-configuration]
-    end
-
-    subgraph ResourceServer["Resource Server (API)"]
-        RS[Spring Boot API
-oauth2-resource-server]
-    end
-
-    subgraph UserStore
-        DB[(PostgreSQL
-Usuários + Clientes
-+ Tokens)]
-    end
-
-    SPA -->|Authorization Code + PKCE| AS
-    WEB -->|Authorization Code| AS
-    API -->|Client Credentials| TK
-    AS --> TK
-    TK -->|Access Token JWT| SPA
-    TK -->|Access Token JWT| API
-    SPA -->|Bearer Token| RS
-    RS -->|Valida via JWKS| JW
-    AS --> DB
-    TK --> DB
-```
-
-### 16.1 Dependências Maven
-
-```xml
-<!-- Spring Authorization Server -->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-oauth2-authorization-server</artifactId>
-</dependency>
-
-<!-- Necessário para a UI de login do próprio IdP -->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-thymeleaf</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.thymeleaf.extras</groupId>
-    <artifactId>thymeleaf-extras-springsecurity6</artifactId>
-</dependency>
-
-<!-- JPA para persistência de clientes e tokens -->
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-data-jpa</artifactId>
-</dependency>
-<dependency>
-    <groupId>org.postgresql</groupId>
-    <artifactId>postgresql</artifactId>
-    <scope>runtime</scope>
-</dependency>
-```
-
----
-
-### 16.2 Configuração do Authorization Server
-
-O Authorization Server exige **duas** `SecurityFilterChain`: uma para os endpoints OAuth2/OIDC e outra para a UI de login dos usuários (autenticação no próprio IdP).
-
-```mermaid
-flowchart LR
-    subgraph "SecurityFilterChain @Order(1)"
-        OE["Endpoints OAuth2/OIDC
-/oauth2/authorize
-/oauth2/token
-/oauth2/jwks
-/userinfo
-/.well-known/..."]
-    end
-    subgraph "SecurityFilterChain @Order(2)"
-        UI["UI do IdP
-/login
-/logout
-/oauth2/consent"]
-    end
-    HTTP[HttpSecurity] --> OE
-    HTTP --> UI
-```
-
+### 6.3 CORS por Ambiente com `@Profile`
 ```java
 @Configuration
-@EnableWebSecurity
-public class AuthorizationServerConfig {
+public class CorsConfig {
 
-    // ── Chain 1: endpoints OAuth2/OIDC ────────────────────────────────────
-    /**
-     * Configura os endpoints do protocolo OAuth2 e OIDC.
-     * Deve ter @Order menor (maior prioridade) que a chain de login.
-     */
+    @Value("${app.cors.allowed-origins}")
+    private List<String> allowedOrigins;
+
     @Bean
-    @Order(1)
-    public SecurityFilterChain authorizationServerSecurityFilterChain(
-            HttpSecurity http) throws Exception {
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(allowedOrigins);   // externalizado por ambiente
+        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true);
+        config.setMaxAge(3600L);
 
-        // Aplica as defaults do Authorization Server (endpoints, filtros, etc.)
-        OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
-
-        http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
-            // Habilita OpenID Connect 1.0
-            .oidc(oidc -> oidc
-                .userInfoEndpoint(userInfo -> userInfo
-                    .userInfoMapper(userInfoMapper()))    // mapeia claims do userinfo
-                    .clientRegistrationEndpoint(Customizer.withDefaults()) // DCR dinâmico
-            );
-
-        http
-            // Redireciona para o login do próprio IdP quando não autenticado
-            .exceptionHandling(ex -> ex
-                .defaultAuthenticationEntryPointFor(
-                    new LoginUrlAuthenticationEntryPoint("/login"),
-                    new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
-            // Resource server para validar tokens nos endpoints protegidos (/userinfo)
-            .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()));
-
-        return http.build();
-    }
-
-    // ── Chain 2: UI de login e consentimento ──────────────────────────────
-    /**
-     * Protege as páginas de login e consentimento do próprio IdP.
-     * Usuários se autenticam aqui antes de autorizar clients OAuth2.
-     */
-    @Bean
-    @Order(2)
-    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
-        return http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/assets/**", "/webjars/**", "/login").permitAll()
-                .anyRequest().authenticated())
-            .formLogin(form -> form
-                .loginPage("/login")
-                .permitAll())
-            .build();
-    }
-}
-```
-
----
-
-### 16.3 AuthorizationServerSettings — Configuração dos Endpoints
-
-```java
-@Configuration
-public class AuthServerSettings {
-
-    /**
-     * Define as URLs de todos os endpoints OAuth2/OIDC.
-     * Os defaults seguem as especificações RFC 8414 e OpenID Connect Discovery.
-     */
-    @Bean
-    public AuthorizationServerSettings authorizationServerSettings(
-            @Value("${app.auth-server.issuer-uri}") String issuerUri) {
-
-        return AuthorizationServerSettings.builder()
-            .issuer(issuerUri)                          // ex: https://auth.myapp.com
-            .authorizationEndpoint("/oauth2/authorize")
-            .deviceAuthorizationEndpoint("/oauth2/device_authorization")
-            .deviceVerificationEndpoint("/oauth2/device_verification")
-            .tokenEndpoint("/oauth2/token")
-            .tokenIntrospectionEndpoint("/oauth2/introspect")
-            .tokenRevocationEndpoint("/oauth2/revoke")
-            .jwkSetEndpoint("/oauth2/jwks")
-            .oidcLogoutEndpoint("/connect/logout")
-            .oidcUserInfoEndpoint("/userinfo")
-            .oidcClientRegistrationEndpoint("/connect/register")
-            .build();
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 }
 ```
@@ -4741,1726 +1374,54 @@ public class AuthServerSettings {
 ```yaml
 # application.yml
 app:
-  auth-server:
-    issuer-uri: ${AUTH_SERVER_ISSUER_URI:http://localhost:9000}
-
-server:
-  port: 9000   # porta padrão para o IdP separado
-```
-
----
-
-### 16.4 Registro de Clients OAuth2
-
-Cada aplicação que usa o IdP é um **client** OAuth2 registrado. O Spring Authorization Server suporta armazenamento em memória (desenvolvimento) e banco de dados (produção).
-
-#### 16.4.1 Clients em Memória (desenvolvimento)
-
-```java
-@Bean
-public RegisteredClientRepository registeredClientRepository(
-        PasswordEncoder passwordEncoder) {
-
-    // ── Client 1: SPA com Authorization Code + PKCE ───────────────
-    RegisteredClient spaClient = RegisteredClient
-        .withId(UUID.randomUUID().toString())
-        .clientId("myapp-spa")
-        // SPAs públicos não têm client secret (PKCE substitui)
-        .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
-        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-        .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-        .redirectUri("http://localhost:5173/callback")
-        .redirectUri("https://myapp.com/callback")
-        .postLogoutRedirectUri("https://myapp.com/logout")
-        .scope(OidcScopes.OPENID)
-        .scope(OidcScopes.PROFILE)
-        .scope(OidcScopes.EMAIL)
-        .scope("api.read")
-        .scope("api.write")
-        .clientSettings(ClientSettings.builder()
-            .requireAuthorizationConsent(true)   // exibe tela de consentimento
-            .requireProofKey(true)               // PKCE obrigatório para SPAs
-            .build())
-        .tokenSettings(TokenSettings.builder()
-            .accessTokenTimeToLive(Duration.ofMinutes(15))
-            .refreshTokenTimeToLive(Duration.ofDays(30))
-            .reuseRefreshTokens(false)           // gera novo refresh token a cada uso
-            .accessTokenFormat(OAuth2TokenFormat.SELF_CONTAINED) // JWT
-            .build())
-        .build();
-
-    // ── Client 2: Web App confidencial ────────────────────────────
-    RegisteredClient webClient = RegisteredClient
-        .withId(UUID.randomUUID().toString())
-        .clientId("myapp-web")
-        .clientSecret(passwordEncoder.encode("${WEB_CLIENT_SECRET}"))
-        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
-        .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-        .redirectUri("https://myapp.com/login/oauth2/code/myapp")
-        .postLogoutRedirectUri("https://myapp.com/login?logout")
-        .scope(OidcScopes.OPENID)
-        .scope(OidcScopes.PROFILE)
-        .scope(OidcScopes.EMAIL)
-        .scope("api.read")
-        .clientSettings(ClientSettings.builder()
-            .requireAuthorizationConsent(false)  // sem tela de consentimento (first-party)
-            .requireProofKey(false)
-            .build())
-        .tokenSettings(TokenSettings.builder()
-            .accessTokenTimeToLive(Duration.ofMinutes(15))
-            .refreshTokenTimeToLive(Duration.ofDays(7))
-            .build())
-        .build();
-
-    // ── Client 3: Machine-to-Machine (Client Credentials) ─────────
-    RegisteredClient m2mClient = RegisteredClient
-        .withId(UUID.randomUUID().toString())
-        .clientId("myapp-service")
-        .clientSecret(passwordEncoder.encode("${SERVICE_CLIENT_SECRET}"))
-        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
-        .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
-        .scope("api.admin")
-        .scope("reports.read")
-        .tokenSettings(TokenSettings.builder()
-            .accessTokenTimeToLive(Duration.ofHours(1))
-            .accessTokenFormat(OAuth2TokenFormat.SELF_CONTAINED)
-            .build())
-        .build();
-
-    return new InMemoryRegisteredClientRepository(spaClient, webClient, m2mClient);
-}
-```
-
-#### 16.4.2 Clients em Banco de Dados (produção)
-
-```java
-/**
- * Implementação JPA do RegisteredClientRepository para persistência em PostgreSQL.
- * O Spring Authorization Server provê JdbcRegisteredClientRepository,
- * mas a implementação JPA oferece mais flexibilidade para queries customizadas.
- */
-@Bean
-public RegisteredClientRepository registeredClientRepository(
-        JdbcTemplate jdbcTemplate) {
-    // Usar JdbcRegisteredClientRepository — implementação oficial com JDBC
-    return new JdbcRegisteredClientRepository(jdbcTemplate);
-}
-```
-
-Script Flyway para criar as tabelas oficiais do Spring Authorization Server:
-
-```sql
--- V2__spring_authorization_server_schema.sql
--- Schema oficial do Spring Authorization Server
--- Fonte: https://github.com/spring-projects/spring-authorization-server/tree/main/oauth2-authorization-server/src/main/resources/org/springframework/security/oauth2/server/authorization
-
-CREATE TABLE oauth2_registered_client (
-    id                            VARCHAR(100)  NOT NULL,
-    client_id                     VARCHAR(100)  NOT NULL,
-    client_id_issued_at           TIMESTAMP     DEFAULT CURRENT_TIMESTAMP NOT NULL,
-    client_secret                 VARCHAR(200)  DEFAULT NULL,
-    client_secret_expires_at      TIMESTAMP     DEFAULT NULL,
-    client_name                   VARCHAR(200)  NOT NULL,
-    client_authentication_methods VARCHAR(1000) NOT NULL,
-    authorization_grant_types     VARCHAR(1000) NOT NULL,
-    redirect_uris                 VARCHAR(1000) DEFAULT NULL,
-    post_logout_redirect_uris     VARCHAR(1000) DEFAULT NULL,
-    scopes                        VARCHAR(1000) NOT NULL,
-    client_settings               VARCHAR(2000) NOT NULL,
-    token_settings                VARCHAR(2000) NOT NULL,
-    CONSTRAINT pk_oauth2_registered_client PRIMARY KEY (id)
-);
-
-CREATE TABLE oauth2_authorization (
-    id                            VARCHAR(100)  NOT NULL,
-    registered_client_id          VARCHAR(100)  NOT NULL,
-    principal_name                VARCHAR(200)  NOT NULL,
-    authorization_grant_type      VARCHAR(100)  NOT NULL,
-    authorized_scopes             VARCHAR(1000) DEFAULT NULL,
-    attributes                    TEXT          DEFAULT NULL,
-    state                         VARCHAR(500)  DEFAULT NULL,
-    -- Authorization Code
-    authorization_code_value      TEXT          DEFAULT NULL,
-    authorization_code_issued_at  TIMESTAMP     DEFAULT NULL,
-    authorization_code_expires_at TIMESTAMP     DEFAULT NULL,
-    authorization_code_metadata   TEXT          DEFAULT NULL,
-    -- Access Token
-    access_token_value            TEXT          DEFAULT NULL,
-    access_token_issued_at        TIMESTAMP     DEFAULT NULL,
-    access_token_expires_at       TIMESTAMP     DEFAULT NULL,
-    access_token_metadata         TEXT          DEFAULT NULL,
-    access_token_type             VARCHAR(100)  DEFAULT NULL,
-    access_token_scopes           VARCHAR(1000) DEFAULT NULL,
-    -- Refresh Token
-    refresh_token_value           TEXT          DEFAULT NULL,
-    refresh_token_issued_at       TIMESTAMP     DEFAULT NULL,
-    refresh_token_expires_at      TIMESTAMP     DEFAULT NULL,
-    refresh_token_metadata        TEXT          DEFAULT NULL,
-    -- OIDC ID Token
-    oidc_id_token_value           TEXT          DEFAULT NULL,
-    oidc_id_token_issued_at       TIMESTAMP     DEFAULT NULL,
-    oidc_id_token_expires_at      TIMESTAMP     DEFAULT NULL,
-    oidc_id_token_metadata        TEXT          DEFAULT NULL,
-    oidc_id_token_claims          TEXT          DEFAULT NULL,
-    -- Device Code
-    user_code_value               TEXT          DEFAULT NULL,
-    user_code_issued_at           TIMESTAMP     DEFAULT NULL,
-    user_code_expires_at          TIMESTAMP     DEFAULT NULL,
-    user_code_metadata            TEXT          DEFAULT NULL,
-    device_code_value             TEXT          DEFAULT NULL,
-    device_code_issued_at         TIMESTAMP     DEFAULT NULL,
-    device_code_expires_at        TIMESTAMP     DEFAULT NULL,
-    device_code_metadata          TEXT          DEFAULT NULL,
-    CONSTRAINT pk_oauth2_authorization PRIMARY KEY (id)
-);
-
-CREATE TABLE oauth2_authorization_consent (
-    registered_client_id VARCHAR(100)  NOT NULL,
-    principal_name       VARCHAR(200)  NOT NULL,
-    authorities          VARCHAR(1000) NOT NULL,
-    CONSTRAINT pk_oauth2_authorization_consent
-        PRIMARY KEY (registered_client_id, principal_name)
-);
-```
-
----
-
-### 16.5 Chaves RSA para Assinatura de Tokens
-
-```java
-/**
- * JWKSource fornece as chaves usadas para assinar os JWTs emitidos pelo IdP.
- * Em produção, carregar de Vault / AWS Secrets Manager / HSM.
- */
-@Configuration
-public class JwkSourceConfig {
-
-    @Bean
-    public JWKSource<SecurityContext> jwkSource(
-            @Value("${app.auth-server.rsa-private-key}") RSAPrivateKey privateKey,
-            @Value("${app.auth-server.rsa-public-key}")  RSAPublicKey  publicKey) {
-
-        RSAKey rsaKey = new RSAKey.Builder(publicKey)
-            .privateKey(privateKey)
-            .keyID(UUID.randomUUID().toString())
-            .keyUse(KeyUse.SIGNATURE)
-            .algorithm(JWSAlgorithm.RS256)
-            .build();
-
-        JWKSet jwkSet = new JWKSet(rsaKey);
-        return new ImmutableJWKSet<>(jwkSet);
-    }
-
-    /**
-     * Decoder JWT para validar tokens nos endpoints protegidos do próprio IdP
-     * (ex: /userinfo — requer Bearer token válido).
-     */
-    @Bean
-    public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
-        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
-    }
-}
-```
-
----
-
-### 16.6 UserDetailsService e Claims Customizados
-
-O IdP precisa carregar usuários do banco para autenticá-los e popular os tokens JWT com claims customizados.
-
-```java
-// ── UserDetailsService ────────────────────────────────────────────────────
-@Service
-@RequiredArgsConstructor
-public class IdpUserDetailsService implements UserDetailsService {
-
-    private final UserRepository userRepository;
-
-    @Override
-    @Transactional(readOnly = true)
-    public UserDetails loadUserByUsername(String username)
-            throws UsernameNotFoundException {
-
-        return userRepository.findByUsernameOrEmail(username, username)
-            .map(user -> User.builder()
-                .username(user.getUsername())
-                .password(user.getPasswordHash())
-                .authorities(buildAuthorities(user))
-                .accountExpired(!user.isAccountNonExpired())
-                .accountLocked(!user.isAccountNonLocked())
-                .credentialsExpired(!user.isCredentialsNonExpired())
-                .disabled(!user.isEnabled())
-                .build())
-            .orElseThrow(() ->
-                new UsernameNotFoundException("Usuário não encontrado: " + username));
-    }
-
-    private Collection<GrantedAuthority> buildAuthorities(UserEntity user) {
-        return user.getRoles().stream()
-            .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
-            .collect(Collectors.toList());
-    }
-}
-
-// ── Token Customizer — adiciona claims extras ao JWT ─────────────────────
-/**
- * Personaliza os claims dos tokens JWT emitidos pelo Authorization Server.
- *
- * Dois customizadores distintos:
- * - OAuth2TokenCustomizer<JwtEncodingContext>  → access token e id token
- * - OAuth2TokenCustomizer<OAuth2TokenClaimsContext> → opaque tokens (introspection)
- */
-@Bean
-public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
-        UserRepository userRepository) {
-
-    return context -> {
-        // Determina o tipo de token sendo emitido
-        OAuth2TokenType tokenType = context.getTokenType();
-
-        if (OAuth2TokenType.ACCESS_TOKEN.equals(tokenType)) {
-            customizeAccessToken(context, userRepository);
-        } else if (OidcParameterNames.ID_TOKEN.equals(tokenType.getValue())) {
-            customizeIdToken(context, userRepository);
-        }
-    };
-}
-
-private void customizeAccessToken(JwtEncodingContext context,
-                                   UserRepository userRepository) {
-
-    Authentication principal = context.getPrincipal();
-
-    // Client Credentials: não há usuário — adicionar claims do client
-    if (context.getAuthorizationGrantType()
-            .equals(AuthorizationGrantType.CLIENT_CREDENTIALS)) {
-        context.getClaims()
-            .claim("client_id",   context.getRegisteredClient().getClientId())
-            .claim("token_type",  "client_credentials");
-        return;
-    }
-
-    // Authorization Code: adicionar claims do usuário autenticado
-    String username = principal.getName();
-    userRepository.findByUsername(username).ifPresent(user -> {
-        context.getClaims()
-            // Roles como lista no JWT — consumido pelo Resource Server
-            .claim("roles", user.getRoles().stream()
-                .map(Enum::name)
-                .toList())
-            // Permissões granulares
-            .claim("permissions", user.getPermissions().stream()
-                .map(Permission::name)
-                .toList())
-            // Tenant para sistemas multi-tenant
-            .claim("tenant_id",   user.getTenantId())
-            // Email verificado
-            .claim("email",       user.getEmail())
-            .claim("email_verified", user.isEmailVerified());
-    });
-}
-
-private void customizeIdToken(JwtEncodingContext context,
-                               UserRepository userRepository) {
-    // ID Token (OIDC) — claims padrão do perfil do usuário
-    String username = context.getPrincipal().getName();
-    userRepository.findByUsername(username).ifPresent(user -> {
-        context.getClaims()
-            .claim("name",              user.getFullName())
-            .claim("given_name",        user.getFirstName())
-            .claim("family_name",       user.getLastName())
-            .claim("email",             user.getEmail())
-            .claim("email_verified",    user.isEmailVerified())
-            .claim("picture",           user.getAvatarUrl())
-            .claim("preferred_username", user.getUsername())
-            .claim("locale",            "pt-BR");
-    });
-}
-```
-
----
-
-### 16.7 UserInfo Endpoint — Mapeamento de Claims
-
-```java
-/**
- * Mapeia os claims retornados pelo /userinfo endpoint (OIDC).
- * Recebe o OidcUserInfoAuthenticationContext e retorna um OidcUserInfo.
- */
-@Bean
-public Function<OidcUserInfoAuthenticationContext, OidcUserInfo> userInfoMapper(
-        UserRepository userRepository) {
-
-    return context -> {
-        OidcUserInfo requestedClaims = context.getUserInfo();
-        String username = context.getAuthorization().getPrincipalName();
-
-        UserEntity user = userRepository.findByUsername(username)
-            .orElseThrow(() -> new UsernameNotFoundException(username));
-
-        // Filtra claims com base nos escopos autorizados pelo client
-        Set<String> scopes = context.getAuthorization()
-            .getAuthorizedScopes();
-
-        OidcUserInfo.Builder builder = OidcUserInfo.builder()
-            .subject(username);
-
-        if (scopes.contains(OidcScopes.PROFILE)) {
-            builder
-                .name(user.getFullName())
-                .givenName(user.getFirstName())
-                .familyName(user.getLastName())
-                .preferredUsername(user.getUsername())
-                .picture(user.getAvatarUrl())
-                .locale("pt-BR")
-                .updatedAt(user.getUpdatedAt());
-        }
-
-        if (scopes.contains(OidcScopes.EMAIL)) {
-            builder
-                .email(user.getEmail())
-                .emailVerified(user.isEmailVerified());
-        }
-
-        // Claim customizado de tenant — disponível apenas com escopo específico
-        if (scopes.contains("tenant.read")) {
-            builder.claim("tenant_id", user.getTenantId());
-        }
-
-        return builder.build();
-    };
-}
-```
-
----
-
-### 16.8 Tela de Consentimento Customizada
-
-Quando `requireAuthorizationConsent(true)`, o Spring Authorization Server exibe uma tela de consentimento antes de emitir o token. É possível customizar essa tela.
-
-```java
-@Controller
-@RequiredArgsConstructor
-public class AuthorizationConsentController {
-
-    private final RegisteredClientRepository clientRepository;
-    private final OAuth2AuthorizationConsentService consentService;
-
-    /**
-     * Exibe a tela de consentimento ao usuário.
-     * Chamado automaticamente pelo Authorization Server quando consent é necessário.
-     */
-    @GetMapping("/oauth2/consent")
-    public String consent(
-            Principal principal,
-            Model model,
-            @RequestParam(OAuth2ParameterNames.CLIENT_ID)     String clientId,
-            @RequestParam(OAuth2ParameterNames.SCOPE)         String scope,
-            @RequestParam(OAuth2ParameterNames.STATE)         String state,
-            @RequestParam(value = OAuth2ParameterNames.USER_CODE,
-                          required = false)                   String userCode) {
-
-        RegisteredClient client = clientRepository.findByClientId(clientId);
-
-        // Escopos já aprovados anteriormente
-        Set<String> previouslyApprovedScopes = getPreviouslyApprovedScopes(
-            principal.getName(), clientId);
-
-        // Divide escopos em: já aprovados vs novos pendentes de aprovação
-        Set<ScopeWithDescription> scopesToApprove = new LinkedHashSet<>();
-        Set<ScopeWithDescription> previouslyApproved  = new LinkedHashSet<>();
-
-        for (String requestedScope : StringUtils.commaDelimitedListToSet(scope)) {
-            if (OidcScopes.OPENID.equals(requestedScope)) continue; // openid é implícito
-
-            ScopeWithDescription swd = new ScopeWithDescription(
-                requestedScope, getScopeDescription(requestedScope));
-
-            if (previouslyApprovedScopes.contains(requestedScope)) {
-                previouslyApproved.add(swd);
-            } else {
-                scopesToApprove.add(swd);
-            }
-        }
-
-        model.addAttribute("clientId",           clientId);
-        model.addAttribute("clientName",         client.getClientName());
-        model.addAttribute("state",              state);
-        model.addAttribute("scopes",             scopesToApprove);
-        model.addAttribute("previouslyApproved", previouslyApproved);
-        model.addAttribute("principalName",      principal.getName());
-        model.addAttribute("userCode",           userCode);
-        model.addAttribute("requestURI",
-            "/oauth2/authorize" + (userCode != null ? "/device_verification" : ""));
-
-        return "oauth2/consent";
-    }
-
-    private String getScopeDescription(String scope) {
-        return switch (scope) {
-            case "api.read"    -> "Ler dados da sua conta";
-            case "api.write"   -> "Modificar dados da sua conta";
-            case "api.admin"   -> "Acesso administrativo completo";
-            case "tenant.read" -> "Ler informações do seu tenant";
-            case "profile"     -> "Acessar seu perfil (nome, foto)";
-            case "email"       -> "Acessar seu endereço de e-mail";
-            default            -> scope;
-        };
-    }
-
-    private Set<String> getPreviouslyApprovedScopes(String username, String clientId) {
-        OAuth2AuthorizationConsent consent =
-            consentService.findById(clientId, username);
-        if (consent == null) return Set.of();
-        return consent.getScopes();
-    }
-
-    public record ScopeWithDescription(String scope, String description) {}
-}
-```
-
-```html
-<!-- templates/oauth2/consent.html -->
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Autorizar Acesso</title></head>
-<body>
-<h2>
-    <span th:text="${clientName}">App</span> está solicitando acesso à sua conta
-</h2>
-
-<form th:action="@{/oauth2/authorize}" method="post">
-    <input type="hidden" name="client_id"     th:value="${clientId}"/>
-    <input type="hidden" name="state"         th:value="${state}"/>
-    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
-    <input type="hidden" name="user_code"     th:value="${userCode}" th:if="${userCode}"/>
-
-    <!-- Escopos novos — usuário decide aprovar ou não -->
-    <fieldset th:if="${not #lists.isEmpty(scopes)}">
-        <legend>Permissões solicitadas</legend>
-        <div th:each="scope : ${scopes}">
-            <label>
-                <input type="checkbox"
-                       name="scope"
-                       th:value="${scope.scope}"
-                       checked/>
-                <span th:text="${scope.description}"></span>
-                <small th:text="'(' + ${scope.scope} + ')'"></small>
-            </label>
-        </div>
-    </fieldset>
-
-    <!-- Escopos já aprovados — exibição apenas -->
-    <fieldset th:if="${not #lists.isEmpty(previouslyApproved)}">
-        <legend>Permissões já aprovadas</legend>
-        <div th:each="scope : ${previouslyApproved}">
-            <label>
-                <input type="checkbox" name="scope"
-                       th:value="${scope.scope}" checked disabled/>
-                <span th:text="${scope.description}"></span>
-            </label>
-        </div>
-    </fieldset>
-
-    <button type="submit" name="action" value="approve">Autorizar</button>
-    <button type="submit" name="action" value="deny">Cancelar</button>
-</form>
-</body>
-</html>
-```
-
----
-
-### 16.9 Discovery e JWKS — Endpoints OIDC
-
-O Spring Authorization Server expõe automaticamente os endpoints de descoberta exigidos pela especificação OpenID Connect:
-
-```
-GET /.well-known/openid-configuration   → OpenID Connect Discovery Document
-GET /.well-known/oauth-authorization-server → OAuth2 Authorization Server Metadata (RFC 8414)
-GET /oauth2/jwks                        → JSON Web Key Set (chaves públicas para validação)
-GET /userinfo                           → Claims do usuário autenticado
-POST /oauth2/token                      → Emissão de tokens
-POST /oauth2/revoke                     → Revogação de tokens
-POST /oauth2/introspect                 → Introspecção de tokens
-```
-
-Exemplo de resposta do Discovery Document:
-
-```json
-{
-  "issuer": "https://auth.myapp.com",
-  "authorization_endpoint": "https://auth.myapp.com/oauth2/authorize",
-  "token_endpoint": "https://auth.myapp.com/oauth2/token",
-  "jwks_uri": "https://auth.myapp.com/oauth2/jwks",
-  "userinfo_endpoint": "https://auth.myapp.com/userinfo",
-  "end_session_endpoint": "https://auth.myapp.com/connect/logout",
-  "response_types_supported": ["code"],
-  "grant_types_supported": [
-    "authorization_code",
-    "client_credentials",
-    "refresh_token",
-    "urn:ietf:params:oauth:grant-type:device_code"
-  ],
-  "subject_types_supported": ["public"],
-  "id_token_signing_alg_values_supported": ["RS256"],
-  "scopes_supported": ["openid", "profile", "email", "api.read", "api.write"],
-  "token_endpoint_auth_methods_supported": [
-    "client_secret_basic",
-    "client_secret_post",
-    "none"
-  ],
-  "code_challenge_methods_supported": ["S256"]
-}
-```
-
----
-
-### 16.10 Resource Server consumindo o IdP próprio
-
-O Resource Server (API REST) consome o IdP próprio via JWKS, sem nenhuma diferença em relação ao Keycloak — basta apontar para os endpoints corretos:
-
-```yaml
-# application.yml do Resource Server
-spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          # Discovery automático via issuer-uri (preferível)
-          issuer-uri: ${AUTH_SERVER_ISSUER_URI:http://localhost:9000}
-          # Alternativa: JWKS explícito
-          # jwk-set-uri: http://localhost:9000/oauth2/jwks
-```
-
-```java
-// No Resource Server — converter de claims do IdP próprio
-@Bean
-public JwtAuthenticationConverter jwtAuthenticationConverter() {
-    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
-
-    converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-        List<GrantedAuthority> authorities = new ArrayList<>();
-
-        // Roles do claim "roles" — populado pelo TokenCustomizer do IdP
-        List<String> roles = jwt.getClaimAsStringList("roles");
-        if (roles != null) {
-            roles.stream()
-                .map(r -> new SimpleGrantedAuthority("ROLE_" + r))
-                .forEach(authorities::add);
-        }
-
-        // Permissões do claim "permissions"
-        List<String> permissions = jwt.getClaimAsStringList("permissions");
-        if (permissions != null) {
-            permissions.stream()
-                .map(SimpleGrantedAuthority::new)
-                .forEach(authorities::add);
-        }
-
-        // Escopos OAuth2 → SCOPE_xxx
-        String scope = jwt.getClaimAsString("scope");
-        if (scope != null) {
-            Arrays.stream(scope.split(" "))
-                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s))
-                .forEach(authorities::add);
-        }
-
-        return authorities;
-    });
-
-    return converter;
-}
-```
-
----
-
-### 16.11 SPA React consumindo o IdP próprio (PKCE)
-
-```typescript
-// auth/config.ts — configuração do cliente OAuth2 na SPA
-import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
-
-export const authManager = new UserManager({
-  authority:              'http://localhost:9000',       // issuer do IdP próprio
-  client_id:             'myapp-spa',
-  redirect_uri:          `${window.location.origin}/callback`,
-  post_logout_redirect_uri: `${window.location.origin}/login`,
-  response_type:         'code',                        // Authorization Code
-  scope:                 'openid profile email api.read api.write',
-  // PKCE é habilitado automaticamente pelo oidc-client-ts para flows públicos
-  userStore:             new WebStorageStateStore({ store: sessionStorage }),
-  automaticSilentRenew:  true,
-  silent_redirect_uri:   `${window.location.origin}/silent-renew`,
-  // Discovery automático via /.well-known/openid-configuration
-  loadUserInfo:          true,
-});
-```
-
----
-
-### 16.12 Docker Compose — Authorization Server isolado
-
-```yaml
-# docker-compose.yml — IdP Spring Authorization Server
-services:
-  auth-server:
-    build:
-      context: ./auth-server
-      dockerfile: Dockerfile
-    ports:
-      - "9000:9000"
-    environment:
-      SPRING_PROFILES_ACTIVE: container
-      DB_HOST: auth-db
-      DB_PORT: 5432
-      DB_NAME: authserver
-      DB_USERNAME: authserver
-      DB_PASSWORD: ${AUTH_DB_PASSWORD:-authserver}
-      AUTH_SERVER_ISSUER_URI: http://localhost:9000
-      AUTH_SERVER_RSA_PRIVATE_KEY: ${AUTH_RSA_PRIVATE_KEY}
-      AUTH_SERVER_RSA_PUBLIC_KEY: ${AUTH_RSA_PUBLIC_KEY}
-    depends_on:
-      auth-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL",
-             "curl -sf http://localhost:9000/.well-known/openid-configuration || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  auth-db:
-    image: postgres:18
-    environment:
-      POSTGRES_DB: authserver
-      POSTGRES_USER: authserver
-      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-authserver}
-    volumes:
-      - auth-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U authserver -d authserver"]
-      interval: 10s
-      retries: 5
-
-volumes:
-  auth-db-data:
-```
-
----
-
-### 16.13 Comparativo: Spring Authorization Server vs Keycloak
-
-| Aspecto | Spring Authorization Server | Keycloak |
-|---|---|---|
-| **Tipo** | Biblioteca embeddable | Servidor standalone |
-| **Footprint** | Leve — parte do seu JAR | ~512 MB RAM mínimo |
-| **Customização** | Total (código Java) | Limitada (SPI, themes) |
-| **UI de admin** | Não incluída — implementar | Console web completo |
-| **Multi-realm** | Implementar manualmente | Nativo |
-| **Social login** | Via oauth2-client | Nativo |
-| **LDAP/AD** | Implementar | Nativo |
-| **MFA** | Implementar (seção 7) | Nativo |
-| **SCIM** | Implementar | Extensão disponível |
-| **Melhor para** | Controle total, apps menores, SaaS próprio | Enterprise, equipes sem dev Java |
-
-
----
-
-
----
-
-## 17. Integração com SAML2
-
-SAML 2.0 (Security Assertion Markup Language) é um padrão XML amplamente adotado em ambientes corporativos e educacionais para Single Sign-On (SSO). O Spring Security oferece suporte nativo ao SAML2 como **Service Provider (SP)**, permitindo que a aplicação delegue autenticação a um Identity Provider SAML como ADFS, Shibboleth, Okta ou Azure AD.
-
-### 17.1 Conceitos SAML2
-
-```mermaid
-sequenceDiagram
-    participant U as Usuário (Browser)
-    participant SP as Spring Boot (Service Provider)
-    participant IDP as Identity Provider (ADFS / Okta / Azure AD)
-
-    U->>SP: GET /dashboard (não autenticado)
-    SP-->>U: Redirect → /saml2/authenticate/idp-alias
-    SP->>SP: Gera AuthnRequest assinado (XML)
-    SP-->>U: Redirect → IDP com SAMLRequest (Base64 + URL encoded)
-    U->>IDP: GET /sso com SAMLRequest
-    IDP-->>U: Formulário de login do IdP
-    U->>IDP: Credenciais corporativas
-    IDP->>IDP: Autentica + gera Assertion XML assinada
-    IDP-->>U: POST → /login/saml2/sso/idp-alias com SAMLResponse
-    U->>SP: POST /login/saml2/sso/idp-alias {SAMLResponse}
-    SP->>SP: Valida assinatura + extrai Assertion
-    SP->>SP: Cria Authentication no SecurityContext
-    SP-->>U: Redirect → /dashboard (autenticado)
-```
-
-**Terminologia essencial:**
-
-| Termo | Significado |
-|-------|-------------|
-| **SP (Service Provider)** | Sua aplicação Spring Boot |
-| **IdP (Identity Provider)** | ADFS, Okta, Azure AD, Shibboleth |
-| **AuthnRequest** | Pedido de autenticação enviado pelo SP ao IdP |
-| **Assertion** | Documento XML com os dados do usuário, emitido pelo IdP |
-| **Metadata** | Documento XML descrevendo endpoints e certificados do SP/IdP |
-| **Entity ID** | Identificador único do SP ou IdP (normalmente uma URL) |
-| **ACS (Assertion Consumer Service)** | Endpoint do SP que recebe o SAMLResponse do IdP |
-| **Binding** | Mecanismo de transporte: HTTP-POST (padrão) ou HTTP-Redirect |
-
----
-
-### 17.2 Dependência Maven
-
-```xml
-<!-- Spring Security SAML2 Service Provider -->
-<dependency>
-    <groupId>org.springframework.security</groupId>
-    <artifactId>spring-security-saml2-service-provider</artifactId>
-</dependency>
-
-<!-- OpenSAML — implementação SAML subjacente, gerenciada pelo BOM -->
-<!-- Não declarar versão explicitamente -->
-```
-
----
-
-### 17.3 Configuração via `application.yml`
-
-```yaml
-spring:
-  security:
-    saml2:
-      relyingparty:
-        registration:
-          # "adfs" é o registrationId — aparece nas URLs: /saml2/authenticate/adfs
-          adfs:
-            entity-id: https://myapp.example.com/saml2/sp   # Entity ID do SP
-            asserting-party:                                  # Configurações do IdP
-              metadata-uri: https://adfs.corp.com/FederationMetadata/2007-06/FederationMetadata.xml
-              # Alternativa: metadados inline ou arquivo local
-              # metadata-uri: classpath:saml/idp-metadata.xml
-            signing:
-              credentials:
-                - private-key-location: classpath:saml/sp-private.key
-                  certificate-location: classpath:saml/sp-certificate.crt
-            decryption:
-              credentials:
-                - private-key-location: classpath:saml/sp-private.key
-                  certificate-location: classpath:saml/sp-certificate.crt
-
-          # Segundo IdP — ex: Okta para parceiros externos
-          okta:
-            entity-id: https://myapp.example.com/saml2/sp
-            asserting-party:
-              metadata-uri: https://mycompany.okta.com/app/abc123/sso/saml/metadata
-            signing:
-              credentials:
-                - private-key-location: classpath:saml/sp-private.key
-                  certificate-location: classpath:saml/sp-certificate.crt
-```
-
----
-
-### 17.4 Geração do Par de Chaves do SP
-
-```bash
-# Gera chave privada RSA 2048 bits
-openssl genrsa -out sp-private.key 2048
-
-# Gera certificado autoassinado (validade 10 anos)
-openssl req -new -x509 \
-  -key sp-private.key \
-  -out sp-certificate.crt \
-  -days 3650 \
-  -subj "/CN=myapp.example.com/O=MyOrg/C=BR"
-
-# Copiar para src/main/resources/saml/
-```
-
-> Em produção, use um certificado emitido por uma CA interna. O certificado do SP é público — é compartilhado com o IdP via metadata. A chave privada deve ser armazenada no Vault ou AWS Secrets Manager.
-
----
-
-### 17.5 SecurityFilterChain para SAML2
-
-```java
-@Configuration
-@EnableWebSecurity
-public class Saml2SecurityConfig {
-
-    /**
-     * SecurityFilterChain com autenticação SAML2.
-     *
-     * Endpoints registrados automaticamente pelo Spring Security:
-     *   GET  /saml2/authenticate/{registrationId}  → inicia AuthnRequest
-     *   POST /login/saml2/sso/{registrationId}     → recebe SAMLResponse (ACS)
-     *   GET  /saml2/metadata/{registrationId}      → expõe SP Metadata XML
-     *   POST /logout/saml2/slo/{registrationId}    → recebe LogoutRequest do IdP (SLO)
-     */
-    @Bean
-    public SecurityFilterChain saml2Chain(HttpSecurity http) throws Exception {
-        return http
-            .saml2Login(saml2 -> saml2
-                .loginPage("/login")                    // página de seleção de IdP
-                .defaultSuccessUrl("/dashboard", true)
-                .failureUrl("/login?error=saml2")
-                .userDetailsService(saml2UserDetailsService())
-            )
-            .saml2Logout(logout -> logout
-                .logoutUrl("/logout")
-                // Habilita Single Logout — propaga logout para o IdP
-                .addObjectPostProcessor(new ObjectPostProcessor<>() {
-                    @Override
-                    public <O extends Saml2LogoutRequestFilter> O postProcess(O filter) {
-                        // Configura SLO se o IdP suportar
-                        return filter;
-                    }
-                })
-            )
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login**", "/saml2/**", "/error").permitAll()
-                .anyRequest().authenticated())
-            .build();
-    }
-}
-```
-
----
-
-### 17.6 Mapeamento de Atributos SAML para `UserDetails`
-
-O IdP envia os dados do usuário dentro da Assertion como **Attributes** XML. Os nomes dos atributos variam por IdP — ADFS usa o formato `http://schemas.xmlsoap.org/...`, Okta e Azure AD usam nomes mais curtos.
-
-```java
-/**
- * Converte a Saml2AuthenticatedPrincipal (dados extraídos da Assertion)
- * em um UserDetails do Spring Security com roles e permissões locais.
- */
-@Service
-@RequiredArgsConstructor
-@Slf4j
-public class Saml2UserDetailsService
-        implements Saml2UserDetailsService<Saml2AuthenticatedPrincipal> {
-
-    private final UserRepository userRepository;
-
-    // Nomes de atributos SAML comuns por IdP
-    private static final Map<String, List<String>> EMAIL_ATTRS = Map.of(
-        "adfs",  List.of(
-            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
-            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"),
-        "okta",  List.of("email", "login"),
-        "azure", List.of("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
-                         "preferred_username"),
-        "default", List.of("email", "mail", "EmailAddress")
-    );
-
-    private static final Map<String, String> GROUPS_ATTRS = Map.of(
-        "adfs",  "http://schemas.xmlsoap.org/claims/Group",
-        "okta",  "groups",
-        "azure", "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups",
-        "default", "groups"
-    );
-
-    @Override
-    public Saml2AuthenticatedPrincipal loadUser(
-            Saml2AuthenticatedPrincipal principal) {
-
-        String registrationId = principal.getRelyingPartyRegistrationId();
-        String nameId         = principal.getName();   // NameID da Assertion
-
-        // Extrai email dos atributos SAML
-        String email = resolveEmail(principal, registrationId);
-
-        // Sincroniza com banco de dados local — cria ou atualiza o usuário
-        UserEntity user = syncUser(nameId, email, registrationId, principal);
-
-        log.info("SAML2 login: nameId={} email={} idp={}",
-            nameId, email, registrationId);
-
-        // Retorna o principal original enriquecido com authorities locais
-        return new CustomSaml2Principal(principal, buildAuthorities(user));
-    }
-
-    private String resolveEmail(Saml2AuthenticatedPrincipal p, String idp) {
-        List<String> candidateAttrs = EMAIL_ATTRS.getOrDefault(idp,
-            EMAIL_ATTRS.get("default"));
-
-        return candidateAttrs.stream()
-            .map(attr -> p.getFirstAttribute(attr))
-            .filter(Objects::nonNull)
-            .findFirst()
-            .orElse(p.getName());   // fallback: usa o NameID como email
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> resolveGroups(Saml2AuthenticatedPrincipal p, String idp) {
-        String groupAttr = GROUPS_ATTRS.getOrDefault(idp, GROUPS_ATTRS.get("default"));
-        List<String> groups = p.getAttribute(groupAttr);
-        return groups != null ? groups : List.of();
-    }
-
-    private UserEntity syncUser(String nameId, String email,
-                                 String idp, Saml2AuthenticatedPrincipal p) {
-        return userRepository.findBySamlNameId(nameId)
-            .map(existing -> {
-                // Atualiza dados do usuário existente com informações do IdP
-                existing.setEmail(email);
-                existing.setLastLoginAt(Instant.now());
-                return userRepository.save(existing);
-            })
-            .orElseGet(() -> {
-                // Cria novo usuário no primeiro login
-                UserEntity newUser = new UserEntity();
-                newUser.setSamlNameId(nameId);
-                newUser.setEmail(email);
-                newUser.setProvider(idp);
-                newUser.setEnabled(true);
-                newUser.getRoles().add(Role.USER);
-                return userRepository.save(newUser);
-            });
-    }
-
-    private Collection<GrantedAuthority> buildAuthorities(UserEntity user) {
-        return user.getRoles().stream()
-            .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
-            .collect(Collectors.toList());
-    }
-}
-```
-
----
-
-### 17.7 Mapeamento de Grupos SAML para Roles Spring
-
-```java
-/**
- * Converte grupos SAML (ex: grupos do AD) em GrantedAuthorities Spring.
- * Registrado como GrantedAuthoritiesMapper no contexto.
- */
-@Component
-public class SamlGroupsToRolesMapper implements GrantedAuthoritiesMapper {
-
-    // Mapeamento de grupo AD → ROLE Spring Security
-    private static final Map<String, String> GROUP_TO_ROLE = Map.of(
-        "CN=AppAdmins,OU=Groups,DC=corp,DC=com",    "ROLE_ADMIN",
-        "CN=AppUsers,OU=Groups,DC=corp,DC=com",     "ROLE_USER",
-        "CN=AppManagers,OU=Groups,DC=corp,DC=com",  "ROLE_MANAGER",
-        "AppAdmins",   "ROLE_ADMIN",   // Okta usa nomes curtos
-        "AppUsers",    "ROLE_USER",
-        "AppManagers", "ROLE_MANAGER"
-    );
-
-    @Override
-    public Collection<? extends GrantedAuthority> mapAuthorities(
-            Collection<? extends GrantedAuthority> authorities) {
-
-        Set<GrantedAuthority> mapped = new LinkedHashSet<>();
-
-        for (GrantedAuthority authority : authorities) {
-            // Authorities do SAML2 chegam como SimpleGrantedAuthority
-            // com o valor do atributo de grupo
-            String role = GROUP_TO_ROLE.get(authority.getAuthority());
-            if (role != null) {
-                mapped.add(new SimpleGrantedAuthority(role));
-            }
-            // Mantém a authority original também (para auditoria)
-            mapped.add(authority);
-        }
-
-        // Role mínima para qualquer usuário autenticado via SAML
-        mapped.add(new SimpleGrantedAuthority("ROLE_USER"));
-
-        return mapped;
-    }
-}
-
-// Registro no SecurityConfig
-@Bean
-public SecurityFilterChain saml2Chain(HttpSecurity http,
-        SamlGroupsToRolesMapper groupsMapper) throws Exception {
-    return http
-        .saml2Login(saml2 -> saml2
-            .userDetailsService(saml2UserDetailsService())
-            .grantedAuthoritiesMapper(groupsMapper)   // ← mapper registrado aqui
-        )
-        // ...
-        .build();
-}
-```
-
----
-
-### 17.8 SP Metadata — Configuração do IdP
-
-O Spring Security gera automaticamente o **SP Metadata XML** em `/saml2/metadata/{registrationId}`. Esse XML deve ser fornecido ao administrador do IdP para configurar a relação de confiança (trust relationship).
-
-```
-GET /saml2/metadata/adfs
-→ Retorna XML com:
-   - Entity ID do SP
-   - Certificado público do SP (para o IdP validar as assinaturas)
-   - ACS URL (onde o IdP deve enviar o SAMLResponse)
-   - SLO URL (onde o IdP deve enviar LogoutRequest)
-   - NameID formats suportados
-```
-
-Para personalizar o metadata gerado:
-
-```java
-@Bean
-public Saml2MetadataResolver saml2MetadataResolver(
-        RelyingPartyRegistrationRepository registrations) {
-
-    OpenSaml4MetadataResolver resolver = new OpenSaml4MetadataResolver();
-
-    // Adiciona informações de contato ao metadata (opcional mas recomendado)
-    resolver.setEntityDescriptorCustomizer(descriptor -> {
-        // Personaliza o EntityDescriptor gerado
-        descriptor.setValidUntil(Instant.now().plus(365, ChronoUnit.DAYS));
-    });
-
-    return resolver;
-}
-```
-
----
-
-### 17.9 Single Logout (SLO)
-
-```java
-@Bean
-public SecurityFilterChain saml2Chain(HttpSecurity http) throws Exception {
-    return http
-        .saml2Login(Customizer.withDefaults())
-        .saml2Logout(logout -> logout
-            // URL onde o SP recebe LogoutRequest do IdP
-            .logoutRequestValidator(new Saml2LogoutRequestValidator())
-            // URL onde o SP recebe LogoutResponse do IdP
-            .logoutResponseResolver(new OpenSaml4LogoutResponseResolver(
-                registrationRepository))
-        )
-        .logout(logout -> logout
-            .logoutUrl("/logout")
-            .logoutSuccessUrl("/login?logout")
-            .deleteCookies("JSESSIONID")
-            .invalidateHttpSession(true))
-        .build();
-}
-```
-
----
-
-### 17.10 Integração com Azure AD via SAML2
-
-```yaml
-spring:
-  security:
-    saml2:
-      relyingparty:
-        registration:
-          azure:
-            entity-id: https://myapp.example.com/saml2/sp
-            asserting-party:
-              # Metadata do Azure AD — substitua {tenant-id} pelo ID do tenant
-              metadata-uri: >
-                https://login.microsoftonline.com/{tenant-id}/federationmetadata/2007-06/federationmetadata.xml?appid={app-id}
-              want-authn-requests-signed: true
-            signing:
-              credentials:
-                - private-key-location: classpath:saml/sp-private.key
-                  certificate-location: classpath:saml/sp-certificate.crt
-            acs:
-              location: https://myapp.example.com/login/saml2/sso/azure
-```
-
-Atributos enviados pelo Azure AD e seus mapeamentos:
-
-```java
-// Extração de atributos específicos do Azure AD
-private static final String AZURE_EMAIL =
-    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress";
-private static final String AZURE_GROUPS =
-    "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups";
-private static final String AZURE_DISPLAY_NAME =
-    "http://schemas.microsoft.com/identity/claims/displayname";
-private static final String AZURE_OBJECT_ID =
-    "http://schemas.microsoft.com/identity/claims/objectidentifier";
-
-public void extractAzureAttributes(Saml2AuthenticatedPrincipal p) {
-    String email       = p.getFirstAttribute(AZURE_EMAIL);
-    List<String> groups = p.getAttribute(AZURE_GROUPS);   // GUIDs dos grupos no AD
-    String displayName = p.getFirstAttribute(AZURE_DISPLAY_NAME);
-    String objectId    = p.getFirstAttribute(AZURE_OBJECT_ID);
-}
-```
-
----
-
-### 17.11 Comparativo: SAML2 vs OAuth2/OIDC
-
-| Aspecto | SAML2 | OAuth2 / OIDC |
-|---|---|---|
-| **Formato** | XML (verboso, pesado) | JSON (compacto, leve) |
-| **Transport** | HTTP-POST / HTTP-Redirect | HTTP-Redirect / Token no body |
-| **Adoção** | Corporativo / Enterprise (ADFS, Shibboleth) | Web moderno, mobile, SPAs |
-| **Spring Security** | `spring-security-saml2-service-provider` | `spring-boot-starter-oauth2-client` |
-| **Configuração** | Troca de metadata XML | Discovery endpoint automático |
-| **Mobile** | Difícil (fluxo baseado em redirect browser) | Nativo (PKCE) |
-| **Quando usar** | Integração com ADFS corporativo, universidades (CAFe/RNP) | Novos projetos, APIs, SPAs |
-
-
-
----
-
-## 18. Integração com LDAP
-
-LDAP (Lightweight Directory Access Protocol) é o protocolo padrão para diretórios corporativos como Microsoft Active Directory, OpenLDAP e 389 Directory Server. O Spring Security oferece suporte nativo para autenticação e busca de usuários via LDAP.
-
-### 18.1 Modos de Autenticação LDAP
-
-```mermaid
-flowchart TD
-    subgraph "Bind Authentication (padrão)"
-        BA1[1. Busca o DN do usuário<br>no diretório via conta de serviço]
-        BA2[2. Tenta bind com<br>usuário + senha informados]
-        BA3[3. Bind OK → autenticado]
-        BA1 --> BA2 --> BA3
-    end
-
-    subgraph "Password Comparison"
-        PC1[1. Busca o atributo<br>userPassword do usuário]
-        PC2[2. Compara senha localmente<br>com BCrypt / SHA / MD5]
-        PC3[3. Match → autenticado]
-        PC1 --> PC2 --> PC3
-    end
-```
-
-| Modo | Vantagem | Desvantagem | Quando usar |
-|------|----------|-------------|-------------|
-| **Bind** | Senha nunca trafega do LDAP para a app | Requer conta de serviço no LDAP | Active Directory, OpenLDAP |
-| **Password Comparison** | Não precisa de bind | Exige que `userPassword` seja legível | LDAP com hash de senha acessível |
-
----
-
-### 18.2 Dependências Maven
-
-```xml
-<!-- Spring Security LDAP -->
-<dependency>
-    <groupId>org.springframework.security</groupId>
-    <artifactId>spring-security-ldap</artifactId>
-</dependency>
-
-<!-- Spring LDAP Core (abstração de baixo nível) -->
-<dependency>
-    <groupId>org.springframework.ldap</groupId>
-    <artifactId>spring-ldap-core</artifactId>
-</dependency>
-
-<!-- UnboundID LDAP SDK — servidor LDAP embutido para testes -->
-<dependency>
-    <groupId>com.unboundid</groupId>
-    <artifactId>unboundid-ldapsdk</artifactId>
-    <scope>test</scope>
-</dependency>
-```
-
----
-
-### 18.3 Configuração via `application.yml`
-
-```yaml
-spring:
-  ldap:
-    urls: ldap://ldap.corp.com:389
-    # Para LDAPS (TLS): ldaps://ldap.corp.com:636
-    base: dc=corp,dc=com            # Base DN de busca
-    username: cn=svc-springapp,ou=ServiceAccounts,dc=corp,dc=com  # Conta de serviço
-    password: ${LDAP_SERVICE_PASSWORD}
-
+  cors:
+    allowed-origins:
+      - "http://localhost:5173"
+
+# application-prod.yml
 app:
-  ldap:
-    user-search-base: ou=Users         # Relativo ao base DN
-    user-search-filter: (sAMAccountName={0})   # {0} = username — AD usa sAMAccountName
-    group-search-base: ou=Groups
-    group-search-filter: (member={0})          # {0} = DN completo do usuário
-    group-role-attribute: cn              # Atributo do grupo usado como nome da role
-    role-prefix: ROLE_
-    # Para OpenLDAP, substituir sAMAccountName por uid
-    # user-search-filter: (uid={0})
+  cors:
+    allowed-origins:
+      - "https://myapp.com"
+      - "https://app.myapp.com"
 ```
 
 ---
 
-### 18.4 Configuração do `AuthenticationProvider` LDAP
-
-#### 18.4.1 Bind Authentication (recomendado para Active Directory)
-
+### 6.4 `@CrossOrigin` em Controllers (granularidade fina)
 ```java
-@Configuration
-@EnableWebSecurity
-@RequiredArgsConstructor
-public class LdapSecurityConfig {
+@RestController
+@RequestMapping("/api/v1/webhooks")
+// Permite apenas o domínio do parceiro neste controller específico
+@CrossOrigin(
+    origins = "https://partner.example.com",
+    methods = {RequestMethod.POST},
+    allowedHeaders = {"Content-Type", "X-Webhook-Signature"},
+    maxAge = 1800)
+public class WebhookController {
 
-    @Value("${spring.ldap.urls}")              private String ldapUrl;
-    @Value("${spring.ldap.base}")              private String ldapBase;
-    @Value("${spring.ldap.username}")          private String serviceUser;
-    @Value("${spring.ldap.password}")          private String servicePassword;
-    @Value("${app.ldap.user-search-base}")     private String userSearchBase;
-    @Value("${app.ldap.user-search-filter}")   private String userSearchFilter;
-    @Value("${app.ldap.group-search-base}")    private String groupSearchBase;
-    @Value("${app.ldap.group-search-filter}")  private String groupSearchFilter;
-    @Value("${app.ldap.group-role-attribute}") private String groupRoleAttribute;
-
-    /**
-     * ContextSource — conexão ao servidor LDAP com conta de serviço.
-     * O Spring usa esta conta para buscar o DN do usuário antes do bind.
-     */
-    @Bean
-    public LdapContextSource ldapContextSource() {
-        LdapContextSource ctx = new LdapContextSource();
-        ctx.setUrl(ldapUrl);
-        ctx.setBase(ldapBase);
-        ctx.setUserDn(serviceUser);
-        ctx.setPassword(servicePassword);
-        // Pool de conexões para reutilizar a conexão da conta de serviço
-        ctx.setPooled(true);
-        return ctx;
-    }
-
-    /**
-     * LdapTemplate — API de alto nível para queries LDAP.
-     * Usado pelo LdapUserDetailsService para carregar atributos adicionais.
-     */
-    @Bean
-    public LdapTemplate ldapTemplate(LdapContextSource contextSource) {
-        LdapTemplate template = new LdapTemplate(contextSource);
-        // Ignora erros de referência parcial (comum no Active Directory)
-        template.setIgnorePartialResultException(true);
-        return template;
-    }
-
-    /**
-     * AuthenticationProvider que realiza Bind Authentication no LDAP.
-     *
-     * Fluxo:
-     * 1. Busca o DN completo do usuário via userSearchFilter
-     * 2. Tenta bind com o DN + senha informados pelo usuário
-     * 3. Carrega os grupos do usuário via groupSearchFilter
-     * 4. Converte grupos em GrantedAuthorities
-     */
-    @Bean
-    public LdapAuthenticationProvider ldapAuthenticationProvider(
-            LdapContextSource contextSource) {
-
-        // 1. Define como encontrar o DN do usuário
-        FilterBasedLdapUserSearch userSearch = new FilterBasedLdapUserSearch(
-            userSearchBase,      // ou=Users
-            userSearchFilter,    // (sAMAccountName={0})
-            contextSource);
-        userSearch.setSearchSubtree(true); // busca em subárvores
-
-        // 2. Define o mecanismo de bind (verificação de senha)
-        BindAuthenticator bindAuthenticator = new BindAuthenticator(contextSource);
-        bindAuthenticator.setUserSearch(userSearch);
-
-        // 3. Define como carregar os grupos (authorities)
-        DefaultLdapAuthoritiesPopulator authoritiesPopulator =
-            new DefaultLdapAuthoritiesPopulator(contextSource, groupSearchBase);
-        authoritiesPopulator.setGroupSearchFilter(groupSearchFilter);
-        authoritiesPopulator.setGroupRoleAttribute(groupRoleAttribute);
-        authoritiesPopulator.setRolePrefix("ROLE_");
-        authoritiesPopulator.setConvertToUpperCase(true); // ROLE_APPADMINS
-        authoritiesPopulator.setSearchSubtree(true);
-        // Adiciona a role "ROLE_USER" para qualquer usuário autenticado via LDAP
-        authoritiesPopulator.setDefaultRole("ROLE_USER");
-
-        // 4. Monta o provider
-        LdapAuthenticationProvider provider = new LdapAuthenticationProvider(
-            bindAuthenticator, authoritiesPopulator);
-
-        // 5. Mapper de atributos LDAP → UserDetails
-        provider.setUserDetailsContextMapper(ldapUserDetailsMapper());
-
-        return provider;
-    }
-
-    /**
-     * Registra o LdapAuthenticationProvider no AuthenticationManager.
-     */
-    @Bean
-    public SecurityFilterChain ldapSecurityChain(HttpSecurity http,
-            LdapAuthenticationProvider ldapProvider) throws Exception {
-        return http
-            .authenticationProvider(ldapProvider)
-            .formLogin(form -> form
-                .loginPage("/login")
-                .defaultSuccessUrl("/dashboard", true)
-                .permitAll())
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/css/**", "/js/**").permitAll()
-                .requestMatchers("/admin/**").hasRole("APPADMINS")
-                .anyRequest().authenticated())
-            .build();
-    }
-
-    @Bean
-    public LdapUserDetailsMapper ldapUserDetailsMapper() {
-        return new CustomLdapUserDetailsMapper();
-    }
+    @PostMapping
+    public ResponseEntity<Void> receive(@RequestBody WebhookEvent event) { ... }
 }
 ```
 
-#### 18.4.2 Active Directory — `ActiveDirectoryLdapAuthenticationProvider`
-
-Para integração com AD, o Spring Security oferece um provider especializado que trata as peculiaridades do Active Directory (formato do DN, grupos aninhados, códigos de erro específicos):
-
-```java
-/**
- * Provider especializado para Active Directory.
- * Simplifica a configuração — não é necessário definir userSearchFilter
- * separadamente, pois o AD usa UPN (user@domain) ou sAMAccountName por padrão.
- */
-@Bean
-public ActiveDirectoryLdapAuthenticationProvider adAuthenticationProvider() {
-
-    ActiveDirectoryLdapAuthenticationProvider provider =
-        new ActiveDirectoryLdapAuthenticationProvider(
-            "corp.com",           // domínio AD
-            "ldap://ldap.corp.com:389",
-            "dc=corp,dc=com");    // root DN
-
-    // Padrão de busca do usuário — {0}=username, {1}=domínio
-    provider.setSearchFilter("(&(objectClass=user)(sAMAccountName={0}))");
-
-    // Converte grupos AD em GrantedAuthorities automaticamente
-    provider.setConvertSubErrorCodesToExceptions(true);
-    provider.setUseAuthenticationRequestCredentials(true);
-
-    return provider;
-}
-```
+> **`@CrossOrigin` vs `CorsConfigurationSource`:** Prefira `CorsConfigurationSource` para configuração global centralizada. Use `@CrossOrigin` apenas para exceções pontuais — por exemplo, um endpoint de webhook que aceita origem diferente do restante da API.
 
 ---
 
-### 18.5 `UserDetailsContextMapper` — Enriquecimento do UserDetails
-
-O `UserDetailsContextMapper` é chamado após o bind bem-sucedido para converter os atributos LDAP em um `UserDetails` Spring. É aqui que se extrai email, nome completo, departamento, etc.
-
-```java
-@Component
-@RequiredArgsConstructor
-@Slf4j
-public class CustomLdapUserDetailsMapper implements UserDetailsContextMapper {
-
-    private final UserRepository localUserRepository;
-
-    /**
-     * Chamado após bind LDAP bem-sucedido.
-     * Converte os atributos do DirContextOperations (contexto LDAP) em UserDetails.
-     *
-     * @param ctx         contexto LDAP com todos os atributos do usuário
-     * @param username    username informado no formulário
-     * @param authorities grupos/roles carregados pelo authoritiesPopulator
-     */
-    @Override
-    public UserDetails mapUserFromContext(DirContextOperations ctx,
-                                          String username,
-                                          Collection<? extends GrantedAuthority> authorities) {
-
-        // Extrai atributos LDAP — nomes variam entre AD e OpenLDAP
-        String email       = getAttr(ctx, "mail", "userPrincipalName");
-        String displayName = getAttr(ctx, "displayName", "cn");
-        String department  = getAttr(ctx, "department", "ou");
-        String employeeId  = getAttr(ctx, "employeeID", "employeeNumber");
-        String dn          = ctx.getDn().toString();
-
-        log.debug("LDAP login: user={} dn={} dept={}", username, dn, department);
-
-        // Sincroniza com banco local — garante que o usuário existe localmente
-        // para uso com JPA, roles locais, preferências, etc.
-        localUserRepository.findByUsername(username)
-            .ifPresentOrElse(
-                user -> updateFromLdap(user, email, displayName, department),
-                () -> createFromLdap(username, email, displayName, department));
-
-        // Enriquece com authorities locais do banco além das do LDAP
-        Set<GrantedAuthority> allAuthorities = new LinkedHashSet<>(authorities);
-        localUserRepository.findByUsername(username)
-            .ifPresent(user -> user.getLocalRoles().stream()
-                .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
-                .forEach(allAuthorities::add));
-
-        // Constrói UserDetails com todos os atributos
-        return LdapUserDetailsImpl.newInstance()
-            .username(username)
-            .dn(dn)
-            .authorities(allAuthorities)
-            .accountNonExpired(true)
-            .accountNonLocked(true)
-            .credentialsNonExpired(true)
-            .enabled(true)
-            .build();
-    }
-
-    /**
-     * Chamado quando o usuário atualiza a senha (raro via LDAP).
-     * Normalmente não implementado — a senha é gerenciada pelo IdP LDAP.
-     */
-    @Override
-    public void mapUserToContext(UserDetails user, DirContextAdapter ctx) {
-        throw new UnsupportedOperationException(
-            "Alteração de senha via LDAP não suportada nesta aplicação.");
-    }
-
-    private String getAttr(DirContextOperations ctx, String... candidates) {
-        for (String attr : candidates) {
-            String value = ctx.getStringAttribute(attr);
-            if (value != null && !value.isBlank()) return value;
-        }
-        return null;
-    }
-
-    private void updateFromLdap(UserEntity user, String email,
-                                 String displayName, String department) {
-        user.setEmail(email);
-        user.setDisplayName(displayName);
-        user.setDepartment(department);
-        user.setLastLoginAt(Instant.now());
-        localUserRepository.save(user);
-    }
-
-    private void createFromLdap(String username, String email,
-                                  String displayName, String department) {
-        UserEntity user = new UserEntity();
-        user.setUsername(username);
-        user.setEmail(email);
-        user.setDisplayName(displayName);
-        user.setDepartment(department);
-        user.setProvider("ldap");
-        user.setEnabled(true);
-        user.getRoles().add(Role.USER);
-        localUserRepository.save(user);
-    }
-}
-```
+### 6.5 Erros Comuns de CORS com Spring Security
+| Sintoma | Causa | Solução |
+|---|---|---|
+| `401` em OPTIONS | `.cors()` não configurado na chain | Adicionar `.cors(Customizer.withDefaults())` |
+| `allowCredentials` + `*` | `allowCredentials(true)` com `allowedOrigins("*")` são mutuamente exclusivos | Listar origens explicitamente |
+| Cookie não enviado | `credentials: 'include'` ausente no fetch | Adicionar `credentials: 'include'` no cliente |
+| Header bloqueado | Header não listado em `allowedHeaders` | Adicionar ao `setAllowedHeaders()` |
+| CORS em prod mas não dev | Origens hardcoded | Externalizar via `@Value` + profiles |
 
 ---
 
-### 18.6 `LdapUserDetailsService` — Busca de Usuários sem Autenticação
-
-Para carregar usuários LDAP fora do fluxo de autenticação (ex.: pré-popular dados, verificar existência), use `LdapUserDetailsService`:
-
-```java
-@Service
-@RequiredArgsConstructor
-public class LdapDirectoryService {
-
-    private final LdapTemplate ldapTemplate;
-
-    @Value("${app.ldap.user-search-base}")   private String userBase;
-    @Value("${app.ldap.group-search-base}")  private String groupBase;
-
-    /**
-     * Busca usuário por username no LDAP.
-     * Retorna atributos selecionados — não carrega senha.
-     */
-    public Optional<LdapUserDto> findByUsername(String username) {
-        String filter = "(sAMAccountName=" + LdapEncoder.filterEncode(username) + ")";
-
-        List<LdapUserDto> results = ldapTemplate.search(
-            userBase,
-            filter,
-            SearchControls.SUBTREE_SCOPE,
-            new String[]{"sAMAccountName", "mail", "displayName",
-                         "department", "telephoneNumber"},
-            (DirContextOperations ctx) -> new LdapUserDto(
-                ctx.getStringAttribute("sAMAccountName"),
-                ctx.getStringAttribute("mail"),
-                ctx.getStringAttribute("displayName"),
-                ctx.getStringAttribute("department"),
-                ctx.getStringAttribute("telephoneNumber")
-            )
-        );
-
-        return results.stream().findFirst();
-    }
-
-    /**
-     * Lista todos os grupos do usuário (incluindo grupos aninhados via AD).
-     */
-    public List<String> getUserGroups(String userDn) {
-        // memberOf com LDAP_MATCHING_RULE_IN_CHAIN retorna grupos aninhados no AD
-        String filter = "(member:1.2.840.113556.1.4.1941:=" +
-            LdapEncoder.filterEncode(userDn) + ")";
-
-        return ldapTemplate.search(
-            groupBase,
-            filter,
-            (Attributes attrs) -> attrs.get("cn") != null
-                ? (String) attrs.get("cn").get()
-                : null
-        ).stream().filter(Objects::nonNull).toList();
-    }
-
-    /**
-     * Verifica se um usuário é membro de um grupo específico.
-     */
-    public boolean isMemberOf(String username, String groupCn) {
-        String userDn = findDnByUsername(username);
-        if (userDn == null) return false;
-        return getUserGroups(userDn).stream()
-            .anyMatch(g -> g.equalsIgnoreCase(groupCn));
-    }
-
-    private String findDnByUsername(String username) {
-        String filter = "(sAMAccountName=" + LdapEncoder.filterEncode(username) + ")";
-        List<String> dns = ldapTemplate.search(userBase, filter,
-            (DirContextOperations ctx) -> ctx.getDn().toString());
-        return dns.stream().findFirst().orElse(null);
-    }
-
-    public record LdapUserDto(String username, String email,
-                               String displayName, String department,
-                               String phone) {}
-}
-```
-
----
-
-### 18.7 LDAP Embutido para Testes
-
-```java
-/**
- * Configura um servidor LDAP em memória (UnboundID) para testes de integração.
- * Carrega usuários de um arquivo LDIF na inicialização.
- */
-@TestConfiguration
-public class EmbeddedLdapConfig {
-
-    @Bean
-    public EmbeddedLdapAutoConfiguration embeddedLdap() {
-        // Configurado automaticamente pelo spring-boot-starter-test
-        // quando unboundid-ldapsdk está no classpath
-        return new EmbeddedLdapAutoConfiguration();
-    }
-}
-```
-
-```yaml
-# application-test.yml
-spring:
-  ldap:
-    embedded:
-      base-dn: dc=test,dc=com
-      ldif: classpath:ldap/test-users.ldif
-      port: 0   # porta aleatória
-```
-
-```ldif
-# src/test/resources/ldap/test-users.ldif
-dn: dc=test,dc=com
-objectClass: top
-objectClass: domain
-dc: test
-
-dn: ou=Users,dc=test,dc=com
-objectClass: top
-objectClass: organizationalUnit
-ou: Users
-
-dn: ou=Groups,dc=test,dc=com
-objectClass: top
-objectClass: organizationalUnit
-ou: Groups
-
-# Usuário de teste: admin
-dn: cn=admin,ou=Users,dc=test,dc=com
-objectClass: top
-objectClass: person
-objectClass: organizationalPerson
-objectClass: inetOrgPerson
-cn: admin
-sn: Administrator
-uid: admin
-mail: admin@test.com
-userPassword: {SSHA}senha-hash-bcrypt-aqui
-
-# Usuário de teste: john
-dn: cn=john,ou=Users,dc=test,dc=com
-objectClass: inetOrgPerson
-cn: john
-sn: Doe
-uid: john
-mail: john@test.com
-userPassword: {SSHA}senha-hash-bcrypt-aqui
-
-# Grupo: AppAdmins
-dn: cn=AppAdmins,ou=Groups,dc=test,dc=com
-objectClass: groupOfNames
-cn: AppAdmins
-member: cn=admin,ou=Users,dc=test,dc=com
-
-# Grupo: AppUsers
-dn: cn=AppUsers,ou=Groups,dc=test,dc=com
-objectClass: groupOfNames
-cn: AppUsers
-member: cn=john,ou=Users,dc=test,dc=com
-member: cn=admin,ou=Users,dc=test,dc=com
-```
-
----
-
-### 18.8 Fallback: LDAP + Banco de Dados
-
-Em ambientes onde nem todos os usuários estão no LDAP (ex.: usuários externos sem conta no AD), configure múltiplos `AuthenticationProvider` em ordem de tentativa:
-
-```java
-@Bean
-public AuthenticationManager authenticationManager(
-        LdapAuthenticationProvider ldapProvider,
-        DaoAuthenticationProvider dbProvider) {
-
-    // Spring tenta cada provider em ordem — primeiro LDAP, depois banco
-    // Se LDAP não encontrar o usuário, tenta o banco local
-    return new ProviderManager(List.of(ldapProvider, dbProvider));
-}
-
-@Bean
-public DaoAuthenticationProvider dbAuthenticationProvider(
-        UserDetailsService userDetailsService,
-        PasswordEncoder passwordEncoder) {
-
-    DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-    provider.setUserDetailsService(userDetailsService);
-    provider.setPasswordEncoder(passwordEncoder);
-    return provider;
-}
-```
-
----
-
-### 18.9 Comparativo: LDAP vs Banco de Dados vs OAuth2
-
-| Aspecto | LDAP / Active Directory | Banco de Dados | OAuth2 / OIDC |
-|---|---|---|---|
-| **Fonte de usuários** | Diretório corporativo centralizado | Tabela local da aplicação | IdP externo |
-| **Gestão de senhas** | RH / TI (auto-serviço AD) | Pela própria aplicação | Pelo IdP |
-| **SSO** | Via Kerberos / ADFS | Não — por aplicação | Nativo |
-| **Grupos/Roles** | Grupos do AD → roles Spring | Tabela local | Claims do token |
-| **Implantação** | Comum em empresas com AD | Apps sem AD ou usuários externos | SaaS, apps modernos |
-| **Spring Security** | `spring-security-ldap` | `DaoAuthenticationProvider` | `oauth2-client` |
-
-
-## 19. Boas Práticas OWASP
-
-### 19.1 Top 10 OWASP aplicado ao Spring Security
-
+## 7. Boas Práticas OWASP
+### 7.1 Top 10 OWASP aplicado ao Spring Security
 ```mermaid
 mindmap
   root((OWASP<br>Spring Security))
@@ -6489,8 +1450,7 @@ mindmap
       Log de tentativas falhas
 ```
 
-### 19.2 Headers de Segurança HTTP
-
+### 7.2 Headers de Segurança HTTP
 #### Headers sem nonce (CSP estático)
 
 Para APIs REST ou aplicações onde todos os scripts são próprios e não há inline scripts, o CSP pode ser completamente estático:
@@ -6719,8 +1679,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
 > **Por que um novo nonce a cada requisição?** Um nonce fixo ou reutilizado anula a proteção — um atacante que descobrir o valor pode injetar scripts com o mesmo nonce e o browser os aceitará. O `SecureRandom` com 128 bits garante que cada resposta HTTP tenha um valor imprevisível e único.
 
-### 19.3 Rate Limiting (Prevenção de Brute Force)
-
+### 7.3 Rate Limiting (Prevenção de Brute Force)
 ```java
 @Component
 @RequiredArgsConstructor
@@ -6798,8 +1757,7 @@ public class RateLimitConfig {
 }
 ```
 
-### 19.4 CSRF — Estratégias
-
+### 7.4 CSRF — Estratégias
 ```java
 // ====================================================
 // Opção 1: CSRF via Cookie (para SPAs com Axios/Fetch)
@@ -6824,8 +1782,7 @@ public class RateLimitConfig {
 .csrf(csrf -> csrf.disable())  // SOMENTE em SecurityFilterChains stateless com JWT
 ```
 
-### 19.5 Gestão Segura de Senhas
-
+### 7.5 Gestão Segura de Senhas
 #### 19.5.1 BCrypt
 
 BCrypt é o encoder padrão do Spring Security. Baseado no algoritmo Blowfish, usa um fator de custo (`strength`) que define o número de iterações como `2^strength`.
@@ -7137,8 +2094,7 @@ public class PasswordPolicyValidator
 > **Truncamento silencioso do BCrypt:** BCrypt processa no máximo 72 bytes da senha. Senhas mais longas são truncadas sem aviso — `"senha_longa_com_mais_de_72_bytes"` e `"senha_longa_com_mais_de_72_bytes_COMPLETAMENTE_DIFERENTE"` podem produzir o **mesmo hash** se os primeiros 72 bytes coincidirem. O Argon2id não tem essa limitação.
 
 
-### 19.6 Auditoria de Segurança
-
+### 7.6 Auditoria de Segurança
 ```java
 @Component
 @RequiredArgsConstructor
@@ -7185,8 +2141,7 @@ public class SecurityAuditListener
 }
 ```
 
-### 19.7 Restrição de Acesso por Endereço IP
-
+### 7.7 Restrição de Acesso por Endereço IP
 O Spring Security suporta restrição por IP nativamente via `hasIpAddress()` no SpEL das regras de autorização. Para cenários mais sofisticados — como anotações customizadas, allowlists configuráveis ou suporte a CIDR — é necessária uma implementação complementar.
 
 #### 19.7.1 Restrição Nativa via `hasIpAddress()`
@@ -8012,440 +2967,1027 @@ public ResponseEntity<Void> updateSystemConfig(
 
 ---
 
-## 20. CORS
-
-CORS (Cross-Origin Resource Sharing) é o mecanismo que permite ou bloqueia requisições HTTP entre origens distintas (protocolo + domínio + porta). O Spring Security integra-se ao CORS do Spring MVC mas requer configuração explícita — sem ela, requisições preflight (`OPTIONS`) podem ser bloqueadas antes de chegar ao controller.
-
-### 20.1 Como o Spring Security Processa CORS
-
-```mermaid
-flowchart TD
-    REQ[Requisição HTTP] --> CORS_FILTER[CorsFilter
-Spring Security]
-    CORS_FILTER --> PREFLIGHT{É preflight?
-METHOD = OPTIONS}
-    PREFLIGHT -->|Sim| EVAL[Avalia CorsConfigurationSource]
-    EVAL --> ALLOWED{Origem
-permitida?}
-    ALLOWED -->|Sim| RESP_OK["200 OK + headers
-Access-Control-Allow-*"]
-    ALLOWED -->|Não| RESP_DENY[403 Forbidden]
-    PREFLIGHT -->|Não — request real| AUTH[Filtros de Autenticação]
-    AUTH --> HANDLER[Controller]
-```
-
-> **Por que CORS no Security e não só no MVC?** O `CorsFilter` do Spring Security fica antes de qualquer filtro de autenticação. Se CORS fosse tratado apenas pelo MVC, requisições preflight `OPTIONS` seriam bloqueadas por `401 Unauthorized` antes de chegar ao `DispatcherServlet` — o browser interpretaria isso como falha de CORS, não de autenticação.
-
----
-
-### 20.2 Configuração Recomendada — `CorsConfigurationSource` como Bean
-
-```java
-@Configuration
-public class CorsConfig {
-
-    /**
-     * Bean de CORS reconhecido automaticamente pelo Spring Security (via .cors()).
-     * Define regras por padrão de URL.
-     */
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration apiConfig = new CorsConfiguration();
-        apiConfig.setAllowedOrigins(List.of(
-            "http://localhost:5173",     // Vite dev server
-            "https://myapp.com",         // produção
-            "https://staging.myapp.com"  // staging
-        ));
-        apiConfig.setAllowedMethods(List.of(
-            "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        apiConfig.setAllowedHeaders(List.of(
-            "Authorization",
-            "Content-Type",
-            "X-Requested-With",
-            "X-CSRF-Token",
-            "X-Tenant-Id"));
-        // Expõe headers customizados para o JavaScript do browser
-        apiConfig.setExposedHeaders(List.of(
-            "Location",
-            "X-Total-Count",
-            "X-Authenticated-User"));
-        // Necessário para envio de cookies (refresh token HttpOnly)
-        apiConfig.setAllowCredentials(true);
-        // Cache do preflight no browser — evita OPTIONS a cada requisição
-        apiConfig.setMaxAge(3600L);
-
-        // Configuração mais permissiva para assets públicos
-        CorsConfiguration publicConfig = new CorsConfiguration();
-        publicConfig.setAllowedOrigins(List.of("*"));
-        publicConfig.setAllowedMethods(List.of("GET", "OPTIONS"));
-        publicConfig.setAllowCredentials(false);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/api/**",     apiConfig);
-        source.registerCorsConfiguration("/public/**",  publicConfig);
-        return source;
-    }
-}
-```
-
-```java
-// Na SecurityFilterChain: .cors() usa automaticamente o bean CorsConfigurationSource
-@Bean
-public SecurityFilterChain apiChain(HttpSecurity http) throws Exception {
-    return http
-        .securityMatcher("/api/**")
-        // .cors() sem argumento → busca o bean CorsConfigurationSource no contexto
-        .cors(Customizer.withDefaults())
-        .csrf(csrf -> csrf.disable())
-        .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-        .build();
-}
-```
-
----
-
-### 20.3 CORS por Ambiente com `@Profile`
-
-```java
-@Configuration
-public class CorsConfig {
-
-    @Value("${app.cors.allowed-origins}")
-    private List<String> allowedOrigins;
-
-    @Bean
-    public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(allowedOrigins);   // externalizado por ambiente
-        config.setAllowedMethods(List.of("GET","POST","PUT","PATCH","DELETE","OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(3600L);
-
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
-    }
-}
-```
-
-```yaml
-# application.yml
-app:
-  cors:
-    allowed-origins:
-      - "http://localhost:5173"
-
-# application-prod.yml
-app:
-  cors:
-    allowed-origins:
-      - "https://myapp.com"
-      - "https://app.myapp.com"
-```
-
----
-
-### 20.4 `@CrossOrigin` em Controllers (granularidade fina)
-
-```java
-@RestController
-@RequestMapping("/api/v1/webhooks")
-// Permite apenas o domínio do parceiro neste controller específico
-@CrossOrigin(
-    origins = "https://partner.example.com",
-    methods = {RequestMethod.POST},
-    allowedHeaders = {"Content-Type", "X-Webhook-Signature"},
-    maxAge = 1800)
-public class WebhookController {
-
-    @PostMapping
-    public ResponseEntity<Void> receive(@RequestBody WebhookEvent event) { ... }
-}
-```
-
-> **`@CrossOrigin` vs `CorsConfigurationSource`:** Prefira `CorsConfigurationSource` para configuração global centralizada. Use `@CrossOrigin` apenas para exceções pontuais — por exemplo, um endpoint de webhook que aceita origem diferente do restante da API.
-
----
-
-### 20.5 Erros Comuns de CORS com Spring Security
-
-| Sintoma | Causa | Solução |
-|---|---|---|
-| `401` em OPTIONS | `.cors()` não configurado na chain | Adicionar `.cors(Customizer.withDefaults())` |
-| `allowCredentials` + `*` | `allowCredentials(true)` com `allowedOrigins("*")` são mutuamente exclusivos | Listar origens explicitamente |
-| Cookie não enviado | `credentials: 'include'` ausente no fetch | Adicionar `credentials: 'include'` no cliente |
-| Header bloqueado | Header não listado em `allowedHeaders` | Adicionar ao `setAllowedHeaders()` |
-| CORS em prod mas não dev | Origens hardcoded | Externalizar via `@Value` + profiles |
-
----
-
-## 21. WebSocket Security
-
-WebSockets estabelecem conexões persistentes — o handshake HTTP inicial é interceptado pelo Spring Security normalmente, mas as mensagens subsequentes trafegam pelo protocolo WebSocket, exigindo configuração de autorização específica para destinos STOMP.
-
-### 21.1 Dependências
-
-```xml
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-websocket</artifactId>
-</dependency>
-<!-- spring-security-messaging — autorização de mensagens STOMP -->
-<dependency>
-    <groupId>org.springframework.security</groupId>
-    <artifactId>spring-security-messaging</artifactId>
-</dependency>
-```
-
----
-
-### 21.2 Fluxo de Autenticação WebSocket
-
+## 8. JWT com Nimbus JOSE+JWT
+### 8.1 Arquitetura do Fluxo JWT
 ```mermaid
 sequenceDiagram
-    participant C as Client (SPA)
-    participant S as Spring Security
-    participant WS as WebSocket Handler
+    participant C as Client
+    participant A as AuthController
+    participant JS as JwtService
+    participant PR as Protected Resource
 
-    C->>S: HTTP GET /ws/connect<br/>Upgrade: websocket<br/>Cookie: JSESSIONID / Authorization: Bearer
-    S->>S: Autentica via HTTP (sessão ou JWT)
-    S-->>C: 101 Switching Protocols
-    Note over C,WS: Conexão WebSocket estabelecida
+    C->>A: POST /api/v1/auth/login<br/>{username, password}
+    A->>JS: generateToken(userDetails)
+    JS-->>A: JWT (access + refresh)
+    A-->>C: 200 OK {accessToken, refreshToken, expiresIn}
 
-    C->>WS: STOMP CONNECT
-nonce:1
-Authorization:Bearer <token>
-    WS->>S: ChannelInterceptor valida token
-    S-->>WS: Authentication populada no SecurityContext
-    WS-->>C: CONNECTED
+    C->>PR: GET /api/v1/users<br/>Authorization: Bearer <token>
+    PR->>JS: validateToken(token)
+    JS-->>PR: Claims extraídos
+    PR-->>C: 200 OK [data]
 
-    C->>WS: SEND /app/quiz.answer
-{questionId:1, answer:"A"}
-    WS->>S: MessageSecurityMetadataSourceRegistry avalia
-    Note over S: hasRole('USER') → permite
-    WS-->>C: Processa e responde
+    C->>A: POST /api/v1/auth/refresh<br/>{refreshToken}
+    A->>JS: validateRefreshToken + generateToken
+    JS-->>A: Novo accessToken
+    A-->>C: 200 OK {accessToken, expiresIn}
 ```
 
----
-
-### 21.3 Configuração de Segurança WebSocket
-
+### 8.2 JwtService com Nimbus
 ```java
-@Configuration
-@EnableWebSecurity
-public class WebSocketSecurityConfig
-        extends AbstractSecurityWebSocketMessageBrokerConfigurer {
+@Service
+@Slf4j
+public class JwtService {
 
-    /**
-     * Define regras de autorização por destino STOMP.
-     * Equivalente ao authorizeHttpRequests, mas para mensagens WebSocket.
-     */
-    @Override
-    protected void configureInbound(
-            MessageSecurityMetadataSourceRegistry messages) {
-        messages
-            // Handshake STOMP — qualquer autenticado pode conectar
-            .simpDestMatchers("/app/**").authenticated()
-            // Tópicos de broadcast — apenas assinantes autenticados
-            .simpSubscribeDestMatchers("/topic/**").authenticated()
-            // Fila privada do usuário — apenas o próprio usuário
-            .simpSubscribeDestMatchers("/user/**").authenticated()
-            // Admin topics
-            .simpDestMatchers("/app/admin/**").hasRole("ADMIN")
-            // Mensagens de erro e sistema — públicas
-            .simpTypeMatchers(SimpMessageType.CONNECT,
-                              SimpMessageType.DISCONNECT,
-                              SimpMessageType.UNSUBSCRIBE).permitAll()
-            .anyMessage().denyAll();
+    private final RSAKey rsaKey;
+    private final JWSAlgorithm algorithm = JWSAlgorithm.RS256;
+
+    // Expiração do access token: 15 minutos
+    private static final Duration ACCESS_TOKEN_TTL  = Duration.ofMinutes(15);
+    // Expiração do refresh token: 7 dias
+    private static final Duration REFRESH_TOKEN_TTL = Duration.ofDays(7);
+
+    public JwtService(@Value("${app.security.jwt.private-key}") RSAPrivateKey privateKey,
+                      @Value("${app.security.jwt.public-key}")  RSAPublicKey  publicKey) {
+        this.rsaKey = new RSAKey.Builder(publicKey)
+            .privateKey(privateKey)
+            .keyID(UUID.randomUUID().toString())
+            .build();
     }
 
     /**
-     * Por padrão, Spring Security habilita proteção CSRF em WebSocket.
-     * Desabilitar APENAS quando usando autenticação stateless (JWT no header STOMP).
-     * Manter habilitado quando a autenticação é baseada em sessão HTTP.
+     * Gera um access token JWT assinado com RSA-256.
      */
-    @Override
-    protected boolean sameOriginDisabled() {
-        return true; // desabilita verificação de same-origin para STOMP
+    public String generateAccessToken(UserDetails userDetails) {
+        return buildToken(userDetails, ACCESS_TOKEN_TTL, "access");
+    }
+
+    /**
+     * Gera um refresh token JWT — sem claims de roles.
+     */
+    public String generateRefreshToken(UserDetails userDetails) {
+        return buildToken(userDetails, REFRESH_TOKEN_TTL, "refresh");
+    }
+
+    private String buildToken(UserDetails user, Duration ttl, String tokenType) {
+        Instant now = Instant.now();
+
+        // Claims padrão (registered claims)
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+            .subject(user.getUsername())
+            .issuer("https://myapp.example.com")
+            .audience("myapp-api")
+            .issueTime(Date.from(now))
+            .expirationTime(Date.from(now.plus(ttl)))
+            .jwtID(UUID.randomUUID().toString())
+            // Claims customizados
+            .claim("token_type", tokenType)
+            .claim("roles", extractRoles(user))
+            .claim("permissions", extractPermissions(user))
+            .build();
+
+        try {
+            SignedJWT jwt = new SignedJWT(
+                new JWSHeader.Builder(algorithm)
+                    .keyID(rsaKey.getKeyID())
+                    .type(JOSEObjectType.JWT)
+                    .build(),
+                claims);
+
+            jwt.sign(new RSASSASigner(rsaKey));
+            return jwt.serialize();
+
+        } catch (JOSEException e) {
+            throw new TokenGenerationException("Falha ao gerar token JWT", e);
+        }
+    }
+
+    /**
+     * Valida e extrai claims de um token JWT.
+     * Lança exceção se o token for inválido, expirado ou com assinatura incorreta.
+     */
+    public JWTClaimsSet validateAndExtractClaims(String token) {
+        try {
+            SignedJWT jwt = SignedJWT.parse(token);
+
+            // Verifica assinatura
+            JWSVerifier verifier = new RSASSAVerifier(rsaKey.toRSAPublicKey());
+            if (!jwt.verify(verifier)) {
+                throw new InvalidTokenException("Assinatura JWT inválida");
+            }
+
+            JWTClaimsSet claims = jwt.getJWTClaimsSet();
+
+            // Verifica expiração
+            if (claims.getExpirationTime().before(new Date())) {
+                throw new TokenExpiredException("Token JWT expirado");
+            }
+
+            // Verifica issuer
+            if (!"https://myapp.example.com".equals(claims.getIssuer())) {
+                throw new InvalidTokenException("Issuer inválido");
+            }
+
+            return claims;
+
+        } catch (ParseException | JOSEException e) {
+            throw new InvalidTokenException("Token JWT malformado", e);
+        }
+    }
+
+    public String extractUsername(String token) {
+        return validateAndExtractClaims(token).getSubject();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> extractRoles(UserDetails user) {
+        return user.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .filter(a -> a.startsWith("ROLE_"))
+            .map(a -> a.substring(5))
+            .toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> extractPermissions(UserDetails user) {
+        return user.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .filter(a -> !a.startsWith("ROLE_"))
+            .toList();
     }
 }
 ```
 
----
-
-### 21.4 Autenticação JWT no Handshake STOMP
-
-Para SPAs que usam JWT (sem sessão), o token deve ser validado no interceptor de canal:
-
+### 8.3 Geração de Par de Chaves RSA
 ```java
-/**
- * ChannelInterceptor que extrai e valida o JWT do header STOMP CONNECT.
- * Popula o SecurityContext para que as regras de autorização de mensagens
- * possam avaliar o usuário autenticado.
- */
+@Configuration
+public class JwtKeyConfig {
+
+    /**
+     * Lê a chave privada RSA de variável de ambiente (PEM base64).
+     * Em produção, usar AWS Secrets Manager, Vault ou similar.
+     */
+    @Bean
+    public RSAPrivateKey jwtPrivateKey(
+            @Value("${app.security.jwt.private-key-pem}") String pemBase64)
+            throws Exception {
+
+        byte[] decoded = Base64.getDecoder().decode(pemBase64.replaceAll("\\s", ""));
+        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(decoded);
+        return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(spec);
+    }
+
+    @Bean
+    public RSAPublicKey jwtPublicKey(
+            @Value("${app.security.jwt.public-key-pem}") String pemBase64)
+            throws Exception {
+
+        byte[] decoded = Base64.getDecoder().decode(pemBase64.replaceAll("\\s", ""));
+        X509EncodedKeySpec spec = new X509EncodedKeySpec(decoded);
+        return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(spec);
+    }
+}
+```
+
+```bash
+# Geração do par de chaves RSA 2048 bits (use 4096 em produção):
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+
+# Converter para base64 (uma linha):
+base64 -w 0 private.pem
+base64 -w 0 public.pem
+```
+
+### 8.4 JwtAuthenticationFilter
+```java
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class JwtChannelInterceptor implements ChannelInterceptor {
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final UserDetailsService userDetailsService;
 
-    /**
-     * Chamado antes de cada mensagem ser processada.
-     * Extrai o JWT do header Authorization do frame STOMP CONNECT.
-     */
+    private static final String BEARER_PREFIX = "Bearer ";
+
     @Override
-    public Message<?> preSend(Message<?> message, MessageChannel channel) {
-        StompHeaderAccessor accessor =
-            MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain)
+            throws ServletException, IOException {
 
-        if (accessor == null) return message;
+        String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        // Apenas no frame CONNECT — autentica uma vez por conexão
-        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
-            String authHeader = accessor.getFirstNativeHeader("Authorization");
-
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                String token = authHeader.substring(7);
-                try {
-                    String username = jwtService.extractUsername(token);
-                    UserDetails userDetails =
-                        userDetailsService.loadUserByUsername(username);
-
-                    UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(
-                            userDetails, null, userDetails.getAuthorities());
-
-                    // Popula o Principal da sessão STOMP
-                    accessor.setUser(auth);
-
-                    log.debug("WebSocket autenticado: user={}", username);
-                } catch (Exception e) {
-                    log.warn("JWT WebSocket inválido: {}", e.getMessage());
-                    throw new MessageDeliveryException("Token inválido");
-                }
-            }
+        if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
+            filterChain.doFilter(request, response);
+            return;
         }
-        return message;
+
+        String token = authHeader.substring(BEARER_PREFIX.length());
+
+        try {
+            String username = jwtService.extractUsername(token);
+
+            if (username != null &&
+                SecurityContextHolder.getContext().getAuthentication() == null) {
+
+                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                JWTClaimsSet claims = jwtService.validateAndExtractClaims(token);
+
+                // Verifica que é um access token (não refresh)
+                if (!"access".equals(claims.getStringClaim("token_type"))) {
+                    throw new InvalidTokenException("Tipo de token inválido para autenticação");
+                }
+
+                UsernamePasswordAuthenticationToken authToken =
+                    new UsernamePasswordAuthenticationToken(
+                        userDetails, null, userDetails.getAuthorities());
+
+                authToken.setDetails(
+                    new WebAuthenticationDetailsSource().buildDetails(request));
+
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+            }
+
+        } catch (InvalidTokenException | TokenExpiredException e) {
+            log.debug("Token JWT inválido: {}", e.getMessage());
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.setContentType("application/json");
+            response.getWriter().write(
+                "{\"error\": \"invalid_token\", \"message\": \"%s\"}"
+                    .formatted(e.getMessage()));
+            return;
+        }
+
+        filterChain.doFilter(request, response);
+    }
+
+    /**
+     * Não filtrar rotas públicas de autenticação.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return path.startsWith("/api/v1/auth/") ||
+               path.startsWith("/api/v1/public/");
     }
 }
 ```
 
+### 8.5 AuthController
 ```java
-// Registro do interceptor no MessageBroker
-@Configuration
-@EnableWebSocketMessageBroker
-public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
-
-    private final JwtChannelInterceptor jwtChannelInterceptor;
-
-    @Override
-    public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(jwtChannelInterceptor);
-    }
-
-    @Override
-    public void configureMessageBroker(MessageBrokerRegistry registry) {
-        registry.enableSimpleBroker("/topic", "/queue", "/user");
-        registry.setApplicationDestinationPrefixes("/app");
-        registry.setUserDestinationPrefix("/user");
-    }
-
-    @Override
-    public void registerStompEndpoints(StompEndpointRegistry registry) {
-        registry.addEndpoint("/ws")
-            .setAllowedOriginPatterns("http://localhost:*", "https://*.myapp.com")
-            .withSockJS();
-    }
-}
-```
-
----
-
-### 21.5 Envio de Mensagens ao Usuário Autenticado
-
-```java
-@Controller
+@RestController
+@RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
-public class QuizController {
+@Tag(name = "Authentication")
+public class AuthController {
 
-    private final SimpMessagingTemplate messagingTemplate;
+    private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
+    private final UserDetailsService userDetailsService;
+
+    @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+        Authentication auth = authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(
+                request.username(), request.password()));
+
+        UserDetails userDetails = (UserDetails) auth.getPrincipal();
+        String accessToken  = jwtService.generateAccessToken(userDetails);
+        String refreshToken = jwtService.generateRefreshToken(userDetails);
+
+        return ResponseEntity.ok(new AuthResponse(
+            accessToken,
+            refreshToken,
+            "Bearer",
+            jwtService.getAccessTokenTtlSeconds()));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(
+            @RequestBody RefreshTokenRequest request) {
+
+        String username = jwtService.extractUsernameFromRefreshToken(request.refreshToken());
+        UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+        String newAccessToken = jwtService.generateAccessToken(userDetails);
+
+        return ResponseEntity.ok(new AuthResponse(
+            newAccessToken,
+            request.refreshToken(),
+            "Bearer",
+            jwtService.getAccessTokenTtlSeconds()));
+    }
+
+    // DTOs como Records (Java 16+)
+    public record LoginRequest(
+        @NotBlank String username,
+        @NotBlank String password) {}
+
+    public record RefreshTokenRequest(
+        @NotBlank String refreshToken) {}
+
+    public record AuthResponse(
+        String accessToken,
+        String refreshToken,
+        String tokenType,
+        long expiresIn) {}
+}
+```
+
+### 8.6 Refresh Token em Cookie HTTP-Only
+Retornar o refresh token no corpo da resposta JSON expõe-o a roubo via XSS: qualquer script malicioso injetado na página pode lê-lo do `localStorage` ou da memória do aplicativo. Armazená-lo em um cookie `HttpOnly; Secure; SameSite=Strict` torna-o inacessível a JavaScript, eliminando esse vetor.
+
+#### Por que cookie HTTP-Only é mais seguro para o refresh token
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                  Refresh Token no Body  vs  Cookie HTTP-Only                │
+├──────────────────────────────┬──────────────────────────────────────────────┤
+│ Body / localStorage          │ Cookie HttpOnly                              │
+├──────────────────────────────┼──────────────────────────────────────────────┤
+│ Legível por JavaScript       │ Inacessível a qualquer script                │
+│ Vulnerável a XSS             │ Imune a XSS                                 │
+│ Enviado manualmente (fetch)  │ Enviado automaticamente pelo browser         │
+│ Precisa de lógica de storage │ Gerenciado pelo browser                     │
+│ Vulnerável a CSRF? Não       │ Vulnerável a CSRF? Sim → mitigar com        │
+│                              │ SameSite=Strict + CSRF token no refresh      │
+└──────────────────────────────┴──────────────────────────────────────────────┘
+```
+
+O **access token** continua sendo retornado no body e armazenado em memória (variável JavaScript) — não em `localStorage`. Ele tem TTL curto (15 min) e é enviado manualmente no header `Authorization`. O **refresh token** vai no cookie e nunca é acessado por JavaScript.
+
+#### Diagrama do fluxo completo
+
+```mermaid
+sequenceDiagram
+    participant C as Browser (SPA)
+    participant S as AuthController
+    participant JS as JwtService
+
+    Note over C,S: Login
+    C->>S: POST /api/v1/auth/login
+    Note over C,S: Body: username + password
+    S->>JS: generateAccessToken + generateRefreshToken
+    S-->>C: 200 OK
+    Note over S,C: Body: accessToken + expiresIn<br>Set-Cookie: refresh_token (HttpOnly Secure SameSite=Strict)
+
+    Note over C,S: Chamada autenticada
+    C->>S: GET /api/v1/resource
+    Note over C,S: Header: Authorization Bearer accessToken
+    S-->>C: 200 OK
+
+    Note over C,S: Renovação (access token expirado)
+    C->>S: POST /api/v1/auth/refresh
+    Note over C,S: Cookie refresh_token enviado automaticamente pelo browser
+    S->>JS: validateRefreshToken + generateAccessToken
+    S-->>C: 200 OK
+    Note over S,C: Body: novo accessToken<br>Set-Cookie: refresh_token renovado
+
+    Note over C,S: Logout
+    C->>S: POST /api/v1/auth/logout
+    Note over C,S: Cookie refresh_token enviado automaticamente
+    S-->>C: 200 OK
+    Note over S,C: Set-Cookie: refresh_token vazio com Max-Age=0
+```
+
+#### CookieTokenService — criação e leitura do cookie
+
+```java
+/**
+ * Serviço responsável por emitir e consumir o cookie HttpOnly
+ * que transporta o refresh token.
+ *
+ * Atributos do cookie:
+ * - HttpOnly   → inacessível a JavaScript (proteção XSS)
+ * - Secure     → transmitido apenas em HTTPS (proteção man-in-the-middle)
+ * - SameSite=Strict → não enviado em requisições cross-site (proteção CSRF)
+ * - Path=/api/v1/auth → enviado apenas para os endpoints de autenticação,
+ *                        não para cada requisição da API (minimiza exposição)
+ * - Max-Age    → TTL explícito; sem Max-Age o cookie seria de sessão e
+ *                desapareceria ao fechar o browser
+ */
+@Component
+public class CookieTokenService {
+
+    public static final String REFRESH_TOKEN_COOKIE = "refresh_token";
+
+    @Value("${app.security.jwt.refresh-token-ttl-days:30}")
+    private int refreshTokenTtlDays;
+
+    @Value("${app.security.cookie.secure:true}")
+    private boolean secureCookie;   // false apenas em dev-local (HTTP)
 
     /**
-     * Recebe resposta do usuário e retorna feedback apenas para ele.
-     * @MessageMapping equivale ao @RequestMapping — mas para mensagens STOMP.
-     * Principal é populado pelo JwtChannelInterceptor.
+     * Cria o cookie HttpOnly com o refresh token e o adiciona à resposta.
      */
-    @MessageMapping("/quiz.answer")
-    @PreAuthorize("hasRole('USER')")
-    public void processAnswer(AnswerDto answer, Principal principal) {
-        String username = principal.getName();
+    public void addRefreshTokenCookie(HttpServletResponse response,
+                                      String refreshToken) {
+        ResponseCookie cookie = ResponseCookie
+            .from(REFRESH_TOKEN_COOKIE, refreshToken)
+            .httpOnly(true)                          // bloqueia acesso via JS
+            .secure(secureCookie)                    // HTTPS obrigatório em prod
+            .sameSite("Strict")                      // bloqueia envio cross-site
+            .path("/api/v1/auth")                    // escopo mínimo — só auth endpoints
+            .maxAge(Duration.ofDays(refreshTokenTtlDays))
+            .build();
 
-        boolean correct = quizService.evaluate(answer);
-        FeedbackDto feedback = new FeedbackDto(answer.questionId(), correct);
-
-        // Envia apenas para o usuário que respondeu (fila privada)
-        messagingTemplate.convertAndSendToUser(
-            username,
-            "/queue/feedback",
-            feedback);
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 
     /**
-     * Broadcast para todos os inscritos no tópico da sala.
-     * Apenas ADMIN pode enviar mensagens para todos.
+     * Lê o refresh token do cookie da requisição.
+     * Retorna Optional.empty() se o cookie não estiver presente.
      */
-    @MessageMapping("/quiz.broadcast")
-    @PreAuthorize("hasRole('ADMIN')")
-    public void broadcast(QuizEventDto event) {
-        messagingTemplate.convertAndSend("/topic/quiz-room", event);
+    public Optional<String> getRefreshToken(HttpServletRequest request) {
+        return Optional.ofNullable(WebUtils.getCookie(request, REFRESH_TOKEN_COOKIE))
+            .map(Cookie::getValue)
+            .filter(v -> !v.isBlank());
+    }
+
+    /**
+     * Apaga o cookie de refresh token — chamado no logout.
+     * Define Max-Age=0 para instruir o browser a remover o cookie imediatamente.
+     */
+    public void clearRefreshTokenCookie(HttpServletResponse response) {
+        ResponseCookie cookie = ResponseCookie
+            .from(REFRESH_TOKEN_COOKIE, "")
+            .httpOnly(true)
+            .secure(secureCookie)
+            .sameSite("Strict")
+            .path("/api/v1/auth")
+            .maxAge(Duration.ZERO)                   // instrui o browser a apagar
+            .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 }
 ```
 
----
+> **`ResponseCookie` vs `Cookie`:** Use sempre `ResponseCookie` do Spring (não `javax.servlet.http.Cookie`) para definir o atributo `SameSite`. A classe `Cookie` da servlet API não expõe `SameSite` e qualquer workaround via `addHeader` manual é frágil. `ResponseCookie.from(...).sameSite("Strict")` gera o header `Set-Cookie` correto.
 
-### 21.6 CSRF em WebSocket com Sessão HTTP
+#### AuthController refatorado — refresh token no cookie
 
-Quando a autenticação é baseada em sessão (Form Login), manter a proteção CSRF no WebSocket:
+```java
+@RestController
+@RequestMapping("/api/v1/auth")
+@RequiredArgsConstructor
+@Tag(name = "Authentication")
+public class AuthController {
+
+    private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
+    private final UserDetailsService userDetailsService;
+    private final CookieTokenService cookieService;
+
+    // ── Login ─────────────────────────────────────────────────────────────
+
+    @PostMapping("/login")
+    public ResponseEntity<AccessTokenResponse> login(
+            @Valid @RequestBody LoginRequest request,
+            HttpServletResponse response) {
+
+        Authentication auth = authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(
+                request.username(), request.password()));
+
+        UserDetails userDetails = (UserDetails) auth.getPrincipal();
+
+        String accessToken  = jwtService.generateAccessToken(userDetails);
+        String refreshToken = jwtService.generateRefreshToken(userDetails);
+
+        // Refresh token → cookie HttpOnly (nunca no body)
+        cookieService.addRefreshTokenCookie(response, refreshToken);
+
+        // Access token → body (armazenado em memória pelo SPA, não em localStorage)
+        return ResponseEntity.ok(new AccessTokenResponse(
+            accessToken,
+            "Bearer",
+            jwtService.getAccessTokenTtlSeconds()));
+    }
+
+    // ── Refresh ───────────────────────────────────────────────────────────
+
+    /**
+     * Renova o access token usando o refresh token do cookie.
+     *
+     * O cookie é enviado automaticamente pelo browser — o cliente não precisa
+     * ler nem repassar o refresh token explicitamente.
+     *
+     * Proteção CSRF: SameSite=Strict já bloqueia requisições cross-site.
+     * Para defesa em profundidade, valide também o header customizado:
+     * requisições cross-site não conseguem definir headers customizados.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<AccessTokenResponse> refresh(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+
+        // Extrai o refresh token do cookie — nunca do body
+        String refreshToken = cookieService.getRefreshToken(request)
+            .orElseThrow(() -> new MissingRefreshTokenException(
+                "Refresh token ausente. Faça login novamente."));
+
+        // Valida e extrai o username do refresh token
+        String username = jwtService.extractUsernameFromRefreshToken(refreshToken);
+        UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+        // Gera novo access token
+        String newAccessToken = jwtService.generateAccessToken(userDetails);
+
+        // Gera novo refresh token (rotação — invalida o anterior)
+        String newRefreshToken = jwtService.generateRefreshToken(userDetails);
+        cookieService.addRefreshTokenCookie(response, newRefreshToken);
+
+        return ResponseEntity.ok(new AccessTokenResponse(
+            newAccessToken,
+            "Bearer",
+            jwtService.getAccessTokenTtlSeconds()));
+    }
+
+    // ── Logout ────────────────────────────────────────────────────────────
+
+    /**
+     * Invalida o refresh token e apaga o cookie.
+     * O access token não pode ser revogado (stateless) — expira naturalmente.
+     * Para revogação imediata do access token, implementar uma denylist (Redis).
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+
+        // Apaga o cookie de refresh token no browser
+        cookieService.clearRefreshTokenCookie(response);
+
+        // Limpa o SecurityContext da requisição atual
+        SecurityContextHolder.clearContext();
+
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── DTOs ──────────────────────────────────────────────────────────────
+
+    public record LoginRequest(
+        @NotBlank String username,
+        @NotBlank String password) {}
+
+    /**
+     * O refresh token foi removido do response body.
+     * Apenas o access token e seus metadados são retornados.
+     */
+    public record AccessTokenResponse(
+        String accessToken,
+        String tokenType,
+        long   expiresIn) {}
+}
+```
+
+#### Rotação do Refresh Token
+
+A cada chamada ao `/refresh`, um novo refresh token é gerado e o anterior é descartado. Isso limita a janela de uso de um token roubado: se um atacante usar o refresh token comprometido, o token legítimo do usuário também será invalidado na próxima renovação, forçando um novo login.
+
+```java
+// Em JwtService — registro de refresh tokens usados (denylist simples com Redis)
+@Service
+@RequiredArgsConstructor
+public class JwtService {
+
+    private final RedisTemplate<String, String> redisTemplate;
+
+    private static final String REVOKED_PREFIX = "revoked:refresh:";
+
+    /**
+     * Valida o refresh token e garante que não foi revogado.
+     * Após validação, registra o JTI como revogado (uso único).
+     */
+    public String consumeRefreshToken(String token) {
+        JWTClaimsSet claims = validateAndExtractClaims(token);
+
+        String jti = claims.getJWTIDClaim();
+        String revokedKey = REVOKED_PREFIX + jti;
+
+        // Verifica se já foi usado (rotação — cada refresh token é de uso único)
+        if (Boolean.TRUE.equals(redisTemplate.hasKey(revokedKey))) {
+            throw new InvalidTokenException(
+                "Refresh token já utilizado. Possível reutilização — faça login novamente.");
+        }
+
+        // Registra como revogado com TTL igual ao tempo restante do token
+        Instant expiration = claims.getExpirationTime().toInstant();
+        long ttlSeconds = Duration.between(Instant.now(), expiration).getSeconds();
+        if (ttlSeconds > 0) {
+            redisTemplate.opsForValue().set(revokedKey, "1",
+                Duration.ofSeconds(ttlSeconds));
+        }
+
+        return claims.getSubject();
+    }
+}
+```
+
+#### Configuração por perfil — desabilitar Secure em dev-local
+
+```yaml
+# application.yml
+app:
+  security:
+    cookie:
+      secure: true    # HTTPS obrigatório em produção
+
+# application-dev-local.yml
+app:
+  security:
+    cookie:
+      secure: false   # permite HTTP em desenvolvimento local
+    jwt:
+      refresh-token-ttl-days: 1   # TTL reduzido em desenvolvimento
+```
+
+#### Consumo no cliente React (SPA)
+
+O exemplo usa `fetch` nativo e **TanStack Query** (`@tanstack/react-query`) — alinhado com o stack `react-frontend-stack`. O access token é mantido em memória via módulo singleton; o cookie `HttpOnly` com o refresh token é gerenciado exclusivamente pelo browser.
+
+```typescript
+// auth/tokenStore.ts
+// Módulo singleton — access token em memória, nunca em localStorage ou sessionStorage
+let accessToken: string | null = null;
+
+export const tokenStore = {
+  get: (): string | null => accessToken,
+  set: (token: string): void => { accessToken = token; },
+  clear: (): void => { accessToken = null; },
+};
+```
+
+```typescript
+// auth/api.ts — funções de autenticação com fetch nativo
+import { tokenStore } from './tokenStore';
+
+export interface LoginRequest  { username: string; password: string; }
+export interface TokenResponse { accessToken: string; expiresIn: number; }
+
+/** Login — persiste apenas o access token; refresh token vai para cookie HttpOnly. */
+export async function login(credentials: LoginRequest): Promise<void> {
+  const res = await fetch('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',           // recebe o Set-Cookie do servidor
+    body: JSON.stringify(credentials),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message ?? 'Credenciais inválidas.');
+  }
+
+  const data: TokenResponse = await res.json();
+  tokenStore.set(data.accessToken);  // access token em memória
+}
+
+/**
+ * Renova o access token usando o cookie HttpOnly.
+ * O browser envia o cookie automaticamente — JS nunca o lê ou manipula.
+ */
+export async function refreshAccessToken(): Promise<string> {
+  const res = await fetch('/api/v1/auth/refresh', {
+    method: 'POST',
+    credentials: 'include',           // envia cookie refresh_token automaticamente
+  });
+
+  if (!res.ok) {
+    tokenStore.clear();
+    throw new Error('Sessão expirada. Faça login novamente.');
+  }
+
+  const data: TokenResponse = await res.json();
+  tokenStore.set(data.accessToken);
+  return data.accessToken;
+}
+
+/** Logout — limpa o access token em memória e apaga o cookie via servidor. */
+export async function logout(): Promise<void> {
+  await fetch('/api/v1/auth/logout', {
+    method: 'POST',
+    credentials: 'include',           // servidor apaga o cookie com Max-Age=0
+  });
+  tokenStore.clear();
+}
+```
+
+```typescript
+// auth/fetchClient.ts
+// fetch wrapper com renovação automática de token em caso de 401
+import { tokenStore, refreshAccessToken } from './api';
+
+type FetchArgs = [input: RequestInfo | URL, init?: RequestInit];
+
+export async function authFetch(...[input, init]: FetchArgs): Promise<Response> {
+  const token = tokenStore.get();
+
+  const res = await fetch(input, {
+    ...init,
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+
+  // Token expirado — tenta renovar e reenviar uma única vez
+  if (res.status === 401 && token !== null) {
+    try {
+      const newToken = await refreshAccessToken();
+      return fetch(input, {
+        ...init,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(init?.headers ?? {}),
+          Authorization: `Bearer ${newToken}`,
+        },
+      });
+    } catch {
+      // Refresh falhou — redireciona para login
+      window.location.href = '/login?expired';
+    }
+  }
+
+  return res;
+}
+```
+
+```typescript
+// hooks/useUsers.ts — integração com TanStack Query
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { authFetch } from '../auth/fetchClient';
+
+export interface UserDto {
+  id: number;
+  username: string;
+  email: string;
+}
+
+// Query: lista de usuários com cache e renovação automática de token
+export function useUsers() {
+  return useQuery<UserDto[]>({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const res = await authFetch('/api/v1/users');
+      if (!res.ok) throw new Error('Erro ao carregar usuários.');
+      return res.json();
+    },
+  });
+}
+
+// Mutation: criação de usuário com invalidação do cache
+export function useCreateUser() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: Omit<UserDto, 'id'>) => {
+      const res = await authFetch('/api/v1/users', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Erro ao criar usuário.');
+      return res.json() as Promise<UserDto>;
+    },
+    onSuccess: () => {
+      // Invalida o cache para forçar recarregamento da lista
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+}
+```
+
+```typescript
+// hooks/useAuth.ts — hook de autenticação com TanStack Query
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { login, logout } from '../auth/api';
+import { tokenStore } from '../auth/tokenStore';
+
+export function useLogin() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: login,
+    onSuccess: () => {
+      // Invalida queries que dependem da autenticação
+      queryClient.invalidateQueries();
+    },
+    onError: (error: Error) => {
+      console.error('Login falhou:', error.message);
+    },
+  });
+}
+
+export function useLogout() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: logout,
+    onSettled: () => {
+      // Limpa todo o cache independente de sucesso ou falha
+      queryClient.clear();
+      tokenStore.clear();
+    },
+  });
+}
+
+/** Verifica se há um access token em memória (não garante validade). */
+export function useIsAuthenticated(): boolean {
+  return tokenStore.get() !== null;
+}
+```
+
+```tsx
+// components/LoginForm.tsx
+import { useLogin } from '../hooks/useAuth';
+
+export function LoginForm() {
+  const { mutate: doLogin, isPending, isError, error } = useLogin();
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    doLogin({
+      username: form.get('username') as string,
+      password: form.get('password') as string,
+    });
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      {isError && <p className="text-danger">{(error as Error).message}</p>}
+      <input name="username" type="text"     required placeholder="Usuário" />
+      <input name="password" type="password" required placeholder="Senha"   />
+      <button type="submit" disabled={isPending}>
+        {isPending ? 'Entrando…' : 'Entrar'}
+      </button>
+    </form>
+  );
+}
+```
+
+#### Configuração CORS para credenciais
+
+O envio de cookies em requisições cross-origin (SPA em porta diferente da API) requer configuração explícita de CORS — tanto no cliente (`credentials: 'include'`) quanto no servidor:
 
 ```java
 @Configuration
-public class WebSocketSecurityConfig
-        extends AbstractSecurityWebSocketMessageBrokerConfigurer {
+public class CorsConfig implements WebMvcConfigurer {
 
     @Override
-    protected boolean sameOriginDisabled() {
-        // false = mantém verificação de same-origin (proteção CSRF)
-        // Use false quando a autenticação é via sessão HTTP
-        return false;
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+            // Origens explícitas obrigatórias quando allowCredentials=true
+            // (não é possível usar "*" com credentials)
+            .allowedOrigins(
+                "http://localhost:5173",   // Vite dev server
+                "https://myapp.com")
+            .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
+            .allowedHeaders("*")
+            .allowCredentials(true)        // permite envio de cookies cross-origin
+            .maxAge(3600);
     }
 }
 ```
 
-```javascript
-// Cliente JavaScript — envia o token CSRF no header STOMP
-const csrfToken = document.cookie
-    .split('; ')
-    .find(c => c.startsWith('XSRF-TOKEN='))
-    ?.split('=')[1];
+> **`allowCredentials(true)` e `allowedOrigins("*")` são mutuamente exclusivos** no Spring MVC. Ao usar credenciais, as origens devem ser listadas explicitamente. Em produção, externalize a lista via `@Value("${app.cors.allowed-origins}")`.
 
-stompClient.connect(
-    { 'X-XSRF-TOKEN': csrfToken },
-    frame => console.log('Conectado:', frame)
-);
-```
 
 ---
 
-## 22. SecurityContext em Contextos Assíncronos
+## 9. Múltiplas SecurityFilterChains no Mesmo Projeto
+Projetos que expõem tanto uma API REST quanto páginas web precisam de configurações de segurança diferentes para cada grupo de rotas.
 
+```mermaid
+flowchart LR
+    subgraph Requests
+        A["/api/**"] 
+        B["/admin/**"]
+        C["/actuator/**"]
+        D["/**"]
+    end
+
+    subgraph SecurityFilterChains
+        SFC1["Chain @Order(1)<br>API — JWT Bearer<br>stateless, csrf.disable"]
+        SFC2["Chain @Order(2)<br>Admin — Basic Auth<br>stateless"]
+        SFC3["Chain @Order(3)<br>Actuator — Basic Auth<br>stateless"]
+        SFC4["Chain @Order(4)<br>Web — Form Login<br>stateful, csrf enabled"]
+    end
+
+    A --> SFC1
+    B --> SFC2
+    C --> SFC3
+    D --> SFC4
+```
+
+```java
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+public class MultiChainSecurityConfig {
+
+    // =========================================================
+    // Chain 1 — API REST com JWT
+    // =========================================================
+    @Bean
+    @Order(1)
+    public SecurityFilterChain apiChain(HttpSecurity http,
+                                         JwtAuthenticationFilter jwtFilter) throws Exception {
+        return http
+            .securityMatcher("/api/**")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/v1/auth/**").permitAll()
+                .anyRequest().authenticated())
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+            .build();
+    }
+
+    // =========================================================
+    // Chain 2 — Painel Administrativo com HTTP Basic
+    // =========================================================
+    @Bean
+    @Order(2)
+    public SecurityFilterChain adminChain(HttpSecurity http) throws Exception {
+        return http
+            .securityMatcher("/admin/**")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .httpBasic(basic -> basic.realmName("Admin Area"))
+            .authorizeHttpRequests(auth -> auth
+                .anyRequest().hasRole("ADMIN"))
+            .build();
+    }
+
+    // =========================================================
+    // Chain 3 — Actuator com Basic Auth (apenas internamente)
+    // =========================================================
+    @Bean
+    @Order(3)
+    public SecurityFilterChain actuatorChain(HttpSecurity http) throws Exception {
+        return http
+            .securityMatcher("/actuator/**")
+            .csrf(csrf -> csrf.disable())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .httpBasic(Customizer.withDefaults())
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                .anyRequest().hasRole("ACTUATOR"))
+            .build();
+    }
+
+    // =========================================================
+    // Chain 4 — Aplicação Web com Form Login (catch-all)
+    // =========================================================
+    @Bean
+    @Order(4)
+    public SecurityFilterChain webChain(HttpSecurity http) throws Exception {
+        return http
+            .securityMatcher("/**")
+            .csrf(Customizer.withDefaults())           // CSRF habilitado para web
+            .sessionManagement(s -> s
+                .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
+                .maximumSessions(1)                    // Apenas 1 sessão por usuário
+                .maxSessionsPreventsLogin(false))      // Nova sessão expulsa a anterior
+            .formLogin(form -> form
+                .loginPage("/login")
+                .loginProcessingUrl("/login")
+                .defaultSuccessUrl("/dashboard", true)
+                .failureUrl("/login?error")
+                .permitAll())
+            .logout(logout -> logout
+                .logoutUrl("/logout")
+                .logoutSuccessUrl("/login?logout")
+                .invalidateHttpSession(true)
+                .deleteCookies("JSESSIONID")
+                .permitAll())
+            .rememberMe(remember -> remember
+                .key("${app.security.remember-me-key}")
+                .tokenValiditySeconds(86400 * 30))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/", "/login", "/css/**", "/js/**", "/images/**").permitAll()
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+                .anyRequest().authenticated())
+            .build();
+    }
+}
+```
+
+> **Regra crítica de ordem:** O `securityMatcher` define qual cadeia processa cada requisição. A primeira cadeia com matcher correspondente "vence". A cadeia sem `securityMatcher` (ou com `/**`) deve ter o maior `@Order` (número mais alto = menor prioridade).
+
+---
+
+## 10. SecurityContext em Contextos Assíncronos
 O `SecurityContextHolder` usa por padrão uma estratégia `ThreadLocal` — o `SecurityContext` é armazenado por thread. Em operações assíncronas (`@Async`, `CompletableFuture`, Virtual Threads), a execução migra para outra thread e o contexto se perde, fazendo `SecurityContextHolder.getContext().getAuthentication()` retornar `null`.
 
-### 22.1 O Problema
-
+### 10.1 O Problema
 ```java
 @Service
 public class ReportService {
@@ -8463,8 +4005,7 @@ public class ReportService {
 
 ---
 
-### 22.2 Estratégias de Propagação do SecurityContextHolder
-
+### 10.2 Estratégias de Propagação do SecurityContextHolder
 O Spring Security oferece três estratégias nativas:
 
 ```java
@@ -8485,8 +4026,7 @@ public MethodInvokingFactoryBean securityContextHolderStrategy() {
 
 ---
 
-### 22.3 `DelegatingSecurityContextExecutor` — Propagação Explícita
-
+### 10.3 `DelegatingSecurityContextExecutor` — Propagação Explícita
 ```java
 @Configuration
 @EnableAsync
@@ -8534,8 +4074,7 @@ public class VirtualThreadAsyncConfig implements AsyncConfigurer {
 
 ---
 
-### 22.4 Propagação Manual em `CompletableFuture`
-
+### 10.4 Propagação Manual em `CompletableFuture`
 Quando não é possível usar `@Async` ou um executor configurado:
 
 ```java
@@ -8566,8 +4105,7 @@ public class ReportService {
 
 ---
 
-### 22.5 `DelegatingSecurityContextRunnable` e `Callable`
-
+### 10.5 `DelegatingSecurityContextRunnable` e `Callable`
 Para tarefas pontuais sem necessidade de configurar o executor global:
 
 ```java
@@ -8605,8 +4143,7 @@ public class NotificationService {
 
 ---
 
-### 22.6 `@Async` com `@PreAuthorize` em Métodos Assíncronos
-
+### 10.6 `@Async` com `@PreAuthorize` em Métodos Assíncronos
 `@PreAuthorize` em métodos `@Async` é avaliado na thread do executor — o contexto precisa estar disponível:
 
 ```java
@@ -8626,8 +4163,7 @@ public class AdminReportService {
 
 ---
 
-### 22.7 `SecurityContextRepository` para Contexto Stateless
-
+### 10.7 `SecurityContextRepository` para Contexto Stateless
 Em APIs REST stateless, o contexto não é salvo em sessão — é recriado a cada requisição pelo filtro JWT. Para tarefas assíncronas longas que podem durar mais que a requisição HTTP:
 
 ```java
@@ -8659,10 +4195,8 @@ public class AsyncTaskService {
 
 ---
 
-## 23. Session Management Avançado
-
-### 23.1 Estratégias de Criação de Sessão
-
+## 11. Session Management Avançado
+### 11.1 Estratégias de Criação de Sessão
 ```java
 .sessionManagement(session -> session
     // ALWAYS          → cria sessão se não existir
@@ -8675,8 +4209,7 @@ public class AsyncTaskService {
 
 ---
 
-### 23.2 Sessões Concorrentes e `SessionRegistry`
-
+### 11.2 Sessões Concorrentes e `SessionRegistry`
 ```java
 @Bean
 public SecurityFilterChain webChain(HttpSecurity http,
@@ -8713,8 +4246,7 @@ public HttpSessionEventPublisher httpSessionEventPublisher() {
 
 ---
 
-### 23.3 Consulta de Sessões Ativas
-
+### 11.3 Consulta de Sessões Ativas
 ```java
 @RestController
 @RequestMapping("/api/v1/admin/sessions")
@@ -8783,8 +4315,7 @@ public class SessionManagementController {
 
 ---
 
-### 23.4 Spring Session + Redis — Sessões Distribuídas
-
+### 11.4 Spring Session + Redis — Sessões Distribuídas
 Para múltiplas instâncias da aplicação (load balancer), as sessões devem ser compartilhadas:
 
 ```xml
@@ -8867,8 +4398,7 @@ Sessões compartilhadas)]
 
 ---
 
-### 23.5 Detecção de Session Fixation
-
+### 11.5 Detecção de Session Fixation
 Session fixation é um ataque em que o atacante força o usuário a usar um session ID conhecido. O Spring Security mitiga isso automaticamente ao regenerar o session ID após o login:
 
 ```java
@@ -8885,8 +4415,7 @@ Session fixation é um ataque em que o atacante força o usuário a usar um sess
 
 ---
 
-### 23.6 `SessionManagementFilter` — Eventos de Sessão
-
+### 11.6 `SessionManagementFilter` — Eventos de Sessão
 ```java
 /**
  * Listener de eventos de sessão HTTP para auditoria e métricas.
@@ -8931,12 +4460,817 @@ public class SessionEventListener
 
 ---
 
-## 24. ACL Module — Controle de Acesso por Instância
+## 12. Method Security (@PreAuthorize / @PostAuthorize)
+### 12.1 Habilitação
+```java
+@Configuration
+@EnableMethodSecurity(
+    prePostEnabled  = true,   // @PreAuthorize, @PostAuthorize, @PreFilter, @PostFilter
+    securedEnabled  = true,   // @Secured (legado)
+    jsr250Enabled   = true    // @RolesAllowed, @PermitAll, @DenyAll (JSR-250)
+)
+public class MethodSecurityConfig {
+    // Configurações adicionais do MethodSecurityExpressionHandler aqui
+}
+```
 
+### 12.2 Exemplos de @PreAuthorize
+```java
+@Service
+@RequiredArgsConstructor
+public class UserService {
+
+    private final UserRepository userRepository;
+
+    // Apenas ADMIN pode listar todos os usuários
+    @PreAuthorize("hasRole('ADMIN')")
+    public List<UserDto> findAll() {
+        return userRepository.findAll().stream()
+            .map(UserDto::fromEntity)
+            .toList();
+    }
+
+    // Usuário pode acessar seu próprio perfil; ADMIN pode acessar qualquer um
+    @PreAuthorize("hasRole('ADMIN') or #username == authentication.name")
+    public UserDto findByUsername(String username) {
+        return userRepository.findByUsername(username)
+            .map(UserDto::fromEntity)
+            .orElseThrow(UserNotFoundException::new);
+    }
+
+    // Verifica permissão granular (não apenas role)
+    @PreAuthorize("hasAuthority('USER_WRITE')")
+    public UserDto create(CreateUserRequest request) {
+        // ...
+    }
+
+    // Validação antes E depois (garante que retorna apenas o próprio dado)
+    @PreAuthorize("isAuthenticated()")
+    @PostAuthorize("returnObject.username == authentication.name or hasRole('ADMIN')")
+    public UserDto findById(Long id) {
+        return userRepository.findById(id)
+            .map(UserDto::fromEntity)
+            .orElseThrow(UserNotFoundException::new);
+    }
+
+    // Filtra lista no retorno — remove itens que o usuário não pode ver
+    @PreAuthorize("isAuthenticated()")
+    @PostFilter("filterObject.owner == authentication.name or hasRole('ADMIN')")
+    public List<DocumentDto> findDocuments() {
+        return documentRepository.findAll().stream()
+            .map(DocumentDto::fromEntity)
+            .toList();
+    }
+
+    // Filtra lista de entrada — remove itens não autorizados
+    @PreFilter("filterObject.owner == authentication.name")
+    public void deleteDocuments(List<DocumentDto> documents) {
+        documents.forEach(d -> documentRepository.deleteById(d.id()));
+    }
+}
+```
+
+### 12.3 @PostAuthorize para Verificação de Retorno
+```java
+@RestController
+@RequestMapping("/api/v1/orders")
+public class OrderController {
+
+    private final OrderService orderService;
+
+    // Verifica após a execução se o pedido pertence ao usuário autenticado
+    @GetMapping("/{id}")
+    @PostAuthorize("returnObject.customerId == authentication.name " +
+                   "or hasRole('ADMIN')")
+    public OrderDto getOrder(@PathVariable Long id) {
+        return orderService.findById(id);
+    }
+}
+```
+
+### 12.4 @Secured e @RolesAllowed (legado)
+```java
+// @Secured — sem SpEL, apenas roles
+@Secured({"ROLE_ADMIN", "ROLE_MANAGER"})
+public void deleteUser(Long id) { ... }
+
+// @RolesAllowed — JSR-250, sem prefixo ROLE_
+@RolesAllowed({"ADMIN", "MANAGER"})
+public void deleteUser(Long id) { ... }
+
+// @PermitAll / @DenyAll — JSR-250
+@PermitAll
+public List<ProductDto> listPublicProducts() { ... }
+
+@DenyAll
+public void dangerousOperation() { ... }
+```
+
+---
+
+## 13. Hierarquia de Roles (RoleHierarchy)
+`RoleHierarchy` define relacoes de superconjunto entre roles: uma role de nivel superior herda implicitamente todas as permissoes das roles abaixo na hierarquia. Sem essa configuracao, um `ADMIN` nao possui automaticamente as permissoes de `USER` — cada role e tratada como conjunto independente.
+
+### 13.1 Conceito e Motivacao
+```
+Sem RoleHierarchy:              Com RoleHierarchy:
+
+ADMIN   -> ROLE_ADMIN           ADMIN   -> ROLE_ADMIN + ROLE_MANAGER
+MANAGER -> ROLE_MANAGER                   + ROLE_USER + ROLE_VIEWER
+USER    -> ROLE_USER
+VIEWER  -> ROLE_VIEWER          MANAGER -> ROLE_MANAGER + ROLE_USER + ROLE_VIEWER
+                                USER    -> ROLE_USER + ROLE_VIEWER
+                                VIEWER  -> ROLE_VIEWER
+```
+
+Sem hierarquia, `.hasRole("USER")` bloquearia um `ADMIN` se ele nao tiver `ROLE_USER` atribuido explicitamente. Com hierarquia, `ADMIN > USER` faz com que qualquer verificacao de `ROLE_USER` tambem passe para quem tem `ROLE_ADMIN`.
+
+### 13.2 Configuracao Basica
+```java
+@Configuration
+public class RoleHierarchyConfig {
+
+    /**
+     * RoleHierarchyImpl.fromHierarchy() — API moderna (Spring Security 6.3+).
+     * Sintaxe: "ROLE_SUPERIOR > ROLE_INFERIOR"
+     * O simbolo ">" significa "inclui todas as permissoes de".
+     */
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.fromHierarchy("""
+                ROLE_ADMIN   > ROLE_MANAGER
+                ROLE_MANAGER > ROLE_USER
+                ROLE_USER    > ROLE_VIEWER
+                """);
+    }
+}
+```
+
+```mermaid
+flowchart TD
+    A["ROLE_ADMIN<br>(tudo abaixo implicito)"]
+    M["ROLE_MANAGER<br>+ USER + VIEWER"]
+    U["ROLE_USER<br>+ VIEWER"]
+    V["ROLE_VIEWER"]
+    A --> M --> U --> V
+```
+
+### 13.3 Hierarquias com Multiplos Ramos
+```java
+@Bean
+public RoleHierarchy roleHierarchy() {
+    return RoleHierarchyImpl.fromHierarchy("""
+            ROLE_SUPER_ADMIN > ROLE_ADMIN
+            ROLE_ADMIN       > ROLE_MANAGER
+            ROLE_ADMIN       > ROLE_AUDITOR
+            ROLE_MANAGER     > ROLE_USER
+            ROLE_AUDITOR     > ROLE_VIEWER
+            ROLE_USER        > ROLE_VIEWER
+            """);
+}
+```
+
+```mermaid
+flowchart TD
+    SA[ROLE_SUPER_ADMIN] --> A[ROLE_ADMIN]
+    A --> M[ROLE_MANAGER]
+    A --> AU[ROLE_AUDITOR]
+    M --> U[ROLE_USER]
+    AU --> V[ROLE_VIEWER]
+    U  --> V
+```
+
+Neste exemplo `ROLE_ADMIN` herda de `ROLE_MANAGER` **e** `ROLE_AUDITOR`, portanto possui `ROLE_USER` e `ROLE_VIEWER` transitivamente. `ROLE_AUDITOR` nao herda de `ROLE_USER` — um auditor pode ver mas nao atuar como usuario comum.
+
+### 13.4 Registro nos Componentes do Spring Security
+O bean `RoleHierarchy` **nao e detectado automaticamente** por todos os componentes. Deve ser registrado explicitamente em cada ponto onde a hierarquia deve ser respeitada.
+
+#### 25.4.1 Method Security (`@PreAuthorize` / `@PostAuthorize`)
+
+```java
+@Configuration
+@EnableMethodSecurity
+public class MethodSecurityConfig {
+
+    /**
+     * Sem este bean, @PreAuthorize("hasRole('USER')") falha para ADMIN
+     * mesmo que ADMIN > USER esteja definido na hierarquia.
+     */
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler(
+            RoleHierarchy roleHierarchy) {
+
+        DefaultMethodSecurityExpressionHandler handler =
+            new DefaultMethodSecurityExpressionHandler();
+        handler.setRoleHierarchy(roleHierarchy);
+        return handler;
+    }
+}
+```
+
+> **Spring Security 6.x e `authorizeHttpRequests`:** a partir do Spring Security 6, o bean `RoleHierarchy` e detectado automaticamente pelo `HttpSecurity` para uso em `authorizeHttpRequests`. Para **Method Security** (`@PreAuthorize`), o registro manual no `MethodSecurityExpressionHandler` **continua obrigatorio**.
+
+#### 25.4.2 `CustomSecurityExpressionRoot` (se aplicavel)
+
+```java
+// Se o projeto usa CustomSecurityExpressionRoot (secao 10),
+// a hierarquia deve ser repassada explicitamente:
+public class CustomMethodSecurityExpressionHandler
+        extends DefaultMethodSecurityExpressionHandler {
+
+    @Override
+    protected MethodSecurityExpressionOperations createSecurityExpressionRoot(
+            Authentication authentication, MethodInvocation invocation) {
+
+        CustomSecurityExpressionRoot root =
+            new CustomSecurityExpressionRoot(authentication, resourceRepository);
+        root.setPermissionEvaluator(getPermissionEvaluator());
+        root.setTrustResolver(getTrustResolver());
+        // Sem esta linha, hasRole() no SpEL customizado ignora a hierarquia
+        root.setRoleHierarchy(getRoleHierarchy());
+        return root;
+    }
+}
+```
+
+### 13.5 `getReachableGrantedAuthorities()` — Authorities Expandidas
+O `RoleHierarchy` expoe `getReachableGrantedAuthorities()` para obter o conjunto completo de authorities implicitas de um principal:
+
+```java
+@Component
+@RequiredArgsConstructor
+public class RoleInspectionService {
+
+    private final RoleHierarchy roleHierarchy;
+
+    /**
+     * Retorna todas as authorities efetivas, incluindo as herdadas.
+     * Usuario com ROLE_MANAGER retorna: [ROLE_MANAGER, ROLE_USER, ROLE_VIEWER]
+     */
+    public Collection<GrantedAuthority> getEffectiveAuthorities(Authentication auth) {
+        return roleHierarchy.getReachableGrantedAuthorities(auth.getAuthorities());
+    }
+
+    /** Verifica programaticamente se o usuario tem uma role (direta ou herdada). */
+    public boolean hasEffectiveRole(Authentication auth, String role) {
+        String normalized = role.startsWith("ROLE_") ? role : "ROLE_" + role;
+        return getEffectiveAuthorities(auth).stream()
+            .anyMatch(a -> a.getAuthority().equals(normalized));
+    }
+
+    /** Lista authorities diretas vs herdadas — util para diagnostico. */
+    public Map<String, List<String>> debugAuthorities(Authentication auth) {
+        Collection<? extends GrantedAuthority> direct = auth.getAuthorities();
+        Collection<GrantedAuthority> effective =
+            roleHierarchy.getReachableGrantedAuthorities(direct);
+
+        List<String> inherited = effective.stream()
+            .filter(a -> !direct.contains(a))
+            .map(GrantedAuthority::getAuthority)
+            .sorted().toList();
+
+        return Map.of(
+            "direct",    direct.stream().map(GrantedAuthority::getAuthority).sorted().toList(),
+            "inherited", inherited,
+            "effective", effective.stream().map(GrantedAuthority::getAuthority).sorted().toList());
+    }
+}
+```
+
+Resposta para usuario com `ROLE_MANAGER`:
+
+```json
+{
+  "direct":    ["ROLE_MANAGER"],
+  "inherited": ["ROLE_USER", "ROLE_VIEWER"],
+  "effective": ["ROLE_MANAGER", "ROLE_USER", "ROLE_VIEWER"]
+}
+```
+
+### 13.6 Hierarquia com Authorities Nao-ROLE_
+`RoleHierarchy` funciona com qualquer `GrantedAuthority`, nao apenas prefixadas com `ROLE_`:
+
+```java
+@Bean
+public RoleHierarchy roleHierarchy() {
+    return RoleHierarchyImpl.fromHierarchy("""
+            ROLE_ADMIN       > ROLE_MANAGER
+            ROLE_MANAGER     > ROLE_USER
+            ROLE_USER        > ROLE_VIEWER
+            SCOPE_admin      > SCOPE_read
+            SCOPE_admin      > SCOPE_write
+            PERMISSION_WRITE > PERMISSION_READ
+            """);
+}
+```
+
+```java
+// Um token com SCOPE_admin passa aqui via hierarquia (SCOPE_admin > SCOPE_read)
+@GetMapping("/data")
+@PreAuthorize("hasAuthority('SCOPE_read')")
+public List<DataDto> getData() { ... }
+```
+
+### 13.7 Hierarquia Carregada do Banco de Dados
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class DatabaseRoleHierarchyFactory {
+
+    private final RoleRelationRepository repository;
+
+    @Bean
+    public RoleHierarchy roleHierarchy() {
+        List<RoleRelationEntity> relations =
+            repository.findAllByOrderByParentAsc();
+
+        if (relations.isEmpty()) {
+            log.warn("Nenhuma relacao de hierarquia encontrada no banco.");
+            return new NullRoleHierarchy();
+        }
+
+        String hierarchyStr = relations.stream()
+            .map(r -> r.getParentRole() + " > " + r.getChildRole())
+            .collect(Collectors.joining("\n"));
+
+        log.info("Hierarquia de roles carregada: {} relacoes", relations.size());
+        return RoleHierarchyImpl.fromHierarchy(hierarchyStr);
+    }
+}
+```
+
+```java
+@Entity
+@Table(name = "role_relations")
+@Getter @Setter
+public class RoleRelationEntity {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "parent_role", nullable = false, length = 100)
+    private String parentRole;  // ex: "ROLE_ADMIN"
+
+    @Column(name = "child_role", nullable = false, length = 100)
+    private String childRole;   // ex: "ROLE_MANAGER"
+}
+
+public interface RoleRelationRepository extends JpaRepository<RoleRelationEntity, Long> {
+    List<RoleRelationEntity> findAllByOrderByParentAsc();
+}
+```
+
+```sql
+-- V12__role_hierarchy.sql
+CREATE TABLE role_relations (
+    id          BIGSERIAL    PRIMARY KEY,
+    parent_role VARCHAR(100) NOT NULL,
+    child_role  VARCHAR(100) NOT NULL,
+    CONSTRAINT uq_role_relation UNIQUE (parent_role, child_role)
+);
+
+INSERT INTO role_relations (parent_role, child_role) VALUES
+    ('ROLE_ADMIN',   'ROLE_MANAGER'),
+    ('ROLE_MANAGER', 'ROLE_USER'),
+    ('ROLE_USER',    'ROLE_VIEWER');
+```
+
+> **Atencao:** o bean `RoleHierarchy` e criado uma unica vez na inicializacao do contexto Spring. Para refletir mudancas no banco sem redeploy, e necessario reiniciar a aplicacao ou usar um mecanismo como `@RefreshScope` com Spring Cloud Bus.
+
+### 13.8 Checklist de Configuracao
+```
+RoleHierarchy — pontos de registro obrigatorios:
+
+  [v] @Bean RoleHierarchy                              definicao da hierarquia
+  [v] MethodSecurityExpressionHandler.setRoleHierarchy @PreAuthorize / @PostAuthorize
+  [v] CustomSecurityExpressionRoot.setRoleHierarchy    SpEL customizado (se aplicavel)
+  [ ] authorizeHttpRequests                            detectado automaticamente (Spring 6+)
+
+  Verificacao rapida:
+  hasRole('USER') passa para ADMIN via HTTP?           hierarquia ativa no HTTP
+  @PreAuthorize("hasRole('USER')") passa para ADMIN?  hierarquia ativa no Method Security
+  getReachableGrantedAuthorities() retorna herdadas?   hierarquia funcionando corretamente
+```
+
+
+---
+
+## 14. SpEL Customizado para Anotações de Segurança
+### 14.1 Como Funciona
+O Spring Security avalia `@PreAuthorize` usando `SecurityExpressionRoot`, que expõe funções como `hasRole()`, `isAuthenticated()`, etc. Para adicionar funções customizadas, cria-se um `MethodSecurityExpressionHandler` personalizado.
+
+```mermaid
+flowchart TD
+    PA["@PreAuthorize('meuMetodo(#param)')"] --> MSEH[MethodSecurityExpressionHandler]
+    MSEH --> CSER[CustomSecurityExpressionRoot]
+    CSER --> MO[MySecurityOperations<br>Bean com lógica customizada]
+    MO --> DB[(Database / Cache)]
+    MO --> AUTH[Authentication<br>object]
+```
+
+### 14.2 Implementação Completa
+**Passo 1 — Classe com operações customizadas:**
+
+```java
+/**
+ * Operações de segurança customizadas disponíveis via SpEL em @PreAuthorize.
+ * Exemplo de uso: @PreAuthorize("@security.isOwner(#resourceId)")
+ */
+@Component("security")  // Nome do bean usado no SpEL: @security
+@RequiredArgsConstructor
+@Slf4j
+public class SecurityOperations {
+
+    private final ResourceRepository resourceRepository;
+    private final OrganizationService organizationService;
+
+    /**
+     * Verifica se o usuário autenticado é dono do recurso.
+     * Uso: @PreAuthorize("@security.isOwner(#resourceId)")
+     */
+    public boolean isOwner(Long resourceId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) return false;
+
+        return resourceRepository.findById(resourceId)
+            .map(r -> r.getOwnerUsername().equals(auth.getName()))
+            .orElse(false);
+    }
+
+    /**
+     * Verifica se o usuário pertence à organização especificada.
+     * Uso: @PreAuthorize("@security.belongsToOrg(#orgId)")
+     */
+    public boolean belongsToOrg(Long orgId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return organizationService.isMember(auth.getName(), orgId);
+    }
+
+    /**
+     * Verifica se o usuário tem permissão específica sobre o recurso.
+     * Uso: @PreAuthorize("@security.canAccess(#resourceId, 'READ')")
+     */
+    public boolean canAccess(Long resourceId, String action) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return resourceRepository.findById(resourceId)
+            .map(r -> hasPermissionForAction(auth, r, action))
+            .orElse(false);
+    }
+
+    /**
+     * Verifica se o tenant do usuário autenticado corresponde ao tenant do parâmetro.
+     * Uso: @PreAuthorize("@security.sameTenant(#tenantId)")
+     */
+    public boolean sameTenant(String tenantId) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth.getPrincipal() instanceof TenantAwareUserDetails user) {
+            return user.getTenantId().equals(tenantId);
+        }
+        return false;
+    }
+
+    private boolean hasPermissionForAction(Authentication auth, Resource r, String action) {
+        return switch (action.toUpperCase()) {
+            case "READ"   -> r.isPublic() || r.getOwnerUsername().equals(auth.getName());
+            case "WRITE"  -> r.getOwnerUsername().equals(auth.getName()) ||
+                             hasAuthority(auth, "RESOURCE_WRITE");
+            case "DELETE" -> r.getOwnerUsername().equals(auth.getName()) ||
+                             hasRole(auth, "ADMIN");
+            default       -> false;
+        };
+    }
+
+    private boolean hasAuthority(Authentication auth, String authority) {
+        return auth.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals(authority));
+    }
+
+    private boolean hasRole(Authentication auth, String role) {
+        return hasAuthority(auth, "ROLE_" + role);
+    }
+}
+```
+
+**Passo 2 — Uso nos controladores/serviços:**
+
+```java
+@RestController
+@RequestMapping("/api/v1/resources")
+@RequiredArgsConstructor
+public class ResourceController {
+
+    private final ResourceService resourceService;
+
+    // Verifica se o usuário é dono do recurso antes de retornar
+    @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or @security.isOwner(#id)")
+    public ResourceDto getResource(@PathVariable Long id) {
+        return resourceService.findById(id);
+    }
+
+    // Verifica tenant + permissão de escrita
+    @PutMapping("/{id}")
+    @PreAuthorize("@security.canAccess(#id, 'WRITE') and @security.sameTenant(#request.tenantId)")
+    public ResourceDto updateResource(@PathVariable Long id,
+                                      @RequestBody @Valid UpdateResourceRequest request) {
+        return resourceService.update(id, request);
+    }
+
+    // Combina múltiplas verificações customizadas
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@security.isOwner(#id) or (hasRole('ADMIN') and @security.sameTenant(#tenantId))")
+    public ResponseEntity<Void> deleteResource(@PathVariable Long id,
+                                               @RequestParam String tenantId) {
+        resourceService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // Usa SpEL puro com acesso ao objeto Authentication
+    @GetMapping("/my-resources")
+    @PreAuthorize("authentication.name != null and isAuthenticated()")
+    public List<ResourceDto> getMyResources() {
+        return resourceService.findByCurrentUser();
+    }
+}
+```
+
+### 14.3 MethodSecurityExpressionHandler Customizado (Alternativa)
+Para adicionar funções diretamente no contexto SpEL (sem `@beanName`):
+
+```java
+/**
+ * Root de expressão customizada — adiciona métodos disponíveis diretamente no SpEL.
+ * Exemplo: @PreAuthorize("isOwnerOf(#id)") em vez de @PreAuthorize("@security.isOwner(#id)")
+ */
+public class CustomSecurityExpressionRoot
+        extends SecurityExpressionRoot
+        implements MethodSecurityExpressionOperations {
+
+    private Object filterObject;
+    private Object returnObject;
+    private final ResourceRepository resourceRepository;
+
+    public CustomSecurityExpressionRoot(Authentication auth,
+                                        ResourceRepository resourceRepository) {
+        super(auth);
+        this.resourceRepository = resourceRepository;
+    }
+
+    /**
+     * Disponível diretamente: @PreAuthorize("isOwnerOf(#resourceId)")
+     */
+    public boolean isOwnerOf(Long resourceId) {
+        return resourceRepository.findById(resourceId)
+            .map(r -> r.getOwnerUsername().equals(getAuthentication().getName()))
+            .orElse(false);
+    }
+
+    /**
+     * Verifica se usuário tem nível de acesso >= nível requerido.
+     * Uso: @PreAuthorize("accessLevel(#requiredLevel)")
+     */
+    public boolean accessLevel(int requiredLevel) {
+        if (getAuthentication().getPrincipal() instanceof LeveledUserDetails user) {
+            return user.getAccessLevel() >= requiredLevel;
+        }
+        return false;
+    }
+
+    @Override public void setFilterObject(Object o)  { this.filterObject = o; }
+    @Override public Object getFilterObject()         { return filterObject; }
+    @Override public void setReturnObject(Object o)  { this.returnObject = o; }
+    @Override public Object getReturnObject()         { return returnObject; }
+    @Override public Object getThis()                 { return this; }
+}
+
+/**
+ * Handler que injeta o CustomSecurityExpressionRoot.
+ */
+public class CustomMethodSecurityExpressionHandler
+        extends DefaultMethodSecurityExpressionHandler {
+
+    private final ResourceRepository resourceRepository;
+
+    public CustomMethodSecurityExpressionHandler(ResourceRepository resourceRepository) {
+        this.resourceRepository = resourceRepository;
+    }
+
+    @Override
+    protected MethodSecurityExpressionOperations createSecurityExpressionRoot(
+            Authentication authentication, MethodInvocation invocation) {
+
+        CustomSecurityExpressionRoot root =
+            new CustomSecurityExpressionRoot(authentication, resourceRepository);
+        root.setPermissionEvaluator(getPermissionEvaluator());
+        root.setTrustResolver(getTrustResolver());
+        root.setRoleHierarchy(getRoleHierarchy());
+        return root;
+    }
+}
+
+/**
+ * Registra o handler customizado na configuração.
+ */
+@Configuration
+@EnableMethodSecurity
+public class MethodSecurityConfig {
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler(
+            ResourceRepository resourceRepository) {
+        return new CustomMethodSecurityExpressionHandler(resourceRepository);
+    }
+}
+```
+
+---
+
+## 15. PermissionEvaluator — Permissões por Domínio
+### 15.1 Conceito
+`PermissionEvaluator` é a interface usada pelo Spring Security para avaliar `hasPermission()` no SpEL. Permite implementar lógica de autorização baseada em domínio (ACL — Access Control List).
+
+```java
+/**
+ * Interface central:
+ * hasPermission(authentication, targetDomainObject, permission)
+ * hasPermission(authentication, targetId, targetType, permission)
+ */
+public interface PermissionEvaluator {
+    boolean hasPermission(Authentication auth, Object targetDomainObject, Object permission);
+    boolean hasPermission(Authentication auth, Serializable targetId,
+                          String targetType, Object permission);
+}
+```
+
+### 15.2 Implementação
+```java
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class AppPermissionEvaluator implements PermissionEvaluator {
+
+    private final DocumentRepository documentRepository;
+    private final ProjectRepository projectRepository;
+    private final AclService aclService;
+
+    @Override
+    public boolean hasPermission(Authentication auth,
+                                  Object targetDomainObject,
+                                  Object permission) {
+
+        if (auth == null || !auth.isAuthenticated()) return false;
+        if (permission == null) return false;
+
+        String perm = permission.toString().toUpperCase();
+
+        return switch (targetDomainObject) {
+            case Document doc   -> evaluateDocumentPermission(auth, doc, perm);
+            case Project project -> evaluateProjectPermission(auth, project, perm);
+            default -> {
+                log.warn("Tipo de domínio não suportado: {}", 
+                    targetDomainObject.getClass().getName());
+                yield false;
+            }
+        };
+    }
+
+    @Override
+    public boolean hasPermission(Authentication auth,
+                                  Serializable targetId,
+                                  String targetType,
+                                  Object permission) {
+
+        if (auth == null || !auth.isAuthenticated()) return false;
+
+        String perm = permission.toString().toUpperCase();
+
+        return switch (targetType) {
+            case "Document" -> documentRepository.findById((Long) targetId)
+                .map(doc -> evaluateDocumentPermission(auth, doc, perm))
+                .orElse(false);
+
+            case "Project"  -> projectRepository.findById((Long) targetId)
+                .map(project -> evaluateProjectPermission(auth, project, perm))
+                .orElse(false);
+
+            default -> {
+                log.warn("Tipo não reconhecido: {}", targetType);
+                yield false;
+            }
+        };
+    }
+
+    private boolean evaluateDocumentPermission(Authentication auth,
+                                                Document doc,
+                                                String permission) {
+        String username = auth.getName();
+        boolean isAdmin = hasRole(auth, "ADMIN");
+
+        return switch (permission) {
+            case "READ"   -> isAdmin || doc.isPublic() || doc.getOwner().equals(username)
+                             || aclService.hasAccess(username, doc.getId(), "READ");
+            case "WRITE"  -> isAdmin || doc.getOwner().equals(username)
+                             || aclService.hasAccess(username, doc.getId(), "WRITE");
+            case "DELETE" -> isAdmin || doc.getOwner().equals(username);
+            case "SHARE"  -> isAdmin || doc.getOwner().equals(username);
+            default       -> false;
+        };
+    }
+
+    private boolean evaluateProjectPermission(Authentication auth,
+                                               Project project,
+                                               String permission) {
+        String username = auth.getName();
+        boolean isOwner = project.getOwner().equals(username);
+        boolean isMember = project.getMembers().contains(username);
+
+        return switch (permission) {
+            case "READ"   -> isOwner || isMember || hasRole(auth, "ADMIN");
+            case "WRITE"  -> isOwner || (isMember && hasAuthority(auth, "PROJECT_WRITE"));
+            case "DELETE" -> isOwner || hasRole(auth, "ADMIN");
+            default       -> false;
+        };
+    }
+
+    private boolean hasRole(Authentication auth, String role) {
+        return auth.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals("ROLE_" + role));
+    }
+
+    private boolean hasAuthority(Authentication auth, String authority) {
+        return auth.getAuthorities().stream()
+            .anyMatch(a -> a.getAuthority().equals(authority));
+    }
+}
+```
+
+### 15.3 Registrar o PermissionEvaluator
+```java
+@Configuration
+@EnableMethodSecurity
+public class MethodSecurityConfig {
+
+    @Bean
+    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
+    public MethodSecurityExpressionHandler methodSecurityExpressionHandler(
+            AppPermissionEvaluator permissionEvaluator) {
+
+        DefaultMethodSecurityExpressionHandler handler =
+            new DefaultMethodSecurityExpressionHandler();
+        handler.setPermissionEvaluator(permissionEvaluator);
+        return handler;
+    }
+}
+```
+
+### 15.4 Uso com hasPermission()
+```java
+@RestController
+@RequestMapping("/api/v1/documents")
+public class DocumentController {
+
+    @GetMapping("/{id}")
+    // Passa o objeto de domínio diretamente
+    @PreAuthorize("hasPermission(#document, 'READ')")
+    public DocumentDto getDocument(@PathVariable Long id,
+                                   Document document) {  // injetado via @ModelAttribute
+        return DocumentDto.fromEntity(document);
+    }
+
+    @PutMapping("/{id}")
+    // Passa apenas o ID e o tipo (lazy loading — o evaluator faz o lookup)
+    @PreAuthorize("hasPermission(#id, 'Document', 'WRITE')")
+    public DocumentDto updateDocument(@PathVariable Long id,
+                                      @RequestBody @Valid UpdateDocumentRequest req) {
+        return documentService.update(id, req);
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasPermission(#id, 'Document', 'DELETE')")
+    public ResponseEntity<Void> deleteDocument(@PathVariable Long id) {
+        documentService.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/share")
+    @PreAuthorize("hasPermission(#id, 'Document', 'SHARE') and hasAuthority('DOCUMENT_SHARE')")
+    public ResponseEntity<Void> shareDocument(@PathVariable Long id,
+                                              @RequestBody ShareRequest req) {
+        documentService.share(id, req);
+        return ResponseEntity.ok().build();
+    }
+}
+```
+
+---
+
+## 16. ACL Module — Controle de Acesso por Instância
 O ACL Module (`spring-security-acl`) fornece controle de acesso granular ao nível de instância de objeto — por exemplo, permitir que o usuário A leia o documento 42 mas não o 43, enquanto o usuário B pode editar o 43 mas não o 42. É distinto do `PermissionEvaluator` manual (seção 11): o ACL Module persiste as permissões no banco, suporta herança entre objetos e integra com `@PreAuthorize("hasPermission()")` sem código adicional.
 
-### 24.1 Modelo de Dados do ACL
-
+### 16.1 Modelo de Dados do ACL
 ```mermaid
 erDiagram
     ACL_CLASS {
@@ -8974,8 +5308,7 @@ erDiagram
     ACL_OBJECT_IDENTITY ||--o| ACL_OBJECT_IDENTITY : "herda de"
 ```
 
-### 24.2 Dependência e Schema
-
+### 16.2 Dependência e Schema
 ```xml
 <dependency>
     <groupId>org.springframework.security</groupId>
@@ -9023,8 +5356,7 @@ CREATE TABLE acl_entry (
 
 ---
 
-### 24.3 Configuração do ACL
-
+### 16.3 Configuração do ACL
 ```java
 @Configuration
 @EnableGlobalMethodSecurity(prePostEnabled = true)
@@ -9100,8 +5432,7 @@ spring:
 
 ---
 
-### 24.4 `AclService` — Criação e Gestão de Permissões
-
+### 16.4 `AclService` — Criação e Gestão de Permissões
 ```java
 @Service
 @RequiredArgsConstructor
@@ -9214,8 +5545,7 @@ public class DocumentAclService {
 
 ---
 
-### 24.5 Uso com `@PreAuthorize` e `@PostAuthorize`
-
+### 16.5 Uso com `@PreAuthorize` e `@PostAuthorize`
 Com o `AclPermissionEvaluator` registrado, `hasPermission()` consulta automaticamente as tabelas ACL:
 
 ```java
@@ -9270,8 +5600,7 @@ public class DocumentService {
 
 ---
 
-### 24.6 Comparativo: ACL Module vs PermissionEvaluator Manual
-
+### 16.6 Comparativo: ACL Module vs PermissionEvaluator Manual
 | Aspecto | PermissionEvaluator Manual (seção 11) | ACL Module |
 |---|---|---|
 | **Regras armazenadas** | No código Java | No banco de dados |
@@ -9285,313 +5614,4040 @@ public class DocumentService {
 
 ---
 
-## 25. Hierarquia de Roles (RoleHierarchy)
-
-`RoleHierarchy` define relacoes de superconjunto entre roles: uma role de nivel superior herda implicitamente todas as permissoes das roles abaixo na hierarquia. Sem essa configuracao, um `ADMIN` nao possui automaticamente as permissoes de `USER` — cada role e tratada como conjunto independente.
-
-### 25.1 Conceito e Motivacao
-
+## 17. Multi-Factor Authentication, OTP e One-Time Token
+### 17.1 Conceitos e Comparativo
+```mermaid
+mindmap
+  root((Segundo Fator<br>de Autenticação))
+    TOTP
+      RFC 6238
+      Google Authenticator
+      Authy / Microsoft Auth
+      Segredo compartilhado
+      Janela de 30 segundos
+    OTP via Canal
+      Email
+      SMS
+      Código numérico
+      Expiração curta
+      Sem app externo
+    One-Time Token
+      Spring Security 6.4+
+      Magic link por email
+      Token opaco de uso único
+      Login sem senha
 ```
-Sem RoleHierarchy:              Com RoleHierarchy:
 
-ADMIN   -> ROLE_ADMIN           ADMIN   -> ROLE_ADMIN + ROLE_MANAGER
-MANAGER -> ROLE_MANAGER                   + ROLE_USER + ROLE_VIEWER
-USER    -> ROLE_USER
-VIEWER  -> ROLE_VIEWER          MANAGER -> ROLE_MANAGER + ROLE_USER + ROLE_VIEWER
-                                USER    -> ROLE_USER + ROLE_VIEWER
-                                VIEWER  -> ROLE_VIEWER
+| Mecanismo | Padrão | Requer App? | Canal externo | Spring Security nativo? |
+|-----------|--------|-------------|---------------|------------------------|
+| **TOTP** (Google Auth) | RFC 6238 | Sim | Não | Não — biblioteca externa |
+| **OTP por email** | — | Não | Email | Parcialmente |
+| **OTP por SMS** | — | Não | SMS (Twilio) | Não |
+| **One-Time Token** | — | Não | Email | **Sim — Spring Security 6.4+** |
+
+> **Distinção chave:** OTP (One-Time Password) é um código numérico de uso único gerado por algoritmo (TOTP/HOTP). OTT (One-Time Token) é um token opaco gerado pelo servidor — a implementação nativa do Spring Security 6.4 para login por magic link.
+
+---
+
+### 17.2 TOTP — One-Time Password Baseado em Tempo
+TOTP (RFC 6238) gera códigos numéricos de 6 dígitos que mudam a cada 30 segundos, derivados de um segredo compartilhado entre o servidor e o app autenticador do usuário.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário
+    participant APP as Authenticator App
+    participant S as Servidor
+
+    Note over U,S: Etapa 1 — Enrollment (uma vez)
+    U->>S: Solicita ativação de MFA
+    S->>S: Gera segredo TOTP (Base32, 20 bytes)
+    S-->>U: QR Code com otpauth://totp/...?secret=BASE32SECRET
+    U->>APP: Escaneia QR Code
+    APP-->>U: Exibe código de 6 dígitos rotativo
+
+    Note over U,S: Etapa 2 — Autenticação (toda vez)
+    U->>S: POST /login {username, password}
+    S-->>U: Redirect para /mfa/verify (sessão parcial)
+    U->>APP: Consulta código atual
+    APP-->>U: 123456
+    U->>S: POST /mfa/verify {code: 123456}
+    S->>S: Valida TOTP com segredo do usuário
+    S-->>U: Autenticação completa — redirect /dashboard
 ```
 
-Sem hierarquia, `.hasRole("USER")` bloquearia um `ADMIN` se ele nao tiver `ROLE_USER` atribuido explicitamente. Com hierarquia, `ADMIN > USER` faz com que qualquer verificacao de `ROLE_USER` tambem passe para quem tem `ROLE_ADMIN`.
+#### Dependência
 
-### 25.2 Configuracao Basica
+```xml
+<!-- Biblioteca TOTP — implementa RFC 6238 e RFC 4226 -->
+<dependency>
+    <groupId>dev.samstevens.totp</groupId>
+    <artifactId>totp-spring-boot-starter</artifactId>
+    <version>1.7.1</version>
+</dependency>
+```
+
+#### TotpService — Geração e Validação
 
 ```java
-@Configuration
-public class RoleHierarchyConfig {
+@Service
+@RequiredArgsConstructor
+public class TotpService {
+
+    private final SecretGenerator secretGenerator;
+    private final CodeGenerator codeGenerator;
+    private final CodeVerifier codeVerifier;
+    private final QrDataFactory qrDataFactory;
+    private final QrGenerator qrGenerator;
+
+    private static final String APP_NAME = "MyApp";
 
     /**
-     * RoleHierarchyImpl.fromHierarchy() — API moderna (Spring Security 6.3+).
-     * Sintaxe: "ROLE_SUPERIOR > ROLE_INFERIOR"
-     * O simbolo ">" significa "inclui todas as permissoes de".
+     * Gera um novo segredo TOTP para o usuário.
+     * Deve ser armazenado criptografado no banco de dados.
      */
-    @Bean
-    public RoleHierarchy roleHierarchy() {
-        return RoleHierarchyImpl.fromHierarchy("""
-                ROLE_ADMIN   > ROLE_MANAGER
-                ROLE_MANAGER > ROLE_USER
-                ROLE_USER    > ROLE_VIEWER
-                """);
+    public String generateSecret() {
+        return secretGenerator.generate();  // Base32, 160 bits
+    }
+
+    /**
+     * Gera a URI otpauth:// para exibição como QR Code.
+     * O app autenticador (Google Auth, Authy) lê este QR para configurar o TOTP.
+     */
+    public String generateQrCodeImageUri(String secret, String userEmail) {
+        QrData qrData = qrDataFactory.newBuilder()
+            .label(userEmail)
+            .secret(secret)
+            .issuer(APP_NAME)
+            .algorithm(HashingAlgorithm.SHA1)  // RFC 6238 padrão
+            .digits(6)
+            .period(30)                        // 30 segundos por janela
+            .build();
+
+        try {
+            byte[] imageData = qrGenerator.generate(qrData);
+            String mimeType = qrGenerator.getImageMimeType();
+            return "data:" + mimeType + ";base64," +
+                Base64.getEncoder().encodeToString(imageData);
+        } catch (QrGenerationException e) {
+            throw new MfaSetupException("Falha ao gerar QR Code", e);
+        }
+    }
+
+    /**
+     * Valida o código TOTP informado pelo usuário.
+     * Aceita a janela atual e as adjacentes (±30s) para tolerância de clock skew.
+     */
+    public boolean validateCode(String secret, String code) {
+        try {
+            return codeVerifier.isValidCode(secret, code);
+        } catch (CodeVerificationException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Valida o código e lança exceção se inválido — use em fluxos de autenticação.
+     */
+    public void validateCodeOrThrow(String secret, String code) {
+        if (!validateCode(secret, code)) {
+            throw new InvalidMfaCodeException("Código TOTP inválido ou expirado");
+        }
     }
 }
 ```
 
-```mermaid
-flowchart TD
-    A["ROLE_ADMIN<br>(tudo abaixo implicito)"]
-    M["ROLE_MANAGER<br>+ USER + VIEWER"]
-    U["ROLE_USER<br>+ VIEWER"]
-    V["ROLE_VIEWER"]
-    A --> M --> U --> V
+#### Entidade e repositório
+
+```java
+@Entity
+@Table(name = "user_mfa_config")
+@Getter @Setter
+public class UserMfaConfig {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false, unique = true)
+    private UserEntity user;
+
+    @Column(name = "totp_secret", nullable = false)
+    @Convert(converter = EncryptedStringConverter.class) // criptografia em repouso
+    private String totpSecret;
+
+    @Column(name = "mfa_enabled", nullable = false)
+    private boolean mfaEnabled = false;
+
+    @Column(name = "enrolled_at")
+    private Instant enrolledAt;
+
+    // Códigos de recuperação (backup codes) — hash BCrypt
+    @ElementCollection
+    @CollectionTable(name = "user_mfa_backup_codes",
+                     joinColumns = @JoinColumn(name = "mfa_config_id"))
+    @Column(name = "code_hash")
+    private List<String> backupCodeHashes = new ArrayList<>();
+}
 ```
 
-### 25.3 Hierarquias com Multiplos Ramos
+#### MfaController — Enrollment e Verificação
+
+```java
+@Controller
+@RequestMapping("/mfa")
+@RequiredArgsConstructor
+public class MfaController {
+
+    private final TotpService totpService;
+    private final UserMfaService userMfaService;
+
+    // ── Enrollment ────────────────────────────────────────────
+
+    @GetMapping("/setup")
+    @PreAuthorize("isAuthenticated()")
+    public String setupMfa(Model model, Authentication auth) {
+        String secret = totpService.generateSecret();
+        // Armazena temporariamente na sessão — confirmado apenas após validação
+        model.addAttribute("secret", secret);
+        model.addAttribute("qrCodeUri",
+            totpService.generateQrCodeImageUri(secret, auth.getName()));
+        return "mfa/setup";
+    }
+
+    @PostMapping("/setup/confirm")
+    @PreAuthorize("isAuthenticated()")
+    public String confirmSetup(@RequestParam String secret,
+                               @RequestParam String code,
+                               Authentication auth,
+                               RedirectAttributes attrs) {
+        try {
+            totpService.validateCodeOrThrow(secret, code);
+            userMfaService.enableMfa(auth.getName(), secret);
+            attrs.addFlashAttribute("success", "MFA ativado com sucesso!");
+            return "redirect:/dashboard";
+        } catch (InvalidMfaCodeException e) {
+            attrs.addFlashAttribute("error", "Código inválido. Tente novamente.");
+            return "redirect:/mfa/setup";
+        }
+    }
+
+    // ── Verificação (segundo fator no login) ─────────────────
+
+    @GetMapping("/verify")
+    public String verifyMfaPage() {
+        return "mfa/verify";
+    }
+
+    @PostMapping("/verify")
+    public String verifyMfa(@RequestParam String code,
+                            HttpSession session,
+                            RedirectAttributes attrs) {
+        // Recupera usuário da sessão parcial (pré-MFA)
+        String username = (String) session.getAttribute("PRE_MFA_USERNAME");
+        if (username == null) {
+            return "redirect:/login";
+        }
+
+        String secret = userMfaService.getTotpSecret(username);
+        try {
+            totpService.validateCodeOrThrow(secret, code);
+            // Promove sessão parcial para totalmente autenticada
+            userMfaService.completeAuthentication(username, session);
+            session.removeAttribute("PRE_MFA_USERNAME");
+            return "redirect:/dashboard";
+        } catch (InvalidMfaCodeException e) {
+            attrs.addFlashAttribute("error", "Código TOTP inválido.");
+            return "redirect:/mfa/verify";
+        }
+    }
+}
+```
+
+#### MfaAuthenticationFilter — Intercepta o Segundo Fator
+
+```java
+/**
+ * Filtro que intercepta logins bem-sucedidos de usuários com MFA habilitado.
+ * Em vez de autenticar completamente, cria uma sessão parcial e redireciona
+ * para a página de verificação do segundo fator.
+ */
+@Component
+@RequiredArgsConstructor
+public class MfaAuthenticationFilter extends UsernamePasswordAuthenticationFilter {
+
+    private final UserMfaService userMfaService;
+
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            FilterChain chain,
+                                            Authentication authResult)
+            throws IOException, ServletException {
+
+        UserDetails user = (UserDetails) authResult.getPrincipal();
+
+        if (userMfaService.isMfaEnabled(user.getUsername())) {
+            // Salva usuário na sessão mas NÃO persiste no SecurityContext ainda
+            request.getSession().setAttribute("PRE_MFA_USERNAME", user.getUsername());
+
+            // Limpa qualquer autenticação prévia no contexto
+            SecurityContextHolder.clearContext();
+
+            response.sendRedirect("/mfa/verify");
+            return;
+        }
+
+        // MFA não habilitado — autenticação normal
+        super.successfulAuthentication(request, response, chain, authResult);
+    }
+}
+```
+
+#### Template Thymeleaf — Verificação MFA
+
+```html
+<!-- mfa/verify.html -->
+<form th:action="@{/mfa/verify}" method="post">
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+
+    <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+
+    <label>Código do autenticador (6 dígitos)</label>
+    <input type="text"
+           name="code"
+           maxlength="6"
+           pattern="[0-9]{6}"
+           autocomplete="one-time-code"  <!-- hint para autofill do browser -->
+           inputmode="numeric"
+           autofocus
+           required/>
+
+    <button type="submit">Verificar</button>
+    <a th:href="@{/mfa/backup}">Usar código de recuperação</a>
+</form>
+```
+
+#### Compatibilidade com Múltiplos Apps Autenticadores
+
+O QR Code gerado usa o URI scheme `otpauth://totp/` padronizado (RFC 6238), suportado por qualquer app TOTP compatível. A validação do servidor é idêntica independentemente do app — o protocolo é o mesmo.
+
+| App | Algoritmo | Dígitos | Período | Backup na Nuvem | Deep Link |
+|-----|-----------|---------|---------|-----------------|-----------|
+| **Google Authenticator** | SHA-1 | 6 | 30s | Sim (Google Account) | Não |
+| **Microsoft Authenticator** | SHA-1 | 6 | 30s | Sim (Microsoft Account) | Sim (`ms-auth-authenticator://`) |
+| **Authy** | SHA-1 | 6/8 | 30s | Sim (Twilio) | Não |
+| **1Password** | SHA-1/256/512 | 6/8 | 30s/60s | Sim | Não |
+
+> **Observação de algoritmo:** Embora a biblioteca `dev.samstevens.totp` suporte SHA-256 e SHA-512, **use sempre SHA-1 para TOTP**. Google Authenticator e Microsoft Authenticator na prática suportam apenas SHA-1 em contas de terceiros — os outros algoritmos são aceitos no QR mas ignorados silenciosamente, gerando códigos que falham na validação.
+
+---
+
+#### Microsoft Authenticator — Integração Específica
+
+O Microsoft Authenticator funciona com o mesmo `otpauth://totp/` URI do Google Authenticator, mas tem dois comportamentos distintos que exigem atenção:
+
+**1. Formato do label no URI**
+
+O Microsoft Authenticator é mais rigoroso na interpretação do campo `label`. Para exibição correta do nome da conta na interface do app, o label deve seguir o formato `issuer:account`:
+
+```
+otpauth://totp/MyApp:alice@example.com?secret=BASE32SECRET&issuer=MyApp&algorithm=SHA1&digits=6&period=30
+```
+
+Se o `issuer` no parâmetro de query não corresponder ao prefixo do label, o Microsoft Authenticator pode exibir o nome da conta de forma incorreta ou mostrar um aviso de configuração inválida.
+
+**2. Deep link para adição direta no mobile**
+
+O Microsoft Authenticator suporta o scheme `ms-auth-authenticator://` para adicionar contas diretamente via link, sem escanear QR Code — útil em fluxos mobile-first onde a câmera para QR pode ser inconveniente.
+
+```
+ms-auth-authenticator://authasking?authString=otpauth%3A%2F%2Ftotp%2FMyApp%3Aalice%40example.com%3F...
+```
+
+#### TotpService — Suporte a Microsoft Authenticator e Deep Link
+
+```java
+@Service
+@RequiredArgsConstructor
+public class TotpService {
+
+    private final SecretGenerator secretGenerator;
+    private final CodeVerifier codeVerifier;
+    private final QrDataFactory qrDataFactory;
+    private final QrGenerator qrGenerator;
+
+    @Value("${app.mfa.issuer:MyApp}")
+    private String issuer;
+
+    // ── Geração de segredo ────────────────────────────────────
+
+    public String generateSecret() {
+        return secretGenerator.generate();  // Base32, 160 bits
+    }
+
+    // ── Construção do URI otpauth:// ──────────────────────────
+
+    /**
+     * Monta o URI otpauth:// compatível com todos os apps autenticadores.
+     *
+     * Formato do label: "issuer:account" — obrigatório para exibição correta
+     * no Microsoft Authenticator. Google Authenticator aceita qualquer formato.
+     *
+     * @param secret   segredo TOTP em Base32
+     * @param account  identificador do usuário (normalmente o e-mail)
+     */
+    public String buildOtpauthUri(String secret, String account) {
+        // Label no formato "issuer:account" — compatível com Google e Microsoft Auth
+        String label = issuer + ":" + account;
+
+        return UriComponentsBuilder.newInstance()
+            .scheme("otpauth")
+            .host("totp")
+            .path("/" + UriUtils.encode(label, StandardCharsets.UTF_8))
+            .queryParam("secret", secret)
+            .queryParam("issuer", issuer)
+            .queryParam("algorithm", "SHA1")   // SHA1 é o único suportado na prática
+            .queryParam("digits", 6)
+            .queryParam("period", 30)
+            .build(true)
+            .toUriString();
+    }
+
+    // ── QR Code para desktop ──────────────────────────────────
+
+    /**
+     * Gera o QR Code como Data URI Base64 para exibição em <img>.
+     * Compatível com Google Authenticator, Microsoft Authenticator e Authy.
+     */
+    public String generateQrCodeDataUri(String secret, String account) {
+        QrData qrData = qrDataFactory.newBuilder()
+            .label(issuer + ":" + account)     // formato "issuer:account"
+            .secret(secret)
+            .issuer(issuer)
+            .algorithm(HashingAlgorithm.SHA1)
+            .digits(6)
+            .period(30)
+            .build();
+
+        try {
+            byte[] imageData = qrGenerator.generate(qrData);
+            String mimeType  = qrGenerator.getImageMimeType();
+            return "data:" + mimeType + ";base64," +
+                Base64.getEncoder().encodeToString(imageData);
+        } catch (QrGenerationException e) {
+            throw new MfaSetupException("Falha ao gerar QR Code", e);
+        }
+    }
+
+    // ── Deep link para Microsoft Authenticator (mobile) ──────
+
+    /**
+     * Gera o deep link ms-auth-authenticator:// para adição direta da conta
+     * no Microsoft Authenticator via botão/link, sem necessidade de câmera.
+     *
+     * Formato: ms-auth-authenticator://authasking?authString=<otpauth_uri_encoded>
+     *
+     * Fluxo: usuário toca o botão no mobile → sistema operacional abre o
+     * Microsoft Authenticator → conta é adicionada automaticamente.
+     *
+     * Fallback: se o app não estiver instalado, redirecionar para a store.
+     */
+    public String generateMicrosoftAuthDeepLink(String secret, String account) {
+        String otpauthUri = buildOtpauthUri(secret, account);
+        String encodedUri = UriUtils.encode(otpauthUri, StandardCharsets.UTF_8);
+        return "ms-auth-authenticator://authasking?authString=" + encodedUri;
+    }
+
+    /**
+     * Retorna todos os dados de enrollment em um único objeto.
+     * O controller repassa ao template para exibir QR + deep link + chave manual.
+     */
+    public MfaEnrollmentData buildEnrollmentData(String secret, String account) {
+        return new MfaEnrollmentData(
+            secret,
+            generateQrCodeDataUri(secret, account),
+            buildOtpauthUri(secret, account),
+            generateMicrosoftAuthDeepLink(secret, account),
+            formatSecretForDisplay(secret)  // blocos de 4 para entrada manual
+        );
+    }
+
+    // ── Validação ─────────────────────────────────────────────
+
+    public boolean validateCode(String secret, String code) {
+        try {
+            return codeVerifier.isValidCode(secret, code);
+        } catch (CodeVerificationException e) {
+            return false;
+        }
+    }
+
+    public void validateCodeOrThrow(String secret, String code) {
+        if (!validateCode(secret, code)) {
+            throw new InvalidMfaCodeException("Código TOTP inválido ou expirado");
+        }
+    }
+
+    // ── Utilitários ───────────────────────────────────────────
+
+    /**
+     * Formata o segredo Base32 em blocos de 4 caracteres para entrada manual.
+     * Exemplo: "JBSWY3DP" → "JBSW Y3DP"
+     */
+    private String formatSecretForDisplay(String secret) {
+        return String.join(" ",
+            secret.replaceAll("(.{4})", "$1 ").trim().split(" "));
+    }
+
+    // ── Record de retorno ─────────────────────────────────────
+
+    public record MfaEnrollmentData(
+        String secret,
+        String qrCodeDataUri,
+        String otpauthUri,
+        String microsoftAuthDeepLink,
+        String secretFormatted        // ex: "JBSW Y3DP XYZW ABCD" para entrada manual
+    ) {}
+}
+```
+
+#### MfaController — Enrollment com Suporte a Microsoft Authenticator
+
+```java
+@Controller
+@RequestMapping("/mfa")
+@RequiredArgsConstructor
+public class MfaController {
+
+    private final TotpService totpService;
+    private final UserMfaService userMfaService;
+
+    @GetMapping("/setup")
+    @PreAuthorize("isAuthenticated()")
+    public String setupMfa(Model model, Authentication auth) {
+        String secret = totpService.generateSecret();
+
+        // Passa todos os dados de enrollment para o template de uma vez
+        TotpService.MfaEnrollmentData enrollment =
+            totpService.buildEnrollmentData(secret, auth.getName());
+
+        model.addAttribute("enrollment", enrollment);
+        return "mfa/setup";
+    }
+
+    @PostMapping("/setup/confirm")
+    @PreAuthorize("isAuthenticated()")
+    public String confirmSetup(@RequestParam String secret,
+                               @RequestParam String code,
+                               Authentication auth,
+                               RedirectAttributes attrs) {
+        try {
+            totpService.validateCodeOrThrow(secret, code);
+            userMfaService.enableMfa(auth.getName(), secret);
+            attrs.addFlashAttribute("success", "Autenticação em dois fatores ativada!");
+            return "redirect:/dashboard";
+        } catch (InvalidMfaCodeException e) {
+            attrs.addFlashAttribute("error", "Código inválido. Tente novamente.");
+            return "redirect:/mfa/setup";
+        }
+    }
+
+    @GetMapping("/verify")
+    public String verifyPage() { return "mfa/verify"; }
+
+    @PostMapping("/verify")
+    public String verifyMfa(@RequestParam String code,
+                            HttpSession session,
+                            RedirectAttributes attrs) {
+        String username = (String) session.getAttribute("PRE_MFA_USERNAME");
+        if (username == null) return "redirect:/login";
+
+        String secret = userMfaService.getTotpSecret(username);
+        try {
+            totpService.validateCodeOrThrow(secret, code);
+            userMfaService.completeAuthentication(username, session);
+            session.removeAttribute("PRE_MFA_USERNAME");
+            return "redirect:/dashboard";
+        } catch (InvalidMfaCodeException e) {
+            attrs.addFlashAttribute("error", "Código TOTP inválido.");
+            return "redirect:/mfa/verify";
+        }
+    }
+}
+```
+
+#### Template Thymeleaf — Setup com QR Code e Deep Link
+
+```html
+<!-- mfa/setup.html -->
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>Configurar Autenticação em Dois Fatores</title></head>
+<body>
+
+<h2>Ativar autenticação em dois fatores (2FA)</h2>
+
+<!-- ── Passo 1: escolha o app ─────────────────────────────── -->
+<section>
+    <h3>Passo 1 — Escolha seu app autenticador</h3>
+    <ul>
+        <li><strong>Microsoft Authenticator</strong> — recomendado (backup automático)</li>
+        <li>Google Authenticator</li>
+        <li>Authy</li>
+    </ul>
+</section>
+
+<!-- ── Passo 2: adicione a conta ──────────────────────────── -->
+<section>
+    <h3>Passo 2 — Adicione a conta ao seu app</h3>
+
+    <!-- QR Code — funciona com todos os apps via câmera -->
+    <div>
+        <p><strong>Escaneie o QR Code com seu app autenticador:</strong></p>
+        <img th:src="${enrollment.qrCodeDataUri}"
+             alt="QR Code para configuração do autenticador"
+             width="200" height="200"
+             style="border: 8px solid white;"/>  <!--
+             Margem branca obrigatória para leitura confiável pelo scanner -->
+    </div>
+
+    <!-- Deep Link — abre o Microsoft Authenticator diretamente no mobile -->
+    <div>
+        <p><strong>Ou adicione diretamente no Microsoft Authenticator:</strong></p>
+
+        <!--
+            O deep link ms-auth-authenticator:// abre o Microsoft Authenticator
+            e adiciona a conta automaticamente, sem precisar escanear o QR Code.
+            Em desktop (sem o app instalado) o link simplesmente não faz nada —
+            por isso o QR Code é sempre exibido como alternativa.
+        -->
+        <a th:href="${enrollment.microsoftAuthDeepLink}"
+           class="btn btn-primary">
+            <!-- Ícone do Microsoft Authenticator -->
+            Adicionar no Microsoft Authenticator
+        </a>
+
+        <!--
+            Fallback: link direto para a store caso o app não esteja instalado.
+            Detectável via JavaScript: se o deep link não abrir em ~1s, redireciona.
+        -->
+        <script th:attr="nonce=${_cspNonce}">
+            document.querySelector('a[href^="ms-auth"]')?.addEventListener('click', () => {
+                setTimeout(() => {
+                    const isAndroid = /Android/i.test(navigator.userAgent);
+                    const isIOS = /iPhone|iPad/i.test(navigator.userAgent);
+                    if (isAndroid) {
+                        window.location.href =
+                          'https://play.google.com/store/apps/details?id=com.azure.authenticator';
+                    } else if (isIOS) {
+                        window.location.href =
+                          'https://apps.apple.com/app/microsoft-authenticator/id983156458';
+                    }
+                }, 1500); // aguarda 1,5s para o deep link abrir antes de redirecionar
+            });
+        </script>
+    </div>
+
+    <!-- Entrada manual — alternativa quando a câmera não está disponível -->
+    <details>
+        <summary>Não consigo escanear o QR Code — inserir manualmente</summary>
+        <p>Abra o app, toque em <em>Adicionar conta</em> → <em>Outra conta</em>
+           → <em>Inserir código manualmente</em> e preencha:</p>
+        <dl>
+            <dt>Nome da conta (Issuer)</dt>
+            <dd th:text="${enrollment.otpauthUri.split('issuer=')[1]?.split('&')[0]}">MyApp</dd>
+            <dt>Chave secreta</dt>
+            <!-- Exibe em blocos de 4 para facilitar a digitação -->
+            <dd><code th:text="${enrollment.secretFormatted}">JBSW Y3DP XYZW ABCD</code></dd>
+        </dl>
+        <small>Tipo: baseado em tempo (TOTP) · Dígitos: 6 · Período: 30 segundos</small>
+    </details>
+</section>
+
+<!-- ── Passo 3: confirme com o código gerado ──────────────── -->
+<section>
+    <h3>Passo 3 — Confirme o código gerado pelo app</h3>
+
+    <form th:action="@{/mfa/setup/confirm}" method="post">
+        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <!--
+            O secret é retornado para o servidor para confirmar o enrollment.
+            Em produção, considere armazená-lo temporariamente na sessão do servidor
+            em vez de em um campo hidden, para evitar manipulação.
+        -->
+        <input type="hidden" name="secret" th:value="${enrollment.secret}"/>
+
+        <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+
+        <label>Código de 6 dígitos gerado pelo app</label>
+        <input type="text"
+               name="code"
+               maxlength="6"
+               minlength="6"
+               pattern="[0-9]{6}"
+               autocomplete="one-time-code"
+               inputmode="numeric"
+               placeholder="000000"
+               autofocus
+               required/>
+
+        <button type="submit">Confirmar e ativar 2FA</button>
+    </form>
+</section>
+
+</body>
+</html>
+```
+
+#### Pontos de Atenção com Microsoft Authenticator
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   Microsoft Authenticator — Resumo Técnico              │
+├─────────────────────┬───────────────────────────────────────────────────┤
+│ Protocolo TOTP      │ RFC 6238 — idêntico ao Google Authenticator        │
+│ URI scheme          │ otpauth://totp/ (padrão de mercado)               │
+│ Algoritmo suportado │ SHA-1 (único confiável para contas de terceiros)   │
+│ Label recomendado   │ "issuer:account" — obrigatório para nome correto   │
+│ Deep link mobile    │ ms-auth-authenticator://authasking?authString=...  │
+│ Backup automático   │ Sim — sincronizado via conta Microsoft             │
+│ Validação servidor  │ Idêntica — nenhuma mudança no backend necessária   │
+└─────────────────────┴───────────────────────────────────────────────────┘
+```
+
+> **SHA-1 e segurança:** O uso de SHA-1 no TOTP **não é uma vulnerabilidade**. O SHA-1 é inseguro para assinaturas digitais e colisões, mas no TOTP ele é usado como HMAC (HMAC-SHA1), que permanece seguro para este propósito específico. Todos os apps autenticadores do mercado usam HMAC-SHA1 por padrão.
+
+---
+
+### 17.3 OTP por Email ou SMS
+OTP por canal externo (email ou SMS) é alternativa ao TOTP quando não se quer exigir um app autenticador. O servidor gera um código numérico aleatório, envia ao usuário e valida dentro de uma janela de tempo.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário
+    participant S as Servidor
+    participant E as Email / SMS
+
+    U->>S: POST /login {username, password}
+    S->>S: Gera OTP (6 dígitos, TTL 10 min)
+    S->>S: Salva hash(OTP) no cache/banco
+    S->>E: Envia código ao email/telefone do usuário
+    S-->>U: Redirect /otp/verify
+
+    U->>E: Lê código recebido
+    U->>S: POST /otp/verify {code: 847291}
+    S->>S: Compara hash(code) com o armazenado
+    S->>S: Verifica TTL e uso único
+    S-->>U: Autenticação completa
+```
+
+#### OtpService
+
+```java
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class OtpService {
+
+    private final Cache<String, String> otpCache;      // Caffeine — TTL 10 min
+    private final PasswordEncoder passwordEncoder;      // BCrypt para hash do OTP
+    private final EmailService emailService;
+    private final SmsService smsService;
+
+    private static final int OTP_LENGTH  = 6;
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /**
+     * Gera e envia OTP por email.
+     * A chave de cache é prefixada por canal para evitar colisão.
+     */
+    public void generateAndSendByEmail(String username, String email) {
+        String otp = generateOtp();
+        // Armazena o hash — nunca o OTP em texto claro no cache
+        otpCache.put("email:" + username, passwordEncoder.encode(otp));
+        emailService.sendOtp(email, otp);
+        log.info("OTP por email gerado para usuário: {}", username);
+    }
+
+    public void generateAndSendBySms(String username, String phoneNumber) {
+        String otp = generateOtp();
+        otpCache.put("sms:" + username, passwordEncoder.encode(otp));
+        smsService.sendOtp(phoneNumber, otp);
+    }
+
+    /**
+     * Valida o OTP informado pelo usuário.
+     * Remove do cache após validação bem-sucedida (uso único).
+     */
+    public boolean validateOtp(String channel, String username, String inputCode) {
+        String cacheKey = channel + ":" + username;
+        String storedHash = otpCache.getIfPresent(cacheKey);
+
+        if (storedHash == null) {
+            log.warn("OTP não encontrado ou expirado para: {}", username);
+            return false;
+        }
+
+        boolean valid = passwordEncoder.matches(inputCode, storedHash);
+
+        if (valid) {
+            otpCache.invalidate(cacheKey);  // uso único — invalida imediatamente
+            log.info("OTP válido consumido para: {}", username);
+        } else {
+            log.warn("OTP inválido informado para: {}", username);
+        }
+
+        return valid;
+    }
+
+    private String generateOtp() {
+        // Gera número entre 0 e 999999 e formata com zeros à esquerda
+        int code = RANDOM.nextInt(1_000_000);
+        return String.format("%0" + OTP_LENGTH + "d", code);
+    }
+}
+
+@Configuration
+public class OtpCacheConfig {
+
+    @Bean
+    public Cache<String, String> otpCache() {
+        return Caffeine.newBuilder()
+            .expireAfterWrite(10, TimeUnit.MINUTES)  // OTP expira em 10 minutos
+            .maximumSize(50_000)
+            .build();
+    }
+}
+```
+
+#### OtpController
+
+```java
+@Controller
+@RequestMapping("/otp")
+@RequiredArgsConstructor
+public class OtpController {
+
+    private final OtpService otpService;
+    private final UserService userService;
+
+    @GetMapping("/verify")
+    public String verifyPage() {
+        return "otp/verify";
+    }
+
+    @PostMapping("/verify")
+    public String verifyOtp(@RequestParam String code,
+                            @RequestParam(defaultValue = "email") String channel,
+                            HttpSession session,
+                            RedirectAttributes attrs) {
+
+        String username = (String) session.getAttribute("PRE_OTP_USERNAME");
+        if (username == null) return "redirect:/login";
+
+        if (otpService.validateOtp(channel, username, code)) {
+            userService.completeAuthentication(username, session);
+            session.removeAttribute("PRE_OTP_USERNAME");
+            return "redirect:/dashboard";
+        }
+
+        attrs.addFlashAttribute("error", "Código inválido ou expirado.");
+        return "redirect:/otp/verify";
+    }
+
+    @PostMapping("/resend")
+    public String resendOtp(HttpSession session, RedirectAttributes attrs) {
+        String username = (String) session.getAttribute("PRE_OTP_USERNAME");
+        if (username == null) return "redirect:/login";
+
+        String email = userService.getEmail(username);
+        otpService.generateAndSendByEmail(username, email);
+        attrs.addFlashAttribute("info", "Novo código enviado para seu e-mail.");
+        return "redirect:/otp/verify";
+    }
+}
+```
+
+---
+
+### 17.4 One-Time Token (Spring Security 6.4+)
+O Spring Security 6.4 (Spring Boot 3.4+) introduziu suporte nativo a **One-Time Token login** — também chamado de **magic link**. O usuário informa apenas o e-mail, recebe um link com um token opaco de uso único, clica e está autenticado — sem senha.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário
+    participant S as Servidor
+    participant E as Email
+
+    U->>S: POST /ott/generate {username: "alice@example.com"}
+    S->>S: Gera token opaco (UUID seguro, TTL 5 min)
+    S->>S: Persiste token via OneTimeTokenService
+    S->>E: Envia magic link:<br/>https://myapp.com/login/ott?token=<uuid>
+    S-->>U: "Verifique seu e-mail"
+
+    U->>E: Clica no link
+    U->>S: GET /login/ott?token=<uuid>
+    S->>S: Valida token (existência + TTL)
+    S->>S: Invalida token (uso único)
+    S->>S: Carrega UserDetails pelo username
+    S-->>U: Autenticação completa — redirect /dashboard
+```
+
+#### Dependência
+
+O módulo `spring-boot-starter-security` já inclui o suporte. Nenhuma dependência adicional é necessária a partir do Spring Boot 3.4.
+
+#### Configuração da SecurityFilterChain
 
 ```java
 @Bean
-public RoleHierarchy roleHierarchy() {
-    return RoleHierarchyImpl.fromHierarchy("""
-            ROLE_SUPER_ADMIN > ROLE_ADMIN
-            ROLE_ADMIN       > ROLE_MANAGER
-            ROLE_ADMIN       > ROLE_AUDITOR
-            ROLE_MANAGER     > ROLE_USER
-            ROLE_AUDITOR     > ROLE_VIEWER
-            ROLE_USER        > ROLE_VIEWER
-            """);
+public SecurityFilterChain ottSecurityChain(HttpSecurity http,
+        OneTimeTokenGenerationSuccessHandler ottSuccessHandler) throws Exception {
+
+    return http
+        .oneTimeTokenLogin(ott -> ott
+            // Handler chamado após geração do token — responsável por enviar o e-mail
+            .tokenGenerationSuccessHandler(ottSuccessHandler)
+            // URL onde o usuário solicita o magic link (padrão: /ott/generate)
+            .generateTokenUrl("/ott/generate")
+            // URL de consumo do token no link enviado por email (padrão: /login/ott)
+            .loginProcessingUrl("/login/ott")
+            // Redireciona para esta URL após autenticação bem-sucedida
+            .defaultSuccessUrl("/dashboard", true)
+        )
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/ott/**", "/login").permitAll()
+            .anyRequest().authenticated())
+        .build();
 }
 ```
 
-```mermaid
-flowchart TD
-    SA[ROLE_SUPER_ADMIN] --> A[ROLE_ADMIN]
-    A --> M[ROLE_MANAGER]
-    A --> AU[ROLE_AUDITOR]
-    M --> U[ROLE_USER]
-    AU --> V[ROLE_VIEWER]
-    U  --> V
+#### OneTimeTokenGenerationSuccessHandler — Envio do Magic Link
+
+```java
+/**
+ * Chamado pelo Spring Security após gerar o token.
+ * Responsabilidade: enviar o magic link ao usuário.
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class MagicLinkOneTimeTokenHandler
+        implements OneTimeTokenGenerationSuccessHandler {
+
+    private final EmailService emailService;
+    private final RedirectStrategy redirectStrategy = new DefaultRedirectStrategy();
+
+    @Override
+    public void handle(HttpServletRequest request,
+                       HttpServletResponse response,
+                       OneTimeToken token) throws IOException {
+
+        // Monta a URL completa do magic link
+        String magicLink = UriComponentsBuilder
+            .fromHttpUrl(getBaseUrl(request))
+            .path("/login/ott")
+            .queryParam("token", token.getTokenValue())
+            .build()
+            .toUriString();
+
+        // Envia e-mail ao usuário
+        String username = token.getUsername();
+        log.info("Enviando magic link para: {}", username);
+        emailService.sendMagicLink(username, magicLink);
+
+        // Redireciona para página de confirmação
+        redirectStrategy.sendRedirect(request, response, "/ott/sent");
+    }
+
+    private String getBaseUrl(HttpServletRequest request) {
+        String scheme = Optional.ofNullable(request.getHeader("X-Forwarded-Proto"))
+            .orElse(request.getScheme());
+        String host = Optional.ofNullable(request.getHeader("X-Forwarded-Host"))
+            .orElse(request.getServerName());
+        int port = request.getServerPort();
+
+        if ((scheme.equals("http")  && port == 80) ||
+            (scheme.equals("https") && port == 443)) {
+            return scheme + "://" + host;
+        }
+        return scheme + "://" + host + ":" + port;
+    }
+}
 ```
 
-Neste exemplo `ROLE_ADMIN` herda de `ROLE_MANAGER` **e** `ROLE_AUDITOR`, portanto possui `ROLE_USER` e `ROLE_VIEWER` transitivamente. `ROLE_AUDITOR` nao herda de `ROLE_USER` — um auditor pode ver mas nao atuar como usuario comum.
+#### OneTimeTokenService — Persistência Customizada
 
-### 25.4 Registro nos Componentes do Spring Security
+O Spring Security fornece `InMemoryOneTimeTokenService` para desenvolvimento. Em produção, implemente `OneTimeTokenService` com banco de dados:
 
-O bean `RoleHierarchy` **nao e detectado automaticamente** por todos os componentes. Deve ser registrado explicitamente em cada ponto onde a hierarquia deve ser respeitada.
+```java
+/**
+ * Implementação de OneTimeTokenService com persistência em banco de dados.
+ * Substitui o InMemoryOneTimeTokenService padrão.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class PersistentOneTimeTokenService implements OneTimeTokenService {
 
-#### 25.4.1 Method Security (`@PreAuthorize` / `@PostAuthorize`)
+    private final OneTimeTokenRepository tokenRepository;
+    private static final Duration TOKEN_TTL = Duration.ofMinutes(5);
+
+    @Override
+    @Transactional
+    public OneTimeToken generate(GenerateOneTimeTokenRequest request) {
+        // Invalida tokens anteriores do mesmo usuário (evita acúmulo)
+        tokenRepository.deleteByUsername(request.getUsername());
+
+        String tokenValue = UUID.randomUUID().toString();
+        Instant expiresAt = Instant.now().plus(TOKEN_TTL);
+
+        OneTimeTokenEntity entity = new OneTimeTokenEntity();
+        entity.setTokenValue(tokenValue);
+        entity.setUsername(request.getUsername());
+        entity.setExpiresAt(expiresAt);
+        tokenRepository.save(entity);
+
+        log.debug("OTT gerado para usuário: {}, expira em: {}",
+            request.getUsername(), expiresAt);
+
+        return new DefaultOneTimeToken(tokenValue, request.getUsername(), expiresAt);
+    }
+
+    @Override
+    @Transactional
+    public OneTimeToken consume(ConsumeOneTimeTokenRequest request) {
+        return tokenRepository.findByTokenValue(request.getToken())
+            .map(entity -> {
+                tokenRepository.delete(entity);  // uso único — remove imediatamente
+
+                if (entity.getExpiresAt().isBefore(Instant.now())) {
+                    log.warn("OTT expirado consumido para: {}", entity.getUsername());
+                    throw new InvalidOneTimeTokenException("Token expirado");
+                }
+
+                log.info("OTT consumido com sucesso para: {}", entity.getUsername());
+                return (OneTimeToken) new DefaultOneTimeToken(
+                    entity.getTokenValue(),
+                    entity.getUsername(),
+                    entity.getExpiresAt());
+            })
+            .orElseThrow(() -> {
+                log.warn("OTT não encontrado: {}", request.getToken());
+                return new InvalidOneTimeTokenException("Token inválido ou já utilizado");
+            });
+    }
+}
+```
+
+#### Entidade JPA e Repositório
+
+```java
+@Entity
+@Table(name = "one_time_tokens",
+       indexes = @Index(name = "idx_ott_token", columnList = "token_value", unique = true))
+@Getter @Setter
+@NoArgsConstructor
+public class OneTimeTokenEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "token_value", nullable = false, unique = true, length = 36)
+    private String tokenValue;
+
+    @Column(name = "username", nullable = false)
+    private String username;
+
+    @Column(name = "expires_at", nullable = false)
+    private Instant expiresAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    @CreationTimestamp
+    private Instant createdAt;
+}
+
+public interface OneTimeTokenRepository extends JpaRepository<OneTimeTokenEntity, Long> {
+    Optional<OneTimeTokenEntity> findByTokenValue(String tokenValue);
+    void deleteByUsername(String username);
+
+    // Job de limpeza — remove tokens expirados
+    @Modifying
+    @Query("DELETE FROM OneTimeTokenEntity t WHERE t.expiresAt < :now")
+    void deleteExpiredTokens(@Param("now") Instant now);
+}
+```
+
+#### Registro dos Beans no SecurityConfig
 
 ```java
 @Configuration
-@EnableMethodSecurity
-public class MethodSecurityConfig {
+@EnableWebSecurity
+public class SecurityConfig {
 
     /**
-     * Sem este bean, @PreAuthorize("hasRole('USER')") falha para ADMIN
-     * mesmo que ADMIN > USER esteja definido na hierarquia.
+     * Registra a implementação persistente em vez do InMemoryOneTimeTokenService.
+     * O Spring Security auto-descobre o bean via @Service.
      */
     @Bean
-    @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
-    public MethodSecurityExpressionHandler methodSecurityExpressionHandler(
-            RoleHierarchy roleHierarchy) {
+    public OneTimeTokenService oneTimeTokenService(OneTimeTokenRepository repo) {
+        return new PersistentOneTimeTokenService(repo);
+    }
 
-        DefaultMethodSecurityExpressionHandler handler =
-            new DefaultMethodSecurityExpressionHandler();
-        handler.setRoleHierarchy(roleHierarchy);
-        return handler;
+    @Bean
+    public OneTimeTokenGenerationSuccessHandler ottSuccessHandler(EmailService emailService) {
+        return new MagicLinkOneTimeTokenHandler(emailService);
     }
 }
 ```
 
-> **Spring Security 6.x e `authorizeHttpRequests`:** a partir do Spring Security 6, o bean `RoleHierarchy` e detectado automaticamente pelo `HttpSecurity` para uso em `authorizeHttpRequests`. Para **Method Security** (`@PreAuthorize`), o registro manual no `MethodSecurityExpressionHandler` **continua obrigatorio**.
+#### Template — Formulário de Solicitação do Magic Link
 
-#### 25.4.2 `CustomSecurityExpressionRoot` (se aplicavel)
+```html
+<!-- ott/request.html -->
+<form th:action="@{/ott/generate}" method="post">
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+
+    <h2>Login sem senha</h2>
+    <p>Informe seu e-mail e enviaremos um link de acesso.</p>
+
+    <label>E-mail</label>
+    <input type="email"
+           name="username"       <!-- O Spring Security usa o campo "username" -->
+           placeholder="seu@email.com"
+           autocomplete="email"
+           required/>
+
+    <button type="submit">Enviar link de acesso</button>
+</form>
+
+<!-- ott/sent.html -->
+<div class="alert alert-success">
+    <h4>Link enviado!</h4>
+    <p>Verifique sua caixa de entrada. O link expira em <strong>5 minutos</strong>.</p>
+    <small>Não recebeu? Verifique o spam ou
+        <a th:href="@{/ott/request}">solicite um novo link</a>.
+    </small>
+</div>
+```
+
+---
+
+### 17.5 Comparativo de Implementação
+| Aspecto | TOTP | OTP por Canal | One-Time Token |
+|---------|------|---------------|----------------|
+| **UX** | Requer app externo | Simples | Mais simples (só e-mail) |
+| **Segurança** | Alta (offline, sem canal externo) | Média (depende do canal) | Alta (token opaco + TTL curto) |
+| **Implementação** | Biblioteca + filtro customizado | Service + cache + envio | Spring Security nativo 6.4+ |
+| **Dependência externa** | App autenticador | SMTP / Twilio | SMTP |
+| **Segundo fator?** | Sim (complementa senha) | Sim (complementa senha) | Não (substitui senha) |
+| **Backup** | Códigos de recuperação | Reenvio | Novo token |
+| **Melhor para** | Alta segurança, usuários técnicos | Usuários não técnicos | Apps sem senha (passwordless) |
+
+---
+
+## 18. OAuth2 Resource Server
+### 18.1 Configuração para JWT
+```yaml
+# application.yml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Opção A: JWKS endpoint (recomendado para Keycloak/IdPs externos)
+          jwk-set-uri: http://localhost:8180/realms/myrealm/protocol/openid-connect/certs
+          
+          # Opção B: Chave pública RSA local
+          # public-key-location: classpath:keys/public.pem
+          
+          issuer-uri: http://localhost:8180/realms/myrealm
+          audiences: myapp-api
+```
 
 ```java
-// Se o projeto usa CustomSecurityExpressionRoot (secao 10),
-// a hierarquia deve ser repassada explicitamente:
-public class CustomMethodSecurityExpressionHandler
-        extends DefaultMethodSecurityExpressionHandler {
+@Bean
+@Order(1)
+public SecurityFilterChain resourceServerChain(HttpSecurity http) throws Exception {
+    return http
+        .securityMatcher("/api/**")
+        .csrf(csrf -> csrf.disable())
+        .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .oauth2ResourceServer(oauth2 -> oauth2
+            .jwt(jwt -> jwt
+                .jwtAuthenticationConverter(jwtAuthenticationConverter())))
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/api/v1/public/**").permitAll()
+            .requestMatchers("/api/v1/admin/**").hasAuthority("SCOPE_admin")
+            .anyRequest().authenticated())
+        .build();
+}
 
-    @Override
-    protected MethodSecurityExpressionOperations createSecurityExpressionRoot(
-            Authentication authentication, MethodInvocation invocation) {
+/**
+ * Converte claims JWT em GrantedAuthorities do Spring Security.
+ * Suporta roles do Keycloak (realm_access.roles) e escopos OAuth2.
+ */
+@Bean
+public JwtAuthenticationConverter jwtAuthenticationConverter() {
+    JwtGrantedAuthoritiesConverter scopesConverter =
+        new JwtGrantedAuthoritiesConverter();
+    scopesConverter.setAuthorityPrefix("SCOPE_");
+    scopesConverter.setAuthoritiesClaimName("scope");
 
-        CustomSecurityExpressionRoot root =
-            new CustomSecurityExpressionRoot(authentication, resourceRepository);
-        root.setPermissionEvaluator(getPermissionEvaluator());
-        root.setTrustResolver(getTrustResolver());
-        // Sem esta linha, hasRole() no SpEL customizado ignora a hierarquia
-        root.setRoleHierarchy(getRoleHierarchy());
-        return root;
-    }
+    // Converter customizado para roles do Keycloak
+    Converter<Jwt, Collection<GrantedAuthority>> keycloakRolesConverter =
+        jwt -> {
+            Map<String, Object> realmAccess =
+                jwt.getClaimAsMap("realm_access");
+            if (realmAccess == null) return Collections.emptyList();
+
+            @SuppressWarnings("unchecked")
+            List<String> roles = (List<String>) realmAccess.get("roles");
+            if (roles == null) return Collections.emptyList();
+
+            return roles.stream()
+                .map(role -> new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()))
+                .collect(Collectors.toList());
+        };
+
+    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+    converter.setJwtGrantedAuthoritiesConverter(jwt ->
+        Stream.concat(
+            scopesConverter.convert(jwt).stream(),
+            keycloakRolesConverter.convert(jwt).stream()
+        ).collect(Collectors.toList()));
+
+    return converter;
 }
 ```
 
-### 25.5 `getReachableGrantedAuthorities()` — Authorities Expandidas
+### 18.2 Validações Adicionais de JWT
+```java
+@Bean
+public JwtDecoder jwtDecoder(
+        @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}") String jwksUri) {
 
-O `RoleHierarchy` expoe `getReachableGrantedAuthorities()` para obter o conjunto completo de authorities implicitas de um principal:
+    NimbusJwtDecoder decoder = NimbusJwtDecoder
+        .withJwkSetUri(jwksUri)
+        .jwsAlgorithm(SignatureAlgorithm.RS256)
+        .build();
+
+    // Validações adicionais além das padrão (exp, iss, nbf)
+    OAuth2TokenValidator<Jwt> validators = new DelegatingOAuth2TokenValidator<>(
+        JwtValidators.createDefaultWithIssuer("http://localhost:8180/realms/myrealm"),
+        new JwtClaimValidator<List<String>>("aud",
+            aud -> aud != null && aud.contains("myapp-api")),
+        new JwtClaimValidator<String>("token_type",
+            type -> "access".equals(type))
+    );
+
+    decoder.setJwtValidator(validators);
+    return decoder;
+}
+```
+
+
+### 18.3 OpenID Connect (OIDC)
+OAuth2 resolve **autorização** — define quem pode fazer o quê. **OpenID Connect (OIDC)** é uma camada de **identidade** construída sobre OAuth2: acrescenta um mecanismo padronizado para que o cliente descubra *quem é o usuário autenticado*, não apenas o que ele pode acessar.
+
+#### 12.3.1 A Diferença Fundamental
+
+```
+OAuth2 puro:
+  Access Token → "este cliente tem permissão para SCOPE_read"
+  Pergunta respondida: O QUE o cliente pode fazer?
+  Pergunta NÃO respondida: QUEM é o usuário?
+
+OAuth2 + OIDC:
+  Access Token  → "este cliente tem permissão para SCOPE_read"
+  ID Token      → "o usuário autenticado é alice@example.com, nome: Alice Silva"
+  Pergunta respondida: O QUE o cliente pode fazer? E QUEM é o usuário?
+```
+
+#### 12.3.2 Fluxo OIDC — Authorization Code
+
+```mermaid
+sequenceDiagram
+    participant C as Cliente (SPA / Web App)
+    participant AS as Authorization Server (IdP)
+    participant RS as Resource Server (API)
+
+    C->>AS: GET /authorize?scope=openid+profile+email<br>&response_type=code&client_id=...
+    AS-->>C: Redirect → Login page
+    C->>AS: POST /login {username, password}
+    AS-->>C: Redirect → /callback?code=AUTH_CODE
+
+    C->>AS: POST /token {code, client_id, client_secret}
+    AS-->>C: {access_token, id_token, refresh_token}
+
+    Note over C: Decodifica id_token (JWT)<br>extrai sub, email, name, etc.
+
+    C->>RS: GET /api/v1/profile<br>Authorization: Bearer access_token
+    RS-->>C: 200 OK {dados protegidos}
+
+    C->>AS: GET /userinfo<br>Authorization: Bearer access_token
+    AS-->>C: {sub, name, email, picture, ...}
+```
+
+#### 12.3.3 ID Token — Estrutura e Claims
+
+O ID Token é um **JWT** emitido exclusivamente pelo Authorization Server, destinado ao **cliente** (não ao Resource Server). Ele nunca deve ser enviado como Bearer Token para APIs.
+
+```json
+// Header
+{
+  "alg": "RS256",
+  "kid": "key-id-abc123",
+  "typ": "JWT"
+}
+
+// Payload — claims padrão do ID Token (OIDC Core 1.0)
+{
+  "iss": "https://auth.example.com",        // Issuer — quem emitiu
+  "sub": "user-uuid-abc123",                // Subject — identificador único do usuário no IdP
+  "aud": "myapp-client",                    // Audience — client_id (não a API!)
+  "exp": 1735689600,                        // Expiração
+  "iat": 1735686000,                        // Issued At
+  "auth_time": 1735685900,                  // Momento da autenticação real
+  "nonce": "abc123",                        // Proteção contra replay (se enviado no request)
+  "acr": "urn:mace:incommon:iap:bronze",   // Authentication Context Class Reference
+  "amr": ["pwd", "otp"],                   // Authentication Methods References
+
+  // Claims de perfil (escopo "profile")
+  "name": "Alice Silva",
+  "given_name": "Alice",
+  "family_name": "Silva",
+  "preferred_username": "alice",
+  "picture": "https://example.com/alice.jpg",
+  "locale": "pt-BR",
+
+  // Claims de email (escopo "email")
+  "email": "alice@example.com",
+  "email_verified": true
+}
+```
+
+**Diferença entre `sub` e `preferred_username`:**
+
+| Campo | Tipo | Estabilidade | Uso |
+|-------|------|-------------|-----|
+| `sub` | UUID opaco | **Imutável** — nunca muda | Chave estrangeira no banco |
+| `preferred_username` | String legível | Pode ser alterado | Exibição na UI |
+| `email` | String | Pode mudar | Comunicação, não como PK |
+
+> Sempre use `sub` como identificador primário do usuário no banco de dados. `preferred_username` e `email` podem ser alterados pelo usuário ou pelo administrador do IdP.
+
+#### 12.3.4 Escopos OIDC e seus Claims
+
+| Escopo | Claims Incluídos |
+|--------|-----------------|
+| `openid` | `sub` — **obrigatório** para emitir ID Token |
+| `profile` | `name`, `family_name`, `given_name`, `middle_name`, `nickname`, `preferred_username`, `profile`, `picture`, `website`, `gender`, `birthdate`, `zoneinfo`, `locale`, `updated_at` |
+| `email` | `email`, `email_verified` |
+| `address` | `address` (objeto com `street_address`, `locality`, `region`, `postal_code`, `country`) |
+| `phone` | `phone_number`, `phone_number_verified` |
+| `offline_access` | Emite `refresh_token` (não adiciona claims ao ID Token) |
+
+#### 12.3.5 ID Token vs Access Token — Quando Usar Cada Um
+
+```
+ID Token:
+  ✓ Lido pelo cliente (SPA, Web App) para saber quem é o usuário
+  ✓ Exibir nome, email e foto na interface
+  ✓ Verificar o método de autenticação (amr) ou nível de segurança (acr)
+  ✗ NUNCA enviar como Bearer Token para APIs
+
+Access Token:
+  ✓ Enviado nas requisições à API: Authorization: Bearer <access_token>
+  ✓ Contém escopos (scope) e roles para autorização no Resource Server
+  ✗ O Resource Server NÃO deve ler dados de identidade do Access Token
+    (o formato não é garantido — pode ser opaco, não necessariamente JWT)
+
+UserInfo Endpoint (/userinfo):
+  ✓ Fonte canônica de atributos do usuário para o cliente
+  ✓ Retorna claims completos mesmo que não estejam no ID Token
+  ✓ Acessível com o Access Token
+  ✓ Dados sempre atualizados (sem cache de token)
+```
+
+#### 12.3.6 Resource Server com OIDC — Validação do ID Token
+
+O Resource Server valida o **Access Token** (não o ID Token). Porém, em alguns fluxos (ex.: SPA com BFF), o backend pode também processar o ID Token para obter claims do usuário:
+
+```java
+/**
+ * OidcUserService carrega o usuário a partir do ID Token e do /userinfo endpoint.
+ * Utilizado pela chain OAuth2 Client (login web), não pelo Resource Server.
+ */
+@Bean
+public OidcUserService oidcUserService() {
+    DefaultOidcUserService delegate = new DefaultOidcUserService();
+
+    return new OidcUserService() {
+        @Override
+        public OidcUser loadUser(OidcUserRequest request)
+                throws OAuth2AuthenticationException {
+
+            OidcUser oidcUser = delegate.loadUser(request);
+
+            // sub — identificador permanente do usuário no IdP
+            String sub   = oidcUser.getSubject();
+            // claims do ID Token
+            String email = oidcUser.getEmail();
+            String name  = oidcUser.getFullName();
+            boolean emailVerified = Boolean.TRUE.equals(oidcUser.getEmailVerified());
+
+            // Sincroniza com banco local usando sub como chave
+            userSyncService.upsert(sub, email, name, emailVerified);
+
+            // Constrói authorities combinando escopos OIDC e roles do banco local
+            Set<GrantedAuthority> authorities = new HashSet<>(oidcUser.getAuthorities());
+            authorities.addAll(userSyncService.loadRoles(sub));
+
+            return new DefaultOidcUser(
+                authorities,
+                oidcUser.getIdToken(),
+                oidcUser.getUserInfo(),
+                "preferred_username");  // atributo usado como getName()
+        }
+    };
+}
+```
+
+#### 12.3.7 Validação do Nonce (proteção contra replay de ID Token)
+
+O `nonce` é um valor aleatório gerado pelo cliente, enviado no Authorization Request e
+incluído pelo IdP no ID Token. Valida que o ID Token foi emitido em resposta a um
+request específico — prevenindo ataques de replay:
 
 ```java
 @Component
-@RequiredArgsConstructor
-public class RoleInspectionService {
-
-    private final RoleHierarchy roleHierarchy;
+public class OidcNonceValidator {
 
     /**
-     * Retorna todas as authorities efetivas, incluindo as herdadas.
-     * Usuario com ROLE_MANAGER retorna: [ROLE_MANAGER, ROLE_USER, ROLE_VIEWER]
+     * O Spring Security valida o nonce automaticamente quando presente.
+     * Este exemplo mostra como verificar manualmente se necessário.
      */
-    public Collection<GrantedAuthority> getEffectiveAuthorities(Authentication auth) {
-        return roleHierarchy.getReachableGrantedAuthorities(auth.getAuthorities());
-    }
+    public void validateNonce(OidcIdToken idToken, String expectedNonce) {
+        String tokenNonce = idToken.getNonce();
 
-    /** Verifica programaticamente se o usuario tem uma role (direta ou herdada). */
-    public boolean hasEffectiveRole(Authentication auth, String role) {
-        String normalized = role.startsWith("ROLE_") ? role : "ROLE_" + role;
-        return getEffectiveAuthorities(auth).stream()
-            .anyMatch(a -> a.getAuthority().equals(normalized));
-    }
-
-    /** Lista authorities diretas vs herdadas — util para diagnostico. */
-    public Map<String, List<String>> debugAuthorities(Authentication auth) {
-        Collection<? extends GrantedAuthority> direct = auth.getAuthorities();
-        Collection<GrantedAuthority> effective =
-            roleHierarchy.getReachableGrantedAuthorities(direct);
-
-        List<String> inherited = effective.stream()
-            .filter(a -> !direct.contains(a))
-            .map(GrantedAuthority::getAuthority)
-            .sorted().toList();
-
-        return Map.of(
-            "direct",    direct.stream().map(GrantedAuthority::getAuthority).sorted().toList(),
-            "inherited", inherited,
-            "effective", effective.stream().map(GrantedAuthority::getAuthority).sorted().toList());
+        if (expectedNonce != null && !expectedNonce.equals(tokenNonce)) {
+            throw new OAuth2AuthenticationException(
+                new OAuth2Error("invalid_nonce"),
+                "Nonce inválido no ID Token — possível ataque de replay.");
+        }
     }
 }
 ```
 
-Resposta para usuario com `ROLE_MANAGER`:
+#### 12.3.8 Discovery Document — OpenID Connect Configuration
+
+Todo IdP compatível com OIDC expõe um documento de descoberta em:
+
+```
+GET {issuer-uri}/.well-known/openid-configuration
+```
+
+O Spring Security usa esse endpoint para auto-configurar `JwtDecoder`, `JwkSetUri`,
+`UserInfoEndpoint` e outros parâmetros quando `issuer-uri` é definido:
+
+```yaml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # issuer-uri habilita discovery automático:
+          # Spring busca {issuer-uri}/.well-known/openid-configuration
+          # e extrai jwk-set-uri, issuer e outros parâmetros automaticamente
+          issuer-uri: https://auth.example.com/realms/myrealm
+          # NÃO é necessário declarar jwk-set-uri separadamente quando
+          # issuer-uri está configurado — discovery cuida disso
+```
 
 ```json
+// Resposta de /.well-known/openid-configuration (campos principais)
 {
-  "direct":    ["ROLE_MANAGER"],
-  "inherited": ["ROLE_USER", "ROLE_VIEWER"],
-  "effective": ["ROLE_MANAGER", "ROLE_USER", "ROLE_VIEWER"]
+  "issuer": "https://auth.example.com/realms/myrealm",
+  "authorization_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/auth",
+  "token_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/token",
+  "userinfo_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/userinfo",
+  "jwks_uri": "https://auth.example.com/realms/myrealm/protocol/openid-connect/certs",
+  "end_session_endpoint": "https://auth.example.com/realms/myrealm/protocol/openid-connect/logout",
+  "scopes_supported": ["openid", "profile", "email", "roles", "offline_access"],
+  "response_types_supported": ["code"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "subject_types_supported": ["public"],
+  "claims_supported": ["sub", "iss", "name", "email", "preferred_username", "roles"]
 }
 ```
 
-### 25.6 Hierarquia com Authorities Nao-ROLE_
+#### 12.3.9 Resumo: OAuth2 vs OIDC vs JWT
 
-`RoleHierarchy` funciona com qualquer `GrantedAuthority`, nao apenas prefixadas com `ROLE_`:
+| | OAuth2 | OIDC | JWT |
+|---|---|---|---|
+| **É um** | Framework de autorização | Protocolo de identidade (sobre OAuth2) | Formato de token |
+| **Responde** | O que o cliente pode fazer | Quem é o usuário | (apenas formato) |
+| **Token emitido** | Access Token (qualquer formato) | Access Token + **ID Token** | Pode ser usado por ambos |
+| **Escopo obrigatório** | Qualquer | **`openid`** | Não se aplica |
+| **Endpoint adicional** | — | `/userinfo`, `/.well-known/openid-configuration` | — |
+| **Uso no Spring** | `oauth2-resource-server`, `oauth2-client` | `OidcUserService`, `OidcUser` | `JwtDecoder`, `JwtAuthenticationConverter` |
+
+
+---
+
+## 19. OAuth2 Client
+### 19.1 Configuração
+```yaml
+# application.yml
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            client-id: myapp-client
+            client-secret: ${KEYCLOAK_CLIENT_SECRET}
+            scope: openid,profile,email,roles
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          keycloak:
+            issuer-uri: http://localhost:8180/realms/myrealm
+            user-name-attribute: preferred_username
+```
 
 ```java
 @Bean
-public RoleHierarchy roleHierarchy() {
-    return RoleHierarchyImpl.fromHierarchy("""
-            ROLE_ADMIN       > ROLE_MANAGER
-            ROLE_MANAGER     > ROLE_USER
-            ROLE_USER        > ROLE_VIEWER
-            SCOPE_admin      > SCOPE_read
-            SCOPE_admin      > SCOPE_write
-            PERMISSION_WRITE > PERMISSION_READ
-            """);
+public SecurityFilterChain oauth2ClientChain(HttpSecurity http) throws Exception {
+    return http
+        .oauth2Login(oauth2 -> oauth2
+            .loginPage("/oauth2/authorization/keycloak")
+            .defaultSuccessUrl("/dashboard", true)
+            .failureUrl("/login?error=oauth2")
+            .userInfoEndpoint(userInfo -> userInfo
+                .oidcUserService(oidcUserService()))
+            .successHandler(oauth2SuccessHandler()))
+        .logout(logout -> logout
+            .logoutSuccessHandler(oidcLogoutSuccessHandler()))
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/", "/login**", "/error").permitAll()
+            .anyRequest().authenticated())
+        .build();
+}
+
+/**
+ * Processa o usuário OIDC após login — sincroniza com banco local.
+ */
+@Bean
+public OidcUserService oidcUserService() {
+    DefaultOidcUserService delegate = new DefaultOidcUserService();
+
+    return new OidcUserService() {
+        @Override
+        public OidcUser loadUser(OidcUserRequest request) throws OAuth2AuthenticationException {
+            OidcUser oidcUser = delegate.loadUser(request);
+
+            // Sincroniza com banco de dados local
+            userSyncService.syncOidcUser(oidcUser);
+
+            // Adiciona authorities do banco local
+            Set<GrantedAuthority> authorities =
+                new HashSet<>(oidcUser.getAuthorities());
+            authorities.addAll(userSyncService.loadLocalAuthorities(
+                oidcUser.getEmail()));
+
+            return new DefaultOidcUser(
+                authorities,
+                oidcUser.getIdToken(),
+                oidcUser.getUserInfo(),
+                "preferred_username");
+        }
+    };
+}
+
+/**
+ * Logout que invalida sessão também no Keycloak (Single Logout).
+ */
+@Bean
+public LogoutSuccessHandler oidcLogoutSuccessHandler() {
+    OidcClientInitiatedLogoutSuccessHandler handler =
+        new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository);
+    handler.setPostLogoutRedirectUri("{baseUrl}/login?logout");
+    return handler;
 }
 ```
 
-```java
-// Um token com SCOPE_admin passa aqui via hierarquia (SCOPE_admin > SCOPE_read)
-@GetMapping("/data")
-@PreAuthorize("hasAuthority('SCOPE_read')")
-public List<DataDto> getData() { ... }
+---
+
+## 20. Integração com Keycloak
+### 20.1 Diagrama de Arquitetura
+```mermaid
+flowchart TD
+    subgraph Frontend
+        SPA[React SPA]
+    end
+
+    subgraph Backend
+        API[Spring Boot<br>Resource Server]
+        WEB[Spring Boot<br>OAuth2 Client]
+    end
+
+    subgraph Keycloak
+        KC[Keycloak Server<br>port 8180]
+        REALM[Realm: myrealm]
+        CLI_API[Client: myapp-api<br>bearer-only]
+        CLI_WEB[Client: myapp-web<br>confidential]
+    end
+
+    SPA -->|"Authorization Code + PKCE"| KC
+    KC -->|Access Token JWT| SPA
+    SPA -->|"Bearer Token"| API
+    API -->|Validate via JWKS| KC
+
+    WEB -->|"Authorization Code"| KC
+    KC -->|"OIDC ID Token"| WEB
+    WEB -->|"Session Cookie"| SPA
 ```
 
-### 25.7 Hierarquia Carregada do Banco de Dados
+### 20.2 Propriedades Spring Boot
+```yaml
+# Resource Server (API REST)
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}/protocol/openid-connect/certs
+          issuer-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}
+
+# OAuth2 Client (Web MVC)
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: ${KEYCLOAK_CLIENT_ID:myapp-web}
+            client-secret: ${KEYCLOAK_CLIENT_SECRET}
+            scope: openid,profile,email,roles
+            authorization-grant-type: authorization_code
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}
+            user-name-attribute: preferred_username
+```
+
+### 20.3 Converter de Roles do Keycloak
+```java
+/**
+ * Keycloak retorna roles em:
+ * - realm_access.roles         (roles do realm)
+ * - resource_access.<client>.roles  (roles do client)
+ */
+@Component
+public class KeycloakJwtRolesConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
+
+    private static final String REALM_ACCESS  = "realm_access";
+    private static final String RESOURCE_ACCESS = "resource_access";
+    private static final String ROLES = "roles";
+
+    private final String clientId;
+
+    public KeycloakJwtRolesConverter(
+            @Value("${keycloak.client-id:myapp-api}") String clientId) {
+        this.clientId = clientId;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Collection<GrantedAuthority> convert(Jwt jwt) {
+        List<GrantedAuthority> authorities = new ArrayList<>();
+
+        // Realm roles → ROLE_XXX
+        Map<String, Object> realmAccess = jwt.getClaimAsMap(REALM_ACCESS);
+        if (realmAccess != null) {
+            List<String> realmRoles = (List<String>) realmAccess.get(ROLES);
+            if (realmRoles != null) {
+                realmRoles.stream()
+                    .map(r -> new SimpleGrantedAuthority("ROLE_" + r.toUpperCase()))
+                    .forEach(authorities::add);
+            }
+        }
+
+        // Client roles → ROLE_CLIENT_XXX
+        Map<String, Object> resourceAccess = jwt.getClaimAsMap(RESOURCE_ACCESS);
+        if (resourceAccess != null) {
+            Map<String, Object> clientAccess =
+                (Map<String, Object>) resourceAccess.get(clientId);
+            if (clientAccess != null) {
+                List<String> clientRoles = (List<String>) clientAccess.get(ROLES);
+                if (clientRoles != null) {
+                    clientRoles.stream()
+                        .map(r -> new SimpleGrantedAuthority("ROLE_CLIENT_" + r.toUpperCase()))
+                        .forEach(authorities::add);
+                }
+            }
+        }
+
+        // Scopes OAuth2 → SCOPE_xxx
+        String scope = jwt.getClaimAsString("scope");
+        if (scope != null) {
+            Arrays.stream(scope.split(" "))
+                .filter(s -> !s.isBlank())
+                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s))
+                .forEach(authorities::add);
+        }
+
+        return authorities;
+    }
+}
+```
+
+### 20.4 Docker Compose — Keycloak + Postgres
+```yaml
+# docker-compose.yml
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: localhost
+      KC_HTTP_PORT: 8180
+    ports:
+      - "8180:8180"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8180 && echo OK"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  keycloak-db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      retries: 5
+
+volumes:
+  keycloak-db-data:
+```
+
+---
+
+## 21. Identity Providers Externos (Google, Microsoft, GitHub)
+### 21.1 Configuração Multi-Provider
+```yaml
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          # Google
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            scope: openid,profile,email
+
+          # Microsoft (Azure AD)
+          microsoft:
+            client-id: ${AZURE_CLIENT_ID}
+            client-secret: ${AZURE_CLIENT_SECRET}
+            scope: openid,profile,email,User.Read
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+
+          # GitHub
+          github:
+            client-id: ${GITHUB_CLIENT_ID}
+            client-secret: ${GITHUB_CLIENT_SECRET}
+            scope: user:email,read:user
+
+        provider:
+          microsoft:
+            authorization-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize
+            token-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token
+            jwk-set-uri: https://login.microsoftonline.com/${AZURE_TENANT_ID}/discovery/v2.0/keys
+            user-info-uri: https://graph.microsoft.com/oidc/userinfo
+            user-name-attribute: email
+```
+
+### 21.2 OAuth2UserService Unificado
+```java
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class UnifiedOAuth2UserService
+        extends DefaultOAuth2UserService
+        implements OidcUserService {
+
+    private final UserRepository userRepository;
+    private final DefaultOidcUserService oidcDelegate = new DefaultOidcUserService();
+
+    // Para Google (OIDC)
+    @Override
+    public OidcUser loadUser(OidcUserRequest request) throws OAuth2AuthenticationException {
+        OidcUser oidcUser = oidcDelegate.loadUser(request);
+
+        String email    = oidcUser.getEmail();
+        String name     = oidcUser.getFullName();
+        String provider = request.getClientRegistration().getRegistrationId();
+
+        UserEntity user = syncUser(email, name, provider, oidcUser.getSubject());
+
+        return new DefaultOidcUser(
+            buildAuthorities(user),
+            oidcUser.getIdToken(),
+            oidcUser.getUserInfo());
+    }
+
+    // Para GitHub (OAuth2 simples, sem OIDC)
+    @Override
+    public OAuth2User loadUser(OAuth2UserRequest request) throws OAuth2AuthenticationException {
+        OAuth2User oauth2User = super.loadUser(request);
+
+        String provider = request.getClientRegistration().getRegistrationId();
+        String email    = extractEmail(oauth2User, provider);
+        String name     = oauth2User.getAttribute("name");
+        String sub      = oauth2User.getAttribute("id").toString();
+
+        UserEntity user = syncUser(email, name, provider, sub);
+
+        return new DefaultOAuth2User(
+            buildAuthorities(user),
+            oauth2User.getAttributes(),
+            "login");  // GitHub usa "login" como username attribute
+    }
+
+    private UserEntity syncUser(String email, String name,
+                                 String provider, String providerId) {
+        return userRepository.findByEmail(email)
+            .map(existing -> updateProvider(existing, provider, providerId))
+            .orElseGet(() -> createUser(email, name, provider, providerId));
+    }
+
+    private UserEntity createUser(String email, String name,
+                                   String provider, String providerId) {
+        UserEntity user = new UserEntity();
+        user.setEmail(email);
+        user.setName(name);
+        user.setProvider(provider);
+        user.setProviderId(providerId);
+        user.setEnabled(true);
+        user.getRoles().add(Role.USER);   // Role padrão para novos usuários
+        return userRepository.save(user);
+    }
+
+    private Collection<GrantedAuthority> buildAuthorities(UserEntity user) {
+        return user.getRoles().stream()
+            .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
+            .collect(Collectors.toList());
+    }
+
+    private String extractEmail(OAuth2User user, String provider) {
+        // GitHub pode não retornar email diretamente — requer chamada à API
+        String email = user.getAttribute("email");
+        if (email == null && "github".equals(provider)) {
+            // Em produção, usar WebClient para chamar /user/emails
+            email = user.getAttribute("login") + "@github.noemail";
+        }
+        return email;
+    }
+}
+```
+
+### 21.3 SecurityConfig com Múltiplos Providers
+```java
+@Bean
+public SecurityFilterChain socialLoginChain(
+        HttpSecurity http,
+        UnifiedOAuth2UserService userService) throws Exception {
+
+    return http
+        .oauth2Login(oauth2 -> oauth2
+            .loginPage("/login")
+            .userInfoEndpoint(info -> info
+                .userService(userService)           // GitHub, Microsoft
+                .oidcUserService(userService))       // Google (OIDC)
+            .defaultSuccessUrl("/dashboard", true)
+            .failureHandler((req, res, ex) -> {
+                log.error("OAuth2 login failed: {}", ex.getMessage());
+                res.sendRedirect("/login?error=oauth2_failed");
+            }))
+        .logout(logout -> logout
+            .logoutSuccessUrl("/login?logout")
+            .deleteCookies("JSESSIONID"))
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/login**", "/oauth2/**", "/error").permitAll()
+            .anyRequest().authenticated())
+        .build();
+}
+```
+
+---
+
+## 22. Spring Authorization Server — Criando um Identity Provider
+O **Spring Authorization Server** (`spring-security-oauth2-authorization-server`) é o módulo oficial do Spring para construir um **Identity Provider (IdP)** próprio com suporte completo a OAuth 2.1 e OpenID Connect 1.0. É a alternativa self-hosted ao Keycloak quando se quer um IdP embutido na própria aplicação Spring Boot ou como serviço separado dentro da organização.
+
+```mermaid
+flowchart TD
+    subgraph Clients
+        SPA[React SPA
+oauth2-client PKCE]
+        API[Service-to-Service
+client_credentials]
+        WEB[Web App
+authorization_code]
+    end
+
+    subgraph AuthServer["Spring Authorization Server (IdP próprio)"]
+        AS[Authorization Endpoint
+/oauth2/authorize]
+        TK[Token Endpoint
+/oauth2/token]
+        JW[JWKS Endpoint
+/oauth2/jwks]
+        UI[UserInfo Endpoint
+/userinfo]
+        DC[Discovery
+/.well-known/openid-configuration]
+    end
+
+    subgraph ResourceServer["Resource Server (API)"]
+        RS[Spring Boot API
+oauth2-resource-server]
+    end
+
+    subgraph UserStore
+        DB[(PostgreSQL
+Usuários + Clientes
++ Tokens)]
+    end
+
+    SPA -->|Authorization Code + PKCE| AS
+    WEB -->|Authorization Code| AS
+    API -->|Client Credentials| TK
+    AS --> TK
+    TK -->|Access Token JWT| SPA
+    TK -->|Access Token JWT| API
+    SPA -->|Bearer Token| RS
+    RS -->|Valida via JWKS| JW
+    AS --> DB
+    TK --> DB
+```
+
+### 22.1 Dependências Maven
+```xml
+<!-- Spring Authorization Server -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-oauth2-authorization-server</artifactId>
+</dependency>
+
+<!-- Necessário para a UI de login do próprio IdP -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-thymeleaf</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.thymeleaf.extras</groupId>
+    <artifactId>thymeleaf-extras-springsecurity6</artifactId>
+</dependency>
+
+<!-- JPA para persistência de clientes e tokens -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-jpa</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.postgresql</groupId>
+    <artifactId>postgresql</artifactId>
+    <scope>runtime</scope>
+</dependency>
+```
+
+---
+
+### 22.2 Configuração do Authorization Server
+O Authorization Server exige **duas** `SecurityFilterChain`: uma para os endpoints OAuth2/OIDC e outra para a UI de login dos usuários (autenticação no próprio IdP).
+
+```mermaid
+flowchart LR
+    subgraph "SecurityFilterChain @Order(1)"
+        OE["Endpoints OAuth2/OIDC
+/oauth2/authorize
+/oauth2/token
+/oauth2/jwks
+/userinfo
+/.well-known/..."]
+    end
+    subgraph "SecurityFilterChain @Order(2)"
+        UI["UI do IdP
+/login
+/logout
+/oauth2/consent"]
+    end
+    HTTP[HttpSecurity] --> OE
+    HTTP --> UI
+```
+
+```java
+@Configuration
+@EnableWebSecurity
+public class AuthorizationServerConfig {
+
+    // ── Chain 1: endpoints OAuth2/OIDC ────────────────────────────────────
+    /**
+     * Configura os endpoints do protocolo OAuth2 e OIDC.
+     * Deve ter @Order menor (maior prioridade) que a chain de login.
+     */
+    @Bean
+    @Order(1)
+    public SecurityFilterChain authorizationServerSecurityFilterChain(
+            HttpSecurity http) throws Exception {
+
+        // Aplica as defaults do Authorization Server (endpoints, filtros, etc.)
+        OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
+
+        http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
+            // Habilita OpenID Connect 1.0
+            .oidc(oidc -> oidc
+                .userInfoEndpoint(userInfo -> userInfo
+                    .userInfoMapper(userInfoMapper()))    // mapeia claims do userinfo
+                    .clientRegistrationEndpoint(Customizer.withDefaults()) // DCR dinâmico
+            );
+
+        http
+            // Redireciona para o login do próprio IdP quando não autenticado
+            .exceptionHandling(ex -> ex
+                .defaultAuthenticationEntryPointFor(
+                    new LoginUrlAuthenticationEntryPoint("/login"),
+                    new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
+            // Resource server para validar tokens nos endpoints protegidos (/userinfo)
+            .oauth2ResourceServer(rs -> rs.jwt(Customizer.withDefaults()));
+
+        return http.build();
+    }
+
+    // ── Chain 2: UI de login e consentimento ──────────────────────────────
+    /**
+     * Protege as páginas de login e consentimento do próprio IdP.
+     * Usuários se autenticam aqui antes de autorizar clients OAuth2.
+     */
+    @Bean
+    @Order(2)
+    public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/assets/**", "/webjars/**", "/login").permitAll()
+                .anyRequest().authenticated())
+            .formLogin(form -> form
+                .loginPage("/login")
+                .permitAll())
+            .build();
+    }
+}
+```
+
+---
+
+### 22.3 AuthorizationServerSettings — Configuração dos Endpoints
+```java
+@Configuration
+public class AuthServerSettings {
+
+    /**
+     * Define as URLs de todos os endpoints OAuth2/OIDC.
+     * Os defaults seguem as especificações RFC 8414 e OpenID Connect Discovery.
+     */
+    @Bean
+    public AuthorizationServerSettings authorizationServerSettings(
+            @Value("${app.auth-server.issuer-uri}") String issuerUri) {
+
+        return AuthorizationServerSettings.builder()
+            .issuer(issuerUri)                          // ex: https://auth.myapp.com
+            .authorizationEndpoint("/oauth2/authorize")
+            .deviceAuthorizationEndpoint("/oauth2/device_authorization")
+            .deviceVerificationEndpoint("/oauth2/device_verification")
+            .tokenEndpoint("/oauth2/token")
+            .tokenIntrospectionEndpoint("/oauth2/introspect")
+            .tokenRevocationEndpoint("/oauth2/revoke")
+            .jwkSetEndpoint("/oauth2/jwks")
+            .oidcLogoutEndpoint("/connect/logout")
+            .oidcUserInfoEndpoint("/userinfo")
+            .oidcClientRegistrationEndpoint("/connect/register")
+            .build();
+    }
+}
+```
+
+```yaml
+# application.yml
+app:
+  auth-server:
+    issuer-uri: ${AUTH_SERVER_ISSUER_URI:http://localhost:9000}
+
+server:
+  port: 9000   # porta padrão para o IdP separado
+```
+
+---
+
+### 22.4 Registro de Clients OAuth2
+Cada aplicação que usa o IdP é um **client** OAuth2 registrado. O Spring Authorization Server suporta armazenamento em memória (desenvolvimento) e banco de dados (produção).
+
+#### 16.4.1 Clients em Memória (desenvolvimento)
+
+```java
+@Bean
+public RegisteredClientRepository registeredClientRepository(
+        PasswordEncoder passwordEncoder) {
+
+    // ── Client 1: SPA com Authorization Code + PKCE ───────────────
+    RegisteredClient spaClient = RegisteredClient
+        .withId(UUID.randomUUID().toString())
+        .clientId("myapp-spa")
+        // SPAs públicos não têm client secret (PKCE substitui)
+        .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+        .redirectUri("http://localhost:5173/callback")
+        .redirectUri("https://myapp.com/callback")
+        .postLogoutRedirectUri("https://myapp.com/logout")
+        .scope(OidcScopes.OPENID)
+        .scope(OidcScopes.PROFILE)
+        .scope(OidcScopes.EMAIL)
+        .scope("api.read")
+        .scope("api.write")
+        .clientSettings(ClientSettings.builder()
+            .requireAuthorizationConsent(true)   // exibe tela de consentimento
+            .requireProofKey(true)               // PKCE obrigatório para SPAs
+            .build())
+        .tokenSettings(TokenSettings.builder()
+            .accessTokenTimeToLive(Duration.ofMinutes(15))
+            .refreshTokenTimeToLive(Duration.ofDays(30))
+            .reuseRefreshTokens(false)           // gera novo refresh token a cada uso
+            .accessTokenFormat(OAuth2TokenFormat.SELF_CONTAINED) // JWT
+            .build())
+        .build();
+
+    // ── Client 2: Web App confidencial ────────────────────────────
+    RegisteredClient webClient = RegisteredClient
+        .withId(UUID.randomUUID().toString())
+        .clientId("myapp-web")
+        .clientSecret(passwordEncoder.encode("${WEB_CLIENT_SECRET}"))
+        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+        .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+        .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+        .redirectUri("https://myapp.com/login/oauth2/code/myapp")
+        .postLogoutRedirectUri("https://myapp.com/login?logout")
+        .scope(OidcScopes.OPENID)
+        .scope(OidcScopes.PROFILE)
+        .scope(OidcScopes.EMAIL)
+        .scope("api.read")
+        .clientSettings(ClientSettings.builder()
+            .requireAuthorizationConsent(false)  // sem tela de consentimento (first-party)
+            .requireProofKey(false)
+            .build())
+        .tokenSettings(TokenSettings.builder()
+            .accessTokenTimeToLive(Duration.ofMinutes(15))
+            .refreshTokenTimeToLive(Duration.ofDays(7))
+            .build())
+        .build();
+
+    // ── Client 3: Machine-to-Machine (Client Credentials) ─────────
+    RegisteredClient m2mClient = RegisteredClient
+        .withId(UUID.randomUUID().toString())
+        .clientId("myapp-service")
+        .clientSecret(passwordEncoder.encode("${SERVICE_CLIENT_SECRET}"))
+        .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
+        .authorizationGrantType(AuthorizationGrantType.CLIENT_CREDENTIALS)
+        .scope("api.admin")
+        .scope("reports.read")
+        .tokenSettings(TokenSettings.builder()
+            .accessTokenTimeToLive(Duration.ofHours(1))
+            .accessTokenFormat(OAuth2TokenFormat.SELF_CONTAINED)
+            .build())
+        .build();
+
+    return new InMemoryRegisteredClientRepository(spaClient, webClient, m2mClient);
+}
+```
+
+#### 16.4.2 Clients em Banco de Dados (produção)
+
+```java
+/**
+ * Implementação JPA do RegisteredClientRepository para persistência em PostgreSQL.
+ * O Spring Authorization Server provê JdbcRegisteredClientRepository,
+ * mas a implementação JPA oferece mais flexibilidade para queries customizadas.
+ */
+@Bean
+public RegisteredClientRepository registeredClientRepository(
+        JdbcTemplate jdbcTemplate) {
+    // Usar JdbcRegisteredClientRepository — implementação oficial com JDBC
+    return new JdbcRegisteredClientRepository(jdbcTemplate);
+}
+```
+
+Script Flyway para criar as tabelas oficiais do Spring Authorization Server:
+
+```sql
+-- V2__spring_authorization_server_schema.sql
+-- Schema oficial do Spring Authorization Server
+-- Fonte: https://github.com/spring-projects/spring-authorization-server/tree/main/oauth2-authorization-server/src/main/resources/org/springframework/security/oauth2/server/authorization
+
+CREATE TABLE oauth2_registered_client (
+    id                            VARCHAR(100)  NOT NULL,
+    client_id                     VARCHAR(100)  NOT NULL,
+    client_id_issued_at           TIMESTAMP     DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    client_secret                 VARCHAR(200)  DEFAULT NULL,
+    client_secret_expires_at      TIMESTAMP     DEFAULT NULL,
+    client_name                   VARCHAR(200)  NOT NULL,
+    client_authentication_methods VARCHAR(1000) NOT NULL,
+    authorization_grant_types     VARCHAR(1000) NOT NULL,
+    redirect_uris                 VARCHAR(1000) DEFAULT NULL,
+    post_logout_redirect_uris     VARCHAR(1000) DEFAULT NULL,
+    scopes                        VARCHAR(1000) NOT NULL,
+    client_settings               VARCHAR(2000) NOT NULL,
+    token_settings                VARCHAR(2000) NOT NULL,
+    CONSTRAINT pk_oauth2_registered_client PRIMARY KEY (id)
+);
+
+CREATE TABLE oauth2_authorization (
+    id                            VARCHAR(100)  NOT NULL,
+    registered_client_id          VARCHAR(100)  NOT NULL,
+    principal_name                VARCHAR(200)  NOT NULL,
+    authorization_grant_type      VARCHAR(100)  NOT NULL,
+    authorized_scopes             VARCHAR(1000) DEFAULT NULL,
+    attributes                    TEXT          DEFAULT NULL,
+    state                         VARCHAR(500)  DEFAULT NULL,
+    -- Authorization Code
+    authorization_code_value      TEXT          DEFAULT NULL,
+    authorization_code_issued_at  TIMESTAMP     DEFAULT NULL,
+    authorization_code_expires_at TIMESTAMP     DEFAULT NULL,
+    authorization_code_metadata   TEXT          DEFAULT NULL,
+    -- Access Token
+    access_token_value            TEXT          DEFAULT NULL,
+    access_token_issued_at        TIMESTAMP     DEFAULT NULL,
+    access_token_expires_at       TIMESTAMP     DEFAULT NULL,
+    access_token_metadata         TEXT          DEFAULT NULL,
+    access_token_type             VARCHAR(100)  DEFAULT NULL,
+    access_token_scopes           VARCHAR(1000) DEFAULT NULL,
+    -- Refresh Token
+    refresh_token_value           TEXT          DEFAULT NULL,
+    refresh_token_issued_at       TIMESTAMP     DEFAULT NULL,
+    refresh_token_expires_at      TIMESTAMP     DEFAULT NULL,
+    refresh_token_metadata        TEXT          DEFAULT NULL,
+    -- OIDC ID Token
+    oidc_id_token_value           TEXT          DEFAULT NULL,
+    oidc_id_token_issued_at       TIMESTAMP     DEFAULT NULL,
+    oidc_id_token_expires_at      TIMESTAMP     DEFAULT NULL,
+    oidc_id_token_metadata        TEXT          DEFAULT NULL,
+    oidc_id_token_claims          TEXT          DEFAULT NULL,
+    -- Device Code
+    user_code_value               TEXT          DEFAULT NULL,
+    user_code_issued_at           TIMESTAMP     DEFAULT NULL,
+    user_code_expires_at          TIMESTAMP     DEFAULT NULL,
+    user_code_metadata            TEXT          DEFAULT NULL,
+    device_code_value             TEXT          DEFAULT NULL,
+    device_code_issued_at         TIMESTAMP     DEFAULT NULL,
+    device_code_expires_at        TIMESTAMP     DEFAULT NULL,
+    device_code_metadata          TEXT          DEFAULT NULL,
+    CONSTRAINT pk_oauth2_authorization PRIMARY KEY (id)
+);
+
+CREATE TABLE oauth2_authorization_consent (
+    registered_client_id VARCHAR(100)  NOT NULL,
+    principal_name       VARCHAR(200)  NOT NULL,
+    authorities          VARCHAR(1000) NOT NULL,
+    CONSTRAINT pk_oauth2_authorization_consent
+        PRIMARY KEY (registered_client_id, principal_name)
+);
+```
+
+---
+
+### 22.5 Chaves RSA para Assinatura de Tokens
+```java
+/**
+ * JWKSource fornece as chaves usadas para assinar os JWTs emitidos pelo IdP.
+ * Em produção, carregar de Vault / AWS Secrets Manager / HSM.
+ */
+@Configuration
+public class JwkSourceConfig {
+
+    @Bean
+    public JWKSource<SecurityContext> jwkSource(
+            @Value("${app.auth-server.rsa-private-key}") RSAPrivateKey privateKey,
+            @Value("${app.auth-server.rsa-public-key}")  RSAPublicKey  publicKey) {
+
+        RSAKey rsaKey = new RSAKey.Builder(publicKey)
+            .privateKey(privateKey)
+            .keyID(UUID.randomUUID().toString())
+            .keyUse(KeyUse.SIGNATURE)
+            .algorithm(JWSAlgorithm.RS256)
+            .build();
+
+        JWKSet jwkSet = new JWKSet(rsaKey);
+        return new ImmutableJWKSet<>(jwkSet);
+    }
+
+    /**
+     * Decoder JWT para validar tokens nos endpoints protegidos do próprio IdP
+     * (ex: /userinfo — requer Bearer token válido).
+     */
+    @Bean
+    public JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
+        return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+    }
+}
+```
+
+---
+
+### 22.6 UserDetailsService e Claims Customizados
+O IdP precisa carregar usuários do banco para autenticá-los e popular os tokens JWT com claims customizados.
+
+```java
+// ── UserDetailsService ────────────────────────────────────────────────────
+@Service
+@RequiredArgsConstructor
+public class IdpUserDetailsService implements UserDetailsService {
+
+    private final UserRepository userRepository;
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String username)
+            throws UsernameNotFoundException {
+
+        return userRepository.findByUsernameOrEmail(username, username)
+            .map(user -> User.builder()
+                .username(user.getUsername())
+                .password(user.getPasswordHash())
+                .authorities(buildAuthorities(user))
+                .accountExpired(!user.isAccountNonExpired())
+                .accountLocked(!user.isAccountNonLocked())
+                .credentialsExpired(!user.isCredentialsNonExpired())
+                .disabled(!user.isEnabled())
+                .build())
+            .orElseThrow(() ->
+                new UsernameNotFoundException("Usuário não encontrado: " + username));
+    }
+
+    private Collection<GrantedAuthority> buildAuthorities(UserEntity user) {
+        return user.getRoles().stream()
+            .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
+            .collect(Collectors.toList());
+    }
+}
+
+// ── Token Customizer — adiciona claims extras ao JWT ─────────────────────
+/**
+ * Personaliza os claims dos tokens JWT emitidos pelo Authorization Server.
+ *
+ * Dois customizadores distintos:
+ * - OAuth2TokenCustomizer<JwtEncodingContext>  → access token e id token
+ * - OAuth2TokenCustomizer<OAuth2TokenClaimsContext> → opaque tokens (introspection)
+ */
+@Bean
+public OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
+        UserRepository userRepository) {
+
+    return context -> {
+        // Determina o tipo de token sendo emitido
+        OAuth2TokenType tokenType = context.getTokenType();
+
+        if (OAuth2TokenType.ACCESS_TOKEN.equals(tokenType)) {
+            customizeAccessToken(context, userRepository);
+        } else if (OidcParameterNames.ID_TOKEN.equals(tokenType.getValue())) {
+            customizeIdToken(context, userRepository);
+        }
+    };
+}
+
+private void customizeAccessToken(JwtEncodingContext context,
+                                   UserRepository userRepository) {
+
+    Authentication principal = context.getPrincipal();
+
+    // Client Credentials: não há usuário — adicionar claims do client
+    if (context.getAuthorizationGrantType()
+            .equals(AuthorizationGrantType.CLIENT_CREDENTIALS)) {
+        context.getClaims()
+            .claim("client_id",   context.getRegisteredClient().getClientId())
+            .claim("token_type",  "client_credentials");
+        return;
+    }
+
+    // Authorization Code: adicionar claims do usuário autenticado
+    String username = principal.getName();
+    userRepository.findByUsername(username).ifPresent(user -> {
+        context.getClaims()
+            // Roles como lista no JWT — consumido pelo Resource Server
+            .claim("roles", user.getRoles().stream()
+                .map(Enum::name)
+                .toList())
+            // Permissões granulares
+            .claim("permissions", user.getPermissions().stream()
+                .map(Permission::name)
+                .toList())
+            // Tenant para sistemas multi-tenant
+            .claim("tenant_id",   user.getTenantId())
+            // Email verificado
+            .claim("email",       user.getEmail())
+            .claim("email_verified", user.isEmailVerified());
+    });
+}
+
+private void customizeIdToken(JwtEncodingContext context,
+                               UserRepository userRepository) {
+    // ID Token (OIDC) — claims padrão do perfil do usuário
+    String username = context.getPrincipal().getName();
+    userRepository.findByUsername(username).ifPresent(user -> {
+        context.getClaims()
+            .claim("name",              user.getFullName())
+            .claim("given_name",        user.getFirstName())
+            .claim("family_name",       user.getLastName())
+            .claim("email",             user.getEmail())
+            .claim("email_verified",    user.isEmailVerified())
+            .claim("picture",           user.getAvatarUrl())
+            .claim("preferred_username", user.getUsername())
+            .claim("locale",            "pt-BR");
+    });
+}
+```
+
+---
+
+### 22.7 UserInfo Endpoint — Mapeamento de Claims
+```java
+/**
+ * Mapeia os claims retornados pelo /userinfo endpoint (OIDC).
+ * Recebe o OidcUserInfoAuthenticationContext e retorna um OidcUserInfo.
+ */
+@Bean
+public Function<OidcUserInfoAuthenticationContext, OidcUserInfo> userInfoMapper(
+        UserRepository userRepository) {
+
+    return context -> {
+        OidcUserInfo requestedClaims = context.getUserInfo();
+        String username = context.getAuthorization().getPrincipalName();
+
+        UserEntity user = userRepository.findByUsername(username)
+            .orElseThrow(() -> new UsernameNotFoundException(username));
+
+        // Filtra claims com base nos escopos autorizados pelo client
+        Set<String> scopes = context.getAuthorization()
+            .getAuthorizedScopes();
+
+        OidcUserInfo.Builder builder = OidcUserInfo.builder()
+            .subject(username);
+
+        if (scopes.contains(OidcScopes.PROFILE)) {
+            builder
+                .name(user.getFullName())
+                .givenName(user.getFirstName())
+                .familyName(user.getLastName())
+                .preferredUsername(user.getUsername())
+                .picture(user.getAvatarUrl())
+                .locale("pt-BR")
+                .updatedAt(user.getUpdatedAt());
+        }
+
+        if (scopes.contains(OidcScopes.EMAIL)) {
+            builder
+                .email(user.getEmail())
+                .emailVerified(user.isEmailVerified());
+        }
+
+        // Claim customizado de tenant — disponível apenas com escopo específico
+        if (scopes.contains("tenant.read")) {
+            builder.claim("tenant_id", user.getTenantId());
+        }
+
+        return builder.build();
+    };
+}
+```
+
+---
+
+### 22.8 Tela de Consentimento Customizada
+Quando `requireAuthorizationConsent(true)`, o Spring Authorization Server exibe uma tela de consentimento antes de emitir o token. É possível customizar essa tela.
+
+```java
+@Controller
+@RequiredArgsConstructor
+public class AuthorizationConsentController {
+
+    private final RegisteredClientRepository clientRepository;
+    private final OAuth2AuthorizationConsentService consentService;
+
+    /**
+     * Exibe a tela de consentimento ao usuário.
+     * Chamado automaticamente pelo Authorization Server quando consent é necessário.
+     */
+    @GetMapping("/oauth2/consent")
+    public String consent(
+            Principal principal,
+            Model model,
+            @RequestParam(OAuth2ParameterNames.CLIENT_ID)     String clientId,
+            @RequestParam(OAuth2ParameterNames.SCOPE)         String scope,
+            @RequestParam(OAuth2ParameterNames.STATE)         String state,
+            @RequestParam(value = OAuth2ParameterNames.USER_CODE,
+                          required = false)                   String userCode) {
+
+        RegisteredClient client = clientRepository.findByClientId(clientId);
+
+        // Escopos já aprovados anteriormente
+        Set<String> previouslyApprovedScopes = getPreviouslyApprovedScopes(
+            principal.getName(), clientId);
+
+        // Divide escopos em: já aprovados vs novos pendentes de aprovação
+        Set<ScopeWithDescription> scopesToApprove = new LinkedHashSet<>();
+        Set<ScopeWithDescription> previouslyApproved  = new LinkedHashSet<>();
+
+        for (String requestedScope : StringUtils.commaDelimitedListToSet(scope)) {
+            if (OidcScopes.OPENID.equals(requestedScope)) continue; // openid é implícito
+
+            ScopeWithDescription swd = new ScopeWithDescription(
+                requestedScope, getScopeDescription(requestedScope));
+
+            if (previouslyApprovedScopes.contains(requestedScope)) {
+                previouslyApproved.add(swd);
+            } else {
+                scopesToApprove.add(swd);
+            }
+        }
+
+        model.addAttribute("clientId",           clientId);
+        model.addAttribute("clientName",         client.getClientName());
+        model.addAttribute("state",              state);
+        model.addAttribute("scopes",             scopesToApprove);
+        model.addAttribute("previouslyApproved", previouslyApproved);
+        model.addAttribute("principalName",      principal.getName());
+        model.addAttribute("userCode",           userCode);
+        model.addAttribute("requestURI",
+            "/oauth2/authorize" + (userCode != null ? "/device_verification" : ""));
+
+        return "oauth2/consent";
+    }
+
+    private String getScopeDescription(String scope) {
+        return switch (scope) {
+            case "api.read"    -> "Ler dados da sua conta";
+            case "api.write"   -> "Modificar dados da sua conta";
+            case "api.admin"   -> "Acesso administrativo completo";
+            case "tenant.read" -> "Ler informações do seu tenant";
+            case "profile"     -> "Acessar seu perfil (nome, foto)";
+            case "email"       -> "Acessar seu endereço de e-mail";
+            default            -> scope;
+        };
+    }
+
+    private Set<String> getPreviouslyApprovedScopes(String username, String clientId) {
+        OAuth2AuthorizationConsent consent =
+            consentService.findById(clientId, username);
+        if (consent == null) return Set.of();
+        return consent.getScopes();
+    }
+
+    public record ScopeWithDescription(String scope, String description) {}
+}
+```
+
+```html
+<!-- templates/oauth2/consent.html -->
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>Autorizar Acesso</title></head>
+<body>
+<h2>
+    <span th:text="${clientName}">App</span> está solicitando acesso à sua conta
+</h2>
+
+<form th:action="@{/oauth2/authorize}" method="post">
+    <input type="hidden" name="client_id"     th:value="${clientId}"/>
+    <input type="hidden" name="state"         th:value="${state}"/>
+    <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+    <input type="hidden" name="user_code"     th:value="${userCode}" th:if="${userCode}"/>
+
+    <!-- Escopos novos — usuário decide aprovar ou não -->
+    <fieldset th:if="${not #lists.isEmpty(scopes)}">
+        <legend>Permissões solicitadas</legend>
+        <div th:each="scope : ${scopes}">
+            <label>
+                <input type="checkbox"
+                       name="scope"
+                       th:value="${scope.scope}"
+                       checked/>
+                <span th:text="${scope.description}"></span>
+                <small th:text="'(' + ${scope.scope} + ')'"></small>
+            </label>
+        </div>
+    </fieldset>
+
+    <!-- Escopos já aprovados — exibição apenas -->
+    <fieldset th:if="${not #lists.isEmpty(previouslyApproved)}">
+        <legend>Permissões já aprovadas</legend>
+        <div th:each="scope : ${previouslyApproved}">
+            <label>
+                <input type="checkbox" name="scope"
+                       th:value="${scope.scope}" checked disabled/>
+                <span th:text="${scope.description}"></span>
+            </label>
+        </div>
+    </fieldset>
+
+    <button type="submit" name="action" value="approve">Autorizar</button>
+    <button type="submit" name="action" value="deny">Cancelar</button>
+</form>
+</body>
+</html>
+```
+
+---
+
+### 22.9 Discovery e JWKS — Endpoints OIDC
+O Spring Authorization Server expõe automaticamente os endpoints de descoberta exigidos pela especificação OpenID Connect:
+
+```
+GET /.well-known/openid-configuration   → OpenID Connect Discovery Document
+GET /.well-known/oauth-authorization-server → OAuth2 Authorization Server Metadata (RFC 8414)
+GET /oauth2/jwks                        → JSON Web Key Set (chaves públicas para validação)
+GET /userinfo                           → Claims do usuário autenticado
+POST /oauth2/token                      → Emissão de tokens
+POST /oauth2/revoke                     → Revogação de tokens
+POST /oauth2/introspect                 → Introspecção de tokens
+```
+
+Exemplo de resposta do Discovery Document:
+
+```json
+{
+  "issuer": "https://auth.myapp.com",
+  "authorization_endpoint": "https://auth.myapp.com/oauth2/authorize",
+  "token_endpoint": "https://auth.myapp.com/oauth2/token",
+  "jwks_uri": "https://auth.myapp.com/oauth2/jwks",
+  "userinfo_endpoint": "https://auth.myapp.com/userinfo",
+  "end_session_endpoint": "https://auth.myapp.com/connect/logout",
+  "response_types_supported": ["code"],
+  "grant_types_supported": [
+    "authorization_code",
+    "client_credentials",
+    "refresh_token",
+    "urn:ietf:params:oauth:grant-type:device_code"
+  ],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"],
+  "scopes_supported": ["openid", "profile", "email", "api.read", "api.write"],
+  "token_endpoint_auth_methods_supported": [
+    "client_secret_basic",
+    "client_secret_post",
+    "none"
+  ],
+  "code_challenge_methods_supported": ["S256"]
+}
+```
+
+---
+
+### 22.10 Resource Server consumindo o IdP próprio
+O Resource Server (API REST) consome o IdP próprio via JWKS, sem nenhuma diferença em relação ao Keycloak — basta apontar para os endpoints corretos:
+
+```yaml
+# application.yml do Resource Server
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Discovery automático via issuer-uri (preferível)
+          issuer-uri: ${AUTH_SERVER_ISSUER_URI:http://localhost:9000}
+          # Alternativa: JWKS explícito
+          # jwk-set-uri: http://localhost:9000/oauth2/jwks
+```
+
+```java
+// No Resource Server — converter de claims do IdP próprio
+@Bean
+public JwtAuthenticationConverter jwtAuthenticationConverter() {
+    JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+
+    converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+        List<GrantedAuthority> authorities = new ArrayList<>();
+
+        // Roles do claim "roles" — populado pelo TokenCustomizer do IdP
+        List<String> roles = jwt.getClaimAsStringList("roles");
+        if (roles != null) {
+            roles.stream()
+                .map(r -> new SimpleGrantedAuthority("ROLE_" + r))
+                .forEach(authorities::add);
+        }
+
+        // Permissões do claim "permissions"
+        List<String> permissions = jwt.getClaimAsStringList("permissions");
+        if (permissions != null) {
+            permissions.stream()
+                .map(SimpleGrantedAuthority::new)
+                .forEach(authorities::add);
+        }
+
+        // Escopos OAuth2 → SCOPE_xxx
+        String scope = jwt.getClaimAsString("scope");
+        if (scope != null) {
+            Arrays.stream(scope.split(" "))
+                .map(s -> new SimpleGrantedAuthority("SCOPE_" + s))
+                .forEach(authorities::add);
+        }
+
+        return authorities;
+    });
+
+    return converter;
+}
+```
+
+---
+
+### 22.11 SPA React consumindo o IdP próprio (PKCE)
+```typescript
+// auth/config.ts — configuração do cliente OAuth2 na SPA
+import { UserManager, WebStorageStateStore } from 'oidc-client-ts';
+
+export const authManager = new UserManager({
+  authority:              'http://localhost:9000',       // issuer do IdP próprio
+  client_id:             'myapp-spa',
+  redirect_uri:          `${window.location.origin}/callback`,
+  post_logout_redirect_uri: `${window.location.origin}/login`,
+  response_type:         'code',                        // Authorization Code
+  scope:                 'openid profile email api.read api.write',
+  // PKCE é habilitado automaticamente pelo oidc-client-ts para flows públicos
+  userStore:             new WebStorageStateStore({ store: sessionStorage }),
+  automaticSilentRenew:  true,
+  silent_redirect_uri:   `${window.location.origin}/silent-renew`,
+  // Discovery automático via /.well-known/openid-configuration
+  loadUserInfo:          true,
+});
+```
+
+---
+
+### 22.12 Docker Compose — Authorization Server isolado
+```yaml
+# docker-compose.yml — IdP Spring Authorization Server
+services:
+  auth-server:
+    build:
+      context: ./auth-server
+      dockerfile: Dockerfile
+    ports:
+      - "9000:9000"
+    environment:
+      SPRING_PROFILES_ACTIVE: container
+      DB_HOST: auth-db
+      DB_PORT: 5432
+      DB_NAME: authserver
+      DB_USERNAME: authserver
+      DB_PASSWORD: ${AUTH_DB_PASSWORD:-authserver}
+      AUTH_SERVER_ISSUER_URI: http://localhost:9000
+      AUTH_SERVER_RSA_PRIVATE_KEY: ${AUTH_RSA_PRIVATE_KEY}
+      AUTH_SERVER_RSA_PUBLIC_KEY: ${AUTH_RSA_PUBLIC_KEY}
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL",
+             "curl -sf http://localhost:9000/.well-known/openid-configuration || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  auth-db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: authserver
+      POSTGRES_USER: authserver
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-authserver}
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authserver -d authserver"]
+      interval: 10s
+      retries: 5
+
+volumes:
+  auth-db-data:
+```
+
+---
+
+### 22.13 Comparativo: Spring Authorization Server vs Keycloak
+| Aspecto | Spring Authorization Server | Keycloak |
+|---|---|---|
+| **Tipo** | Biblioteca embeddable | Servidor standalone |
+| **Footprint** | Leve — parte do seu JAR | ~512 MB RAM mínimo |
+| **Customização** | Total (código Java) | Limitada (SPI, themes) |
+| **UI de admin** | Não incluída — implementar | Console web completo |
+| **Multi-realm** | Implementar manualmente | Nativo |
+| **Social login** | Via oauth2-client | Nativo |
+| **LDAP/AD** | Implementar | Nativo |
+| **MFA** | Implementar (seção 7) | Nativo |
+| **SCIM** | Implementar | Extensão disponível |
+| **Melhor para** | Controle total, apps menores, SaaS próprio | Enterprise, equipes sem dev Java |
+
+
+---
+
+
+---
+
+## 23. Integração com SAML2
+SAML 2.0 (Security Assertion Markup Language) é um padrão XML amplamente adotado em ambientes corporativos e educacionais para Single Sign-On (SSO). O Spring Security oferece suporte nativo ao SAML2 como **Service Provider (SP)**, permitindo que a aplicação delegue autenticação a um Identity Provider SAML como ADFS, Shibboleth, Okta ou Azure AD.
+
+### 23.1 Conceitos SAML2
+```mermaid
+sequenceDiagram
+    participant U as Usuário (Browser)
+    participant SP as Spring Boot (Service Provider)
+    participant IDP as Identity Provider (ADFS / Okta / Azure AD)
+
+    U->>SP: GET /dashboard (não autenticado)
+    SP-->>U: Redirect → /saml2/authenticate/idp-alias
+    SP->>SP: Gera AuthnRequest assinado (XML)
+    SP-->>U: Redirect → IDP com SAMLRequest (Base64 + URL encoded)
+    U->>IDP: GET /sso com SAMLRequest
+    IDP-->>U: Formulário de login do IdP
+    U->>IDP: Credenciais corporativas
+    IDP->>IDP: Autentica + gera Assertion XML assinada
+    IDP-->>U: POST → /login/saml2/sso/idp-alias com SAMLResponse
+    U->>SP: POST /login/saml2/sso/idp-alias {SAMLResponse}
+    SP->>SP: Valida assinatura + extrai Assertion
+    SP->>SP: Cria Authentication no SecurityContext
+    SP-->>U: Redirect → /dashboard (autenticado)
+```
+
+**Terminologia essencial:**
+
+| Termo | Significado |
+|-------|-------------|
+| **SP (Service Provider)** | Sua aplicação Spring Boot |
+| **IdP (Identity Provider)** | ADFS, Okta, Azure AD, Shibboleth |
+| **AuthnRequest** | Pedido de autenticação enviado pelo SP ao IdP |
+| **Assertion** | Documento XML com os dados do usuário, emitido pelo IdP |
+| **Metadata** | Documento XML descrevendo endpoints e certificados do SP/IdP |
+| **Entity ID** | Identificador único do SP ou IdP (normalmente uma URL) |
+| **ACS (Assertion Consumer Service)** | Endpoint do SP que recebe o SAMLResponse do IdP |
+| **Binding** | Mecanismo de transporte: HTTP-POST (padrão) ou HTTP-Redirect |
+
+---
+
+### 23.2 Dependência Maven
+```xml
+<!-- Spring Security SAML2 Service Provider -->
+<dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-saml2-service-provider</artifactId>
+</dependency>
+
+<!-- OpenSAML — implementação SAML subjacente, gerenciada pelo BOM -->
+<!-- Não declarar versão explicitamente -->
+```
+
+---
+
+### 23.3 Configuração via `application.yml`
+```yaml
+spring:
+  security:
+    saml2:
+      relyingparty:
+        registration:
+          # "adfs" é o registrationId — aparece nas URLs: /saml2/authenticate/adfs
+          adfs:
+            entity-id: https://myapp.example.com/saml2/sp   # Entity ID do SP
+            asserting-party:                                  # Configurações do IdP
+              metadata-uri: https://adfs.corp.com/FederationMetadata/2007-06/FederationMetadata.xml
+              # Alternativa: metadados inline ou arquivo local
+              # metadata-uri: classpath:saml/idp-metadata.xml
+            signing:
+              credentials:
+                - private-key-location: classpath:saml/sp-private.key
+                  certificate-location: classpath:saml/sp-certificate.crt
+            decryption:
+              credentials:
+                - private-key-location: classpath:saml/sp-private.key
+                  certificate-location: classpath:saml/sp-certificate.crt
+
+          # Segundo IdP — ex: Okta para parceiros externos
+          okta:
+            entity-id: https://myapp.example.com/saml2/sp
+            asserting-party:
+              metadata-uri: https://mycompany.okta.com/app/abc123/sso/saml/metadata
+            signing:
+              credentials:
+                - private-key-location: classpath:saml/sp-private.key
+                  certificate-location: classpath:saml/sp-certificate.crt
+```
+
+---
+
+### 23.4 Geração do Par de Chaves do SP
+```bash
+# Gera chave privada RSA 2048 bits
+openssl genrsa -out sp-private.key 2048
+
+# Gera certificado autoassinado (validade 10 anos)
+openssl req -new -x509 \
+  -key sp-private.key \
+  -out sp-certificate.crt \
+  -days 3650 \
+  -subj "/CN=myapp.example.com/O=MyOrg/C=BR"
+
+# Copiar para src/main/resources/saml/
+```
+
+> Em produção, use um certificado emitido por uma CA interna. O certificado do SP é público — é compartilhado com o IdP via metadata. A chave privada deve ser armazenada no Vault ou AWS Secrets Manager.
+
+---
+
+### 23.5 SecurityFilterChain para SAML2
+```java
+@Configuration
+@EnableWebSecurity
+public class Saml2SecurityConfig {
+
+    /**
+     * SecurityFilterChain com autenticação SAML2.
+     *
+     * Endpoints registrados automaticamente pelo Spring Security:
+     *   GET  /saml2/authenticate/{registrationId}  → inicia AuthnRequest
+     *   POST /login/saml2/sso/{registrationId}     → recebe SAMLResponse (ACS)
+     *   GET  /saml2/metadata/{registrationId}      → expõe SP Metadata XML
+     *   POST /logout/saml2/slo/{registrationId}    → recebe LogoutRequest do IdP (SLO)
+     */
+    @Bean
+    public SecurityFilterChain saml2Chain(HttpSecurity http) throws Exception {
+        return http
+            .saml2Login(saml2 -> saml2
+                .loginPage("/login")                    // página de seleção de IdP
+                .defaultSuccessUrl("/dashboard", true)
+                .failureUrl("/login?error=saml2")
+                .userDetailsService(saml2UserDetailsService())
+            )
+            .saml2Logout(logout -> logout
+                .logoutUrl("/logout")
+                // Habilita Single Logout — propaga logout para o IdP
+                .addObjectPostProcessor(new ObjectPostProcessor<>() {
+                    @Override
+                    public <O extends Saml2LogoutRequestFilter> O postProcess(O filter) {
+                        // Configura SLO se o IdP suportar
+                        return filter;
+                    }
+                })
+            )
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/login**", "/saml2/**", "/error").permitAll()
+                .anyRequest().authenticated())
+            .build();
+    }
+}
+```
+
+---
+
+### 23.6 Mapeamento de Atributos SAML para `UserDetails`
+O IdP envia os dados do usuário dentro da Assertion como **Attributes** XML. Os nomes dos atributos variam por IdP — ADFS usa o formato `http://schemas.xmlsoap.org/...`, Okta e Azure AD usam nomes mais curtos.
+
+```java
+/**
+ * Converte a Saml2AuthenticatedPrincipal (dados extraídos da Assertion)
+ * em um UserDetails do Spring Security com roles e permissões locais.
+ */
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class Saml2UserDetailsService
+        implements Saml2UserDetailsService<Saml2AuthenticatedPrincipal> {
+
+    private final UserRepository userRepository;
+
+    // Nomes de atributos SAML comuns por IdP
+    private static final Map<String, List<String>> EMAIL_ATTRS = Map.of(
+        "adfs",  List.of(
+            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+            "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn"),
+        "okta",  List.of("email", "login"),
+        "azure", List.of("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+                         "preferred_username"),
+        "default", List.of("email", "mail", "EmailAddress")
+    );
+
+    private static final Map<String, String> GROUPS_ATTRS = Map.of(
+        "adfs",  "http://schemas.xmlsoap.org/claims/Group",
+        "okta",  "groups",
+        "azure", "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups",
+        "default", "groups"
+    );
+
+    @Override
+    public Saml2AuthenticatedPrincipal loadUser(
+            Saml2AuthenticatedPrincipal principal) {
+
+        String registrationId = principal.getRelyingPartyRegistrationId();
+        String nameId         = principal.getName();   // NameID da Assertion
+
+        // Extrai email dos atributos SAML
+        String email = resolveEmail(principal, registrationId);
+
+        // Sincroniza com banco de dados local — cria ou atualiza o usuário
+        UserEntity user = syncUser(nameId, email, registrationId, principal);
+
+        log.info("SAML2 login: nameId={} email={} idp={}",
+            nameId, email, registrationId);
+
+        // Retorna o principal original enriquecido com authorities locais
+        return new CustomSaml2Principal(principal, buildAuthorities(user));
+    }
+
+    private String resolveEmail(Saml2AuthenticatedPrincipal p, String idp) {
+        List<String> candidateAttrs = EMAIL_ATTRS.getOrDefault(idp,
+            EMAIL_ATTRS.get("default"));
+
+        return candidateAttrs.stream()
+            .map(attr -> p.getFirstAttribute(attr))
+            .filter(Objects::nonNull)
+            .findFirst()
+            .orElse(p.getName());   // fallback: usa o NameID como email
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> resolveGroups(Saml2AuthenticatedPrincipal p, String idp) {
+        String groupAttr = GROUPS_ATTRS.getOrDefault(idp, GROUPS_ATTRS.get("default"));
+        List<String> groups = p.getAttribute(groupAttr);
+        return groups != null ? groups : List.of();
+    }
+
+    private UserEntity syncUser(String nameId, String email,
+                                 String idp, Saml2AuthenticatedPrincipal p) {
+        return userRepository.findBySamlNameId(nameId)
+            .map(existing -> {
+                // Atualiza dados do usuário existente com informações do IdP
+                existing.setEmail(email);
+                existing.setLastLoginAt(Instant.now());
+                return userRepository.save(existing);
+            })
+            .orElseGet(() -> {
+                // Cria novo usuário no primeiro login
+                UserEntity newUser = new UserEntity();
+                newUser.setSamlNameId(nameId);
+                newUser.setEmail(email);
+                newUser.setProvider(idp);
+                newUser.setEnabled(true);
+                newUser.getRoles().add(Role.USER);
+                return userRepository.save(newUser);
+            });
+    }
+
+    private Collection<GrantedAuthority> buildAuthorities(UserEntity user) {
+        return user.getRoles().stream()
+            .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
+            .collect(Collectors.toList());
+    }
+}
+```
+
+---
+
+### 23.7 Mapeamento de Grupos SAML para Roles Spring
+```java
+/**
+ * Converte grupos SAML (ex: grupos do AD) em GrantedAuthorities Spring.
+ * Registrado como GrantedAuthoritiesMapper no contexto.
+ */
+@Component
+public class SamlGroupsToRolesMapper implements GrantedAuthoritiesMapper {
+
+    // Mapeamento de grupo AD → ROLE Spring Security
+    private static final Map<String, String> GROUP_TO_ROLE = Map.of(
+        "CN=AppAdmins,OU=Groups,DC=corp,DC=com",    "ROLE_ADMIN",
+        "CN=AppUsers,OU=Groups,DC=corp,DC=com",     "ROLE_USER",
+        "CN=AppManagers,OU=Groups,DC=corp,DC=com",  "ROLE_MANAGER",
+        "AppAdmins",   "ROLE_ADMIN",   // Okta usa nomes curtos
+        "AppUsers",    "ROLE_USER",
+        "AppManagers", "ROLE_MANAGER"
+    );
+
+    @Override
+    public Collection<? extends GrantedAuthority> mapAuthorities(
+            Collection<? extends GrantedAuthority> authorities) {
+
+        Set<GrantedAuthority> mapped = new LinkedHashSet<>();
+
+        for (GrantedAuthority authority : authorities) {
+            // Authorities do SAML2 chegam como SimpleGrantedAuthority
+            // com o valor do atributo de grupo
+            String role = GROUP_TO_ROLE.get(authority.getAuthority());
+            if (role != null) {
+                mapped.add(new SimpleGrantedAuthority(role));
+            }
+            // Mantém a authority original também (para auditoria)
+            mapped.add(authority);
+        }
+
+        // Role mínima para qualquer usuário autenticado via SAML
+        mapped.add(new SimpleGrantedAuthority("ROLE_USER"));
+
+        return mapped;
+    }
+}
+
+// Registro no SecurityConfig
+@Bean
+public SecurityFilterChain saml2Chain(HttpSecurity http,
+        SamlGroupsToRolesMapper groupsMapper) throws Exception {
+    return http
+        .saml2Login(saml2 -> saml2
+            .userDetailsService(saml2UserDetailsService())
+            .grantedAuthoritiesMapper(groupsMapper)   // ← mapper registrado aqui
+        )
+        // ...
+        .build();
+}
+```
+
+---
+
+### 23.8 SP Metadata — Configuração do IdP
+O Spring Security gera automaticamente o **SP Metadata XML** em `/saml2/metadata/{registrationId}`. Esse XML deve ser fornecido ao administrador do IdP para configurar a relação de confiança (trust relationship).
+
+```
+GET /saml2/metadata/adfs
+→ Retorna XML com:
+   - Entity ID do SP
+   - Certificado público do SP (para o IdP validar as assinaturas)
+   - ACS URL (onde o IdP deve enviar o SAMLResponse)
+   - SLO URL (onde o IdP deve enviar LogoutRequest)
+   - NameID formats suportados
+```
+
+Para personalizar o metadata gerado:
+
+```java
+@Bean
+public Saml2MetadataResolver saml2MetadataResolver(
+        RelyingPartyRegistrationRepository registrations) {
+
+    OpenSaml4MetadataResolver resolver = new OpenSaml4MetadataResolver();
+
+    // Adiciona informações de contato ao metadata (opcional mas recomendado)
+    resolver.setEntityDescriptorCustomizer(descriptor -> {
+        // Personaliza o EntityDescriptor gerado
+        descriptor.setValidUntil(Instant.now().plus(365, ChronoUnit.DAYS));
+    });
+
+    return resolver;
+}
+```
+
+---
+
+### 23.9 Single Logout (SLO)
+```java
+@Bean
+public SecurityFilterChain saml2Chain(HttpSecurity http) throws Exception {
+    return http
+        .saml2Login(Customizer.withDefaults())
+        .saml2Logout(logout -> logout
+            // URL onde o SP recebe LogoutRequest do IdP
+            .logoutRequestValidator(new Saml2LogoutRequestValidator())
+            // URL onde o SP recebe LogoutResponse do IdP
+            .logoutResponseResolver(new OpenSaml4LogoutResponseResolver(
+                registrationRepository))
+        )
+        .logout(logout -> logout
+            .logoutUrl("/logout")
+            .logoutSuccessUrl("/login?logout")
+            .deleteCookies("JSESSIONID")
+            .invalidateHttpSession(true))
+        .build();
+}
+```
+
+---
+
+### 23.10 Integração com Azure AD via SAML2
+```yaml
+spring:
+  security:
+    saml2:
+      relyingparty:
+        registration:
+          azure:
+            entity-id: https://myapp.example.com/saml2/sp
+            asserting-party:
+              # Metadata do Azure AD — substitua {tenant-id} pelo ID do tenant
+              metadata-uri: >
+                https://login.microsoftonline.com/{tenant-id}/federationmetadata/2007-06/federationmetadata.xml?appid={app-id}
+              want-authn-requests-signed: true
+            signing:
+              credentials:
+                - private-key-location: classpath:saml/sp-private.key
+                  certificate-location: classpath:saml/sp-certificate.crt
+            acs:
+              location: https://myapp.example.com/login/saml2/sso/azure
+```
+
+Atributos enviados pelo Azure AD e seus mapeamentos:
+
+```java
+// Extração de atributos específicos do Azure AD
+private static final String AZURE_EMAIL =
+    "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress";
+private static final String AZURE_GROUPS =
+    "http://schemas.microsoft.com/ws/2008/06/identity/claims/groups";
+private static final String AZURE_DISPLAY_NAME =
+    "http://schemas.microsoft.com/identity/claims/displayname";
+private static final String AZURE_OBJECT_ID =
+    "http://schemas.microsoft.com/identity/claims/objectidentifier";
+
+public void extractAzureAttributes(Saml2AuthenticatedPrincipal p) {
+    String email       = p.getFirstAttribute(AZURE_EMAIL);
+    List<String> groups = p.getAttribute(AZURE_GROUPS);   // GUIDs dos grupos no AD
+    String displayName = p.getFirstAttribute(AZURE_DISPLAY_NAME);
+    String objectId    = p.getFirstAttribute(AZURE_OBJECT_ID);
+}
+```
+
+---
+
+### 23.11 Comparativo: SAML2 vs OAuth2/OIDC
+| Aspecto | SAML2 | OAuth2 / OIDC |
+|---|---|---|
+| **Formato** | XML (verboso, pesado) | JSON (compacto, leve) |
+| **Transport** | HTTP-POST / HTTP-Redirect | HTTP-Redirect / Token no body |
+| **Adoção** | Corporativo / Enterprise (ADFS, Shibboleth) | Web moderno, mobile, SPAs |
+| **Spring Security** | `spring-security-saml2-service-provider` | `spring-boot-starter-oauth2-client` |
+| **Configuração** | Troca de metadata XML | Discovery endpoint automático |
+| **Mobile** | Difícil (fluxo baseado em redirect browser) | Nativo (PKCE) |
+| **Quando usar** | Integração com ADFS corporativo, universidades (CAFe/RNP) | Novos projetos, APIs, SPAs |
+
+
+
+---
+
+## 24. Integração com LDAP
+LDAP (Lightweight Directory Access Protocol) é o protocolo padrão para diretórios corporativos como Microsoft Active Directory, OpenLDAP e 389 Directory Server. O Spring Security oferece suporte nativo para autenticação e busca de usuários via LDAP.
+
+### 24.1 Modos de Autenticação LDAP
+```mermaid
+flowchart TD
+    subgraph "Bind Authentication (padrão)"
+        BA1[1. Busca o DN do usuário<br>no diretório via conta de serviço]
+        BA2[2. Tenta bind com<br>usuário + senha informados]
+        BA3[3. Bind OK → autenticado]
+        BA1 --> BA2 --> BA3
+    end
+
+    subgraph "Password Comparison"
+        PC1[1. Busca o atributo<br>userPassword do usuário]
+        PC2[2. Compara senha localmente<br>com BCrypt / SHA / MD5]
+        PC3[3. Match → autenticado]
+        PC1 --> PC2 --> PC3
+    end
+```
+
+| Modo | Vantagem | Desvantagem | Quando usar |
+|------|----------|-------------|-------------|
+| **Bind** | Senha nunca trafega do LDAP para a app | Requer conta de serviço no LDAP | Active Directory, OpenLDAP |
+| **Password Comparison** | Não precisa de bind | Exige que `userPassword` seja legível | LDAP com hash de senha acessível |
+
+---
+
+### 24.2 Dependências Maven
+```xml
+<!-- Spring Security LDAP -->
+<dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-ldap</artifactId>
+</dependency>
+
+<!-- Spring LDAP Core (abstração de baixo nível) -->
+<dependency>
+    <groupId>org.springframework.ldap</groupId>
+    <artifactId>spring-ldap-core</artifactId>
+</dependency>
+
+<!-- UnboundID LDAP SDK — servidor LDAP embutido para testes -->
+<dependency>
+    <groupId>com.unboundid</groupId>
+    <artifactId>unboundid-ldapsdk</artifactId>
+    <scope>test</scope>
+</dependency>
+```
+
+---
+
+### 24.3 Configuração via `application.yml`
+```yaml
+spring:
+  ldap:
+    urls: ldap://ldap.corp.com:389
+    # Para LDAPS (TLS): ldaps://ldap.corp.com:636
+    base: dc=corp,dc=com            # Base DN de busca
+    username: cn=svc-springapp,ou=ServiceAccounts,dc=corp,dc=com  # Conta de serviço
+    password: ${LDAP_SERVICE_PASSWORD}
+
+app:
+  ldap:
+    user-search-base: ou=Users         # Relativo ao base DN
+    user-search-filter: (sAMAccountName={0})   # {0} = username — AD usa sAMAccountName
+    group-search-base: ou=Groups
+    group-search-filter: (member={0})          # {0} = DN completo do usuário
+    group-role-attribute: cn              # Atributo do grupo usado como nome da role
+    role-prefix: ROLE_
+    # Para OpenLDAP, substituir sAMAccountName por uid
+    # user-search-filter: (uid={0})
+```
+
+---
+
+### 24.4 Configuração do `AuthenticationProvider` LDAP
+#### 18.4.1 Bind Authentication (recomendado para Active Directory)
+
+```java
+@Configuration
+@EnableWebSecurity
+@RequiredArgsConstructor
+public class LdapSecurityConfig {
+
+    @Value("${spring.ldap.urls}")              private String ldapUrl;
+    @Value("${spring.ldap.base}")              private String ldapBase;
+    @Value("${spring.ldap.username}")          private String serviceUser;
+    @Value("${spring.ldap.password}")          private String servicePassword;
+    @Value("${app.ldap.user-search-base}")     private String userSearchBase;
+    @Value("${app.ldap.user-search-filter}")   private String userSearchFilter;
+    @Value("${app.ldap.group-search-base}")    private String groupSearchBase;
+    @Value("${app.ldap.group-search-filter}")  private String groupSearchFilter;
+    @Value("${app.ldap.group-role-attribute}") private String groupRoleAttribute;
+
+    /**
+     * ContextSource — conexão ao servidor LDAP com conta de serviço.
+     * O Spring usa esta conta para buscar o DN do usuário antes do bind.
+     */
+    @Bean
+    public LdapContextSource ldapContextSource() {
+        LdapContextSource ctx = new LdapContextSource();
+        ctx.setUrl(ldapUrl);
+        ctx.setBase(ldapBase);
+        ctx.setUserDn(serviceUser);
+        ctx.setPassword(servicePassword);
+        // Pool de conexões para reutilizar a conexão da conta de serviço
+        ctx.setPooled(true);
+        return ctx;
+    }
+
+    /**
+     * LdapTemplate — API de alto nível para queries LDAP.
+     * Usado pelo LdapUserDetailsService para carregar atributos adicionais.
+     */
+    @Bean
+    public LdapTemplate ldapTemplate(LdapContextSource contextSource) {
+        LdapTemplate template = new LdapTemplate(contextSource);
+        // Ignora erros de referência parcial (comum no Active Directory)
+        template.setIgnorePartialResultException(true);
+        return template;
+    }
+
+    /**
+     * AuthenticationProvider que realiza Bind Authentication no LDAP.
+     *
+     * Fluxo:
+     * 1. Busca o DN completo do usuário via userSearchFilter
+     * 2. Tenta bind com o DN + senha informados pelo usuário
+     * 3. Carrega os grupos do usuário via groupSearchFilter
+     * 4. Converte grupos em GrantedAuthorities
+     */
+    @Bean
+    public LdapAuthenticationProvider ldapAuthenticationProvider(
+            LdapContextSource contextSource) {
+
+        // 1. Define como encontrar o DN do usuário
+        FilterBasedLdapUserSearch userSearch = new FilterBasedLdapUserSearch(
+            userSearchBase,      // ou=Users
+            userSearchFilter,    // (sAMAccountName={0})
+            contextSource);
+        userSearch.setSearchSubtree(true); // busca em subárvores
+
+        // 2. Define o mecanismo de bind (verificação de senha)
+        BindAuthenticator bindAuthenticator = new BindAuthenticator(contextSource);
+        bindAuthenticator.setUserSearch(userSearch);
+
+        // 3. Define como carregar os grupos (authorities)
+        DefaultLdapAuthoritiesPopulator authoritiesPopulator =
+            new DefaultLdapAuthoritiesPopulator(contextSource, groupSearchBase);
+        authoritiesPopulator.setGroupSearchFilter(groupSearchFilter);
+        authoritiesPopulator.setGroupRoleAttribute(groupRoleAttribute);
+        authoritiesPopulator.setRolePrefix("ROLE_");
+        authoritiesPopulator.setConvertToUpperCase(true); // ROLE_APPADMINS
+        authoritiesPopulator.setSearchSubtree(true);
+        // Adiciona a role "ROLE_USER" para qualquer usuário autenticado via LDAP
+        authoritiesPopulator.setDefaultRole("ROLE_USER");
+
+        // 4. Monta o provider
+        LdapAuthenticationProvider provider = new LdapAuthenticationProvider(
+            bindAuthenticator, authoritiesPopulator);
+
+        // 5. Mapper de atributos LDAP → UserDetails
+        provider.setUserDetailsContextMapper(ldapUserDetailsMapper());
+
+        return provider;
+    }
+
+    /**
+     * Registra o LdapAuthenticationProvider no AuthenticationManager.
+     */
+    @Bean
+    public SecurityFilterChain ldapSecurityChain(HttpSecurity http,
+            LdapAuthenticationProvider ldapProvider) throws Exception {
+        return http
+            .authenticationProvider(ldapProvider)
+            .formLogin(form -> form
+                .loginPage("/login")
+                .defaultSuccessUrl("/dashboard", true)
+                .permitAll())
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/login", "/css/**", "/js/**").permitAll()
+                .requestMatchers("/admin/**").hasRole("APPADMINS")
+                .anyRequest().authenticated())
+            .build();
+    }
+
+    @Bean
+    public LdapUserDetailsMapper ldapUserDetailsMapper() {
+        return new CustomLdapUserDetailsMapper();
+    }
+}
+```
+
+#### 18.4.2 Active Directory — `ActiveDirectoryLdapAuthenticationProvider`
+
+Para integração com AD, o Spring Security oferece um provider especializado que trata as peculiaridades do Active Directory (formato do DN, grupos aninhados, códigos de erro específicos):
+
+```java
+/**
+ * Provider especializado para Active Directory.
+ * Simplifica a configuração — não é necessário definir userSearchFilter
+ * separadamente, pois o AD usa UPN (user@domain) ou sAMAccountName por padrão.
+ */
+@Bean
+public ActiveDirectoryLdapAuthenticationProvider adAuthenticationProvider() {
+
+    ActiveDirectoryLdapAuthenticationProvider provider =
+        new ActiveDirectoryLdapAuthenticationProvider(
+            "corp.com",           // domínio AD
+            "ldap://ldap.corp.com:389",
+            "dc=corp,dc=com");    // root DN
+
+    // Padrão de busca do usuário — {0}=username, {1}=domínio
+    provider.setSearchFilter("(&(objectClass=user)(sAMAccountName={0}))");
+
+    // Converte grupos AD em GrantedAuthorities automaticamente
+    provider.setConvertSubErrorCodesToExceptions(true);
+    provider.setUseAuthenticationRequestCredentials(true);
+
+    return provider;
+}
+```
+
+---
+
+### 24.5 `UserDetailsContextMapper` — Enriquecimento do UserDetails
+O `UserDetailsContextMapper` é chamado após o bind bem-sucedido para converter os atributos LDAP em um `UserDetails` Spring. É aqui que se extrai email, nome completo, departamento, etc.
 
 ```java
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class DatabaseRoleHierarchyFactory {
+public class CustomLdapUserDetailsMapper implements UserDetailsContextMapper {
 
-    private final RoleRelationRepository repository;
+    private final UserRepository localUserRepository;
+
+    /**
+     * Chamado após bind LDAP bem-sucedido.
+     * Converte os atributos do DirContextOperations (contexto LDAP) em UserDetails.
+     *
+     * @param ctx         contexto LDAP com todos os atributos do usuário
+     * @param username    username informado no formulário
+     * @param authorities grupos/roles carregados pelo authoritiesPopulator
+     */
+    @Override
+    public UserDetails mapUserFromContext(DirContextOperations ctx,
+                                          String username,
+                                          Collection<? extends GrantedAuthority> authorities) {
+
+        // Extrai atributos LDAP — nomes variam entre AD e OpenLDAP
+        String email       = getAttr(ctx, "mail", "userPrincipalName");
+        String displayName = getAttr(ctx, "displayName", "cn");
+        String department  = getAttr(ctx, "department", "ou");
+        String employeeId  = getAttr(ctx, "employeeID", "employeeNumber");
+        String dn          = ctx.getDn().toString();
+
+        log.debug("LDAP login: user={} dn={} dept={}", username, dn, department);
+
+        // Sincroniza com banco local — garante que o usuário existe localmente
+        // para uso com JPA, roles locais, preferências, etc.
+        localUserRepository.findByUsername(username)
+            .ifPresentOrElse(
+                user -> updateFromLdap(user, email, displayName, department),
+                () -> createFromLdap(username, email, displayName, department));
+
+        // Enriquece com authorities locais do banco além das do LDAP
+        Set<GrantedAuthority> allAuthorities = new LinkedHashSet<>(authorities);
+        localUserRepository.findByUsername(username)
+            .ifPresent(user -> user.getLocalRoles().stream()
+                .map(r -> new SimpleGrantedAuthority("ROLE_" + r.name()))
+                .forEach(allAuthorities::add));
+
+        // Constrói UserDetails com todos os atributos
+        return LdapUserDetailsImpl.newInstance()
+            .username(username)
+            .dn(dn)
+            .authorities(allAuthorities)
+            .accountNonExpired(true)
+            .accountNonLocked(true)
+            .credentialsNonExpired(true)
+            .enabled(true)
+            .build();
+    }
+
+    /**
+     * Chamado quando o usuário atualiza a senha (raro via LDAP).
+     * Normalmente não implementado — a senha é gerenciada pelo IdP LDAP.
+     */
+    @Override
+    public void mapUserToContext(UserDetails user, DirContextAdapter ctx) {
+        throw new UnsupportedOperationException(
+            "Alteração de senha via LDAP não suportada nesta aplicação.");
+    }
+
+    private String getAttr(DirContextOperations ctx, String... candidates) {
+        for (String attr : candidates) {
+            String value = ctx.getStringAttribute(attr);
+            if (value != null && !value.isBlank()) return value;
+        }
+        return null;
+    }
+
+    private void updateFromLdap(UserEntity user, String email,
+                                 String displayName, String department) {
+        user.setEmail(email);
+        user.setDisplayName(displayName);
+        user.setDepartment(department);
+        user.setLastLoginAt(Instant.now());
+        localUserRepository.save(user);
+    }
+
+    private void createFromLdap(String username, String email,
+                                  String displayName, String department) {
+        UserEntity user = new UserEntity();
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setDisplayName(displayName);
+        user.setDepartment(department);
+        user.setProvider("ldap");
+        user.setEnabled(true);
+        user.getRoles().add(Role.USER);
+        localUserRepository.save(user);
+    }
+}
+```
+
+---
+
+### 24.6 `LdapUserDetailsService` — Busca de Usuários sem Autenticação
+Para carregar usuários LDAP fora do fluxo de autenticação (ex.: pré-popular dados, verificar existência), use `LdapUserDetailsService`:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class LdapDirectoryService {
+
+    private final LdapTemplate ldapTemplate;
+
+    @Value("${app.ldap.user-search-base}")   private String userBase;
+    @Value("${app.ldap.group-search-base}")  private String groupBase;
+
+    /**
+     * Busca usuário por username no LDAP.
+     * Retorna atributos selecionados — não carrega senha.
+     */
+    public Optional<LdapUserDto> findByUsername(String username) {
+        String filter = "(sAMAccountName=" + LdapEncoder.filterEncode(username) + ")";
+
+        List<LdapUserDto> results = ldapTemplate.search(
+            userBase,
+            filter,
+            SearchControls.SUBTREE_SCOPE,
+            new String[]{"sAMAccountName", "mail", "displayName",
+                         "department", "telephoneNumber"},
+            (DirContextOperations ctx) -> new LdapUserDto(
+                ctx.getStringAttribute("sAMAccountName"),
+                ctx.getStringAttribute("mail"),
+                ctx.getStringAttribute("displayName"),
+                ctx.getStringAttribute("department"),
+                ctx.getStringAttribute("telephoneNumber")
+            )
+        );
+
+        return results.stream().findFirst();
+    }
+
+    /**
+     * Lista todos os grupos do usuário (incluindo grupos aninhados via AD).
+     */
+    public List<String> getUserGroups(String userDn) {
+        // memberOf com LDAP_MATCHING_RULE_IN_CHAIN retorna grupos aninhados no AD
+        String filter = "(member:1.2.840.113556.1.4.1941:=" +
+            LdapEncoder.filterEncode(userDn) + ")";
+
+        return ldapTemplate.search(
+            groupBase,
+            filter,
+            (Attributes attrs) -> attrs.get("cn") != null
+                ? (String) attrs.get("cn").get()
+                : null
+        ).stream().filter(Objects::nonNull).toList();
+    }
+
+    /**
+     * Verifica se um usuário é membro de um grupo específico.
+     */
+    public boolean isMemberOf(String username, String groupCn) {
+        String userDn = findDnByUsername(username);
+        if (userDn == null) return false;
+        return getUserGroups(userDn).stream()
+            .anyMatch(g -> g.equalsIgnoreCase(groupCn));
+    }
+
+    private String findDnByUsername(String username) {
+        String filter = "(sAMAccountName=" + LdapEncoder.filterEncode(username) + ")";
+        List<String> dns = ldapTemplate.search(userBase, filter,
+            (DirContextOperations ctx) -> ctx.getDn().toString());
+        return dns.stream().findFirst().orElse(null);
+    }
+
+    public record LdapUserDto(String username, String email,
+                               String displayName, String department,
+                               String phone) {}
+}
+```
+
+---
+
+### 24.7 LDAP Embutido para Testes
+```java
+/**
+ * Configura um servidor LDAP em memória (UnboundID) para testes de integração.
+ * Carrega usuários de um arquivo LDIF na inicialização.
+ */
+@TestConfiguration
+public class EmbeddedLdapConfig {
 
     @Bean
-    public RoleHierarchy roleHierarchy() {
-        List<RoleRelationEntity> relations =
-            repository.findAllByOrderByParentAsc();
+    public EmbeddedLdapAutoConfiguration embeddedLdap() {
+        // Configurado automaticamente pelo spring-boot-starter-test
+        // quando unboundid-ldapsdk está no classpath
+        return new EmbeddedLdapAutoConfiguration();
+    }
+}
+```
 
-        if (relations.isEmpty()) {
-            log.warn("Nenhuma relacao de hierarquia encontrada no banco.");
-            return new NullRoleHierarchy();
+```yaml
+# application-test.yml
+spring:
+  ldap:
+    embedded:
+      base-dn: dc=test,dc=com
+      ldif: classpath:ldap/test-users.ldif
+      port: 0   # porta aleatória
+```
+
+```ldif
+# src/test/resources/ldap/test-users.ldif
+dn: dc=test,dc=com
+objectClass: top
+objectClass: domain
+dc: test
+
+dn: ou=Users,dc=test,dc=com
+objectClass: top
+objectClass: organizationalUnit
+ou: Users
+
+dn: ou=Groups,dc=test,dc=com
+objectClass: top
+objectClass: organizationalUnit
+ou: Groups
+
+# Usuário de teste: admin
+dn: cn=admin,ou=Users,dc=test,dc=com
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: admin
+sn: Administrator
+uid: admin
+mail: admin@test.com
+userPassword: {SSHA}senha-hash-bcrypt-aqui
+
+# Usuário de teste: john
+dn: cn=john,ou=Users,dc=test,dc=com
+objectClass: inetOrgPerson
+cn: john
+sn: Doe
+uid: john
+mail: john@test.com
+userPassword: {SSHA}senha-hash-bcrypt-aqui
+
+# Grupo: AppAdmins
+dn: cn=AppAdmins,ou=Groups,dc=test,dc=com
+objectClass: groupOfNames
+cn: AppAdmins
+member: cn=admin,ou=Users,dc=test,dc=com
+
+# Grupo: AppUsers
+dn: cn=AppUsers,ou=Groups,dc=test,dc=com
+objectClass: groupOfNames
+cn: AppUsers
+member: cn=john,ou=Users,dc=test,dc=com
+member: cn=admin,ou=Users,dc=test,dc=com
+```
+
+---
+
+### 24.8 Fallback: LDAP + Banco de Dados
+Em ambientes onde nem todos os usuários estão no LDAP (ex.: usuários externos sem conta no AD), configure múltiplos `AuthenticationProvider` em ordem de tentativa:
+
+```java
+@Bean
+public AuthenticationManager authenticationManager(
+        LdapAuthenticationProvider ldapProvider,
+        DaoAuthenticationProvider dbProvider) {
+
+    // Spring tenta cada provider em ordem — primeiro LDAP, depois banco
+    // Se LDAP não encontrar o usuário, tenta o banco local
+    return new ProviderManager(List.of(ldapProvider, dbProvider));
+}
+
+@Bean
+public DaoAuthenticationProvider dbAuthenticationProvider(
+        UserDetailsService userDetailsService,
+        PasswordEncoder passwordEncoder) {
+
+    DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
+    provider.setUserDetailsService(userDetailsService);
+    provider.setPasswordEncoder(passwordEncoder);
+    return provider;
+}
+```
+
+---
+
+### 24.9 Comparativo: LDAP vs Banco de Dados vs OAuth2
+| Aspecto | LDAP / Active Directory | Banco de Dados | OAuth2 / OIDC |
+|---|---|---|---|
+| **Fonte de usuários** | Diretório corporativo centralizado | Tabela local da aplicação | IdP externo |
+| **Gestão de senhas** | RH / TI (auto-serviço AD) | Pela própria aplicação | Pelo IdP |
+| **SSO** | Via Kerberos / ADFS | Não — por aplicação | Nativo |
+| **Grupos/Roles** | Grupos do AD → roles Spring | Tabela local | Claims do token |
+| **Implantação** | Comum em empresas com AD | Apps sem AD ou usuários externos | SaaS, apps modernos |
+| **Spring Security** | `spring-security-ldap` | `DaoAuthenticationProvider` | `oauth2-client` |
+
+
+## 25. WebSocket Security
+WebSockets estabelecem conexões persistentes — o handshake HTTP inicial é interceptado pelo Spring Security normalmente, mas as mensagens subsequentes trafegam pelo protocolo WebSocket, exigindo configuração de autorização específica para destinos STOMP.
+
+### 25.1 Dependências
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-websocket</artifactId>
+</dependency>
+<!-- spring-security-messaging — autorização de mensagens STOMP -->
+<dependency>
+    <groupId>org.springframework.security</groupId>
+    <artifactId>spring-security-messaging</artifactId>
+</dependency>
+```
+
+---
+
+### 25.2 Fluxo de Autenticação WebSocket
+```mermaid
+sequenceDiagram
+    participant C as Client (SPA)
+    participant S as Spring Security
+    participant WS as WebSocket Handler
+
+    C->>S: HTTP GET /ws/connect<br/>Upgrade: websocket<br/>Cookie: JSESSIONID / Authorization: Bearer
+    S->>S: Autentica via HTTP (sessão ou JWT)
+    S-->>C: 101 Switching Protocols
+    Note over C,WS: Conexão WebSocket estabelecida
+
+    C->>WS: STOMP CONNECT
+nonce:1
+Authorization:Bearer <token>
+    WS->>S: ChannelInterceptor valida token
+    S-->>WS: Authentication populada no SecurityContext
+    WS-->>C: CONNECTED
+
+    C->>WS: SEND /app/quiz.answer
+{questionId:1, answer:"A"}
+    WS->>S: MessageSecurityMetadataSourceRegistry avalia
+    Note over S: hasRole('USER') → permite
+    WS-->>C: Processa e responde
+```
+
+---
+
+### 25.3 Configuração de Segurança WebSocket
+```java
+@Configuration
+@EnableWebSecurity
+public class WebSocketSecurityConfig
+        extends AbstractSecurityWebSocketMessageBrokerConfigurer {
+
+    /**
+     * Define regras de autorização por destino STOMP.
+     * Equivalente ao authorizeHttpRequests, mas para mensagens WebSocket.
+     */
+    @Override
+    protected void configureInbound(
+            MessageSecurityMetadataSourceRegistry messages) {
+        messages
+            // Handshake STOMP — qualquer autenticado pode conectar
+            .simpDestMatchers("/app/**").authenticated()
+            // Tópicos de broadcast — apenas assinantes autenticados
+            .simpSubscribeDestMatchers("/topic/**").authenticated()
+            // Fila privada do usuário — apenas o próprio usuário
+            .simpSubscribeDestMatchers("/user/**").authenticated()
+            // Admin topics
+            .simpDestMatchers("/app/admin/**").hasRole("ADMIN")
+            // Mensagens de erro e sistema — públicas
+            .simpTypeMatchers(SimpMessageType.CONNECT,
+                              SimpMessageType.DISCONNECT,
+                              SimpMessageType.UNSUBSCRIBE).permitAll()
+            .anyMessage().denyAll();
+    }
+
+    /**
+     * Por padrão, Spring Security habilita proteção CSRF em WebSocket.
+     * Desabilitar APENAS quando usando autenticação stateless (JWT no header STOMP).
+     * Manter habilitado quando a autenticação é baseada em sessão HTTP.
+     */
+    @Override
+    protected boolean sameOriginDisabled() {
+        return true; // desabilita verificação de same-origin para STOMP
+    }
+}
+```
+
+---
+
+### 25.4 Autenticação JWT no Handshake STOMP
+Para SPAs que usam JWT (sem sessão), o token deve ser validado no interceptor de canal:
+
+```java
+/**
+ * ChannelInterceptor que extrai e valida o JWT do header STOMP CONNECT.
+ * Popula o SecurityContext para que as regras de autorização de mensagens
+ * possam avaliar o usuário autenticado.
+ */
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class JwtChannelInterceptor implements ChannelInterceptor {
+
+    private final JwtService jwtService;
+    private final UserDetailsService userDetailsService;
+
+    /**
+     * Chamado antes de cada mensagem ser processada.
+     * Extrai o JWT do header Authorization do frame STOMP CONNECT.
+     */
+    @Override
+    public Message<?> preSend(Message<?> message, MessageChannel channel) {
+        StompHeaderAccessor accessor =
+            MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+
+        if (accessor == null) return message;
+
+        // Apenas no frame CONNECT — autentica uma vez por conexão
+        if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+            String authHeader = accessor.getFirstNativeHeader("Authorization");
+
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                String token = authHeader.substring(7);
+                try {
+                    String username = jwtService.extractUsername(token);
+                    UserDetails userDetails =
+                        userDetailsService.loadUserByUsername(username);
+
+                    UsernamePasswordAuthenticationToken auth =
+                        new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+
+                    // Popula o Principal da sessão STOMP
+                    accessor.setUser(auth);
+
+                    log.debug("WebSocket autenticado: user={}", username);
+                } catch (Exception e) {
+                    log.warn("JWT WebSocket inválido: {}", e.getMessage());
+                    throw new MessageDeliveryException("Token inválido");
+                }
+            }
         }
-
-        String hierarchyStr = relations.stream()
-            .map(r -> r.getParentRole() + " > " + r.getChildRole())
-            .collect(Collectors.joining("\n"));
-
-        log.info("Hierarquia de roles carregada: {} relacoes", relations.size());
-        return RoleHierarchyImpl.fromHierarchy(hierarchyStr);
+        return message;
     }
 }
 ```
 
 ```java
-@Entity
-@Table(name = "role_relations")
-@Getter @Setter
-public class RoleRelationEntity {
+// Registro do interceptor no MessageBroker
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private final JwtChannelInterceptor jwtChannelInterceptor;
 
-    @Column(name = "parent_role", nullable = false, length = 100)
-    private String parentRole;  // ex: "ROLE_ADMIN"
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(jwtChannelInterceptor);
+    }
 
-    @Column(name = "child_role", nullable = false, length = 100)
-    private String childRole;   // ex: "ROLE_MANAGER"
-}
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry registry) {
+        registry.enableSimpleBroker("/topic", "/queue", "/user");
+        registry.setApplicationDestinationPrefixes("/app");
+        registry.setUserDestinationPrefix("/user");
+    }
 
-public interface RoleRelationRepository extends JpaRepository<RoleRelationEntity, Long> {
-    List<RoleRelationEntity> findAllByOrderByParentAsc();
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+            .setAllowedOriginPatterns("http://localhost:*", "https://*.myapp.com")
+            .withSockJS();
+    }
 }
 ```
 
-```sql
--- V12__role_hierarchy.sql
-CREATE TABLE role_relations (
-    id          BIGSERIAL    PRIMARY KEY,
-    parent_role VARCHAR(100) NOT NULL,
-    child_role  VARCHAR(100) NOT NULL,
-    CONSTRAINT uq_role_relation UNIQUE (parent_role, child_role)
+---
+
+### 25.5 Envio de Mensagens ao Usuário Autenticado
+```java
+@Controller
+@RequiredArgsConstructor
+public class QuizController {
+
+    private final SimpMessagingTemplate messagingTemplate;
+
+    /**
+     * Recebe resposta do usuário e retorna feedback apenas para ele.
+     * @MessageMapping equivale ao @RequestMapping — mas para mensagens STOMP.
+     * Principal é populado pelo JwtChannelInterceptor.
+     */
+    @MessageMapping("/quiz.answer")
+    @PreAuthorize("hasRole('USER')")
+    public void processAnswer(AnswerDto answer, Principal principal) {
+        String username = principal.getName();
+
+        boolean correct = quizService.evaluate(answer);
+        FeedbackDto feedback = new FeedbackDto(answer.questionId(), correct);
+
+        // Envia apenas para o usuário que respondeu (fila privada)
+        messagingTemplate.convertAndSendToUser(
+            username,
+            "/queue/feedback",
+            feedback);
+    }
+
+    /**
+     * Broadcast para todos os inscritos no tópico da sala.
+     * Apenas ADMIN pode enviar mensagens para todos.
+     */
+    @MessageMapping("/quiz.broadcast")
+    @PreAuthorize("hasRole('ADMIN')")
+    public void broadcast(QuizEventDto event) {
+        messagingTemplate.convertAndSend("/topic/quiz-room", event);
+    }
+}
+```
+
+---
+
+### 25.6 CSRF em WebSocket com Sessão HTTP
+Quando a autenticação é baseada em sessão (Form Login), manter a proteção CSRF no WebSocket:
+
+```java
+@Configuration
+public class WebSocketSecurityConfig
+        extends AbstractSecurityWebSocketMessageBrokerConfigurer {
+
+    @Override
+    protected boolean sameOriginDisabled() {
+        // false = mantém verificação de same-origin (proteção CSRF)
+        // Use false quando a autenticação é via sessão HTTP
+        return false;
+    }
+}
+```
+
+```javascript
+// Cliente JavaScript — envia o token CSRF no header STOMP
+const csrfToken = document.cookie
+    .split('; ')
+    .find(c => c.startsWith('XSRF-TOKEN='))
+    ?.split('=')[1];
+
+stompClient.connect(
+    { 'X-XSRF-TOKEN': csrfToken },
+    frame => console.log('Conectado:', frame)
 );
-
-INSERT INTO role_relations (parent_role, child_role) VALUES
-    ('ROLE_ADMIN',   'ROLE_MANAGER'),
-    ('ROLE_MANAGER', 'ROLE_USER'),
-    ('ROLE_USER',    'ROLE_VIEWER');
 ```
-
-> **Atencao:** o bean `RoleHierarchy` e criado uma unica vez na inicializacao do contexto Spring. Para refletir mudancas no banco sem redeploy, e necessario reiniciar a aplicacao ou usar um mecanismo como `@RefreshScope` com Spring Cloud Bus.
-
-### 25.8 Checklist de Configuracao
-
-```
-RoleHierarchy — pontos de registro obrigatorios:
-
-  [v] @Bean RoleHierarchy                              definicao da hierarquia
-  [v] MethodSecurityExpressionHandler.setRoleHierarchy @PreAuthorize / @PostAuthorize
-  [v] CustomSecurityExpressionRoot.setRoleHierarchy    SpEL customizado (se aplicavel)
-  [ ] authorizeHttpRequests                            detectado automaticamente (Spring 6+)
-
-  Verificacao rapida:
-  hasRole('USER') passa para ADMIN via HTTP?           hierarquia ativa no HTTP
-  @PreAuthorize("hasRole('USER')") passa para ADMIN?  hierarquia ativa no Method Security
-  getReachableGrantedAuthorities() retorna herdadas?   hierarquia funcionando corretamente
-```
-
 
 ---
 
 ## 26. Segurança do Spring Boot Actuator
-
 O Spring Boot Actuator expõe endpoints de operação e diagnóstico da aplicação — métricas,
 health checks, env, beans, heapdump e até `/shutdown`. Sem proteção adequada, esses
 endpoints vazam informação sensível ou permitem ações destrutivas. A configuração de
 segurança do Actuator deve ser tratada com o mesmo rigor que os endpoints de negócio.
 
 ### 26.1 Mapa de Risco dos Endpoints
-
 | Endpoint | Risco | Exposição padrão |
 |---|---|---|
 | `/actuator/health` | Baixo — status da aplicação | Web |
@@ -9611,7 +9667,6 @@ segurança do Actuator deve ser tratada com o mesmo rigor que os endpoints de ne
 | `/actuator/sessions` | Alto — lista sessões ativas | Web |
 
 ### 26.2 Configuração de Exposição (`application.yml`)
-
 A primeira linha de defesa é controlar **quais endpoints são expostos** via HTTP,
 independentemente de segurança:
 
@@ -9679,7 +9734,6 @@ management:
 ---
 
 ### 26.3 SecurityFilterChain Dedicada para o Actuator
-
 A `SecurityFilterChain` do Actuator deve ter maior prioridade (`@Order`) que as chains de
 negócio, com `securityMatcher` restrito a `/actuator/**`:
 
@@ -9750,7 +9804,6 @@ public class ActuatorSecurityConfig {
 ---
 
 ### 26.4 Porta de Gerenciamento Separada
-
 Isolar o Actuator em uma porta diferente (ex.: `8081`) é a estratégia mais segura em
 produção: a porta `8080` (negócio) fica exposta ao load balancer público, enquanto a
 `8081` fica acessível apenas dentro da VPC/rede privada.
@@ -9811,7 +9864,6 @@ server {
 ---
 
 ### 26.5 Usuário de Serviço para Monitoramento
-
 Sistemas de monitoramento (Prometheus, Grafana) precisam de credenciais para raspar
 `/actuator/prometheus`. Crie um usuário dedicado com a role mínima necessária:
 
@@ -9877,7 +9929,6 @@ scrape_configs:
 ---
 
 ### 26.6 Customização do `/actuator/health`
-
 O endpoint de health pode incluir indicadores customizados e controlar a visibilidade
 dos detalhes por role:
 
@@ -9959,7 +10010,6 @@ Resposta para usuário com `ROLE_ACTUATOR` (detalhes completos):
 ---
 
 ### 26.7 Auditoria de Acesso ao Actuator
-
 Registrar acessos aos endpoints sensíveis do Actuator para compliance e detecção de
 uso indevido:
 
@@ -10024,7 +10074,6 @@ public class ActuatorWebConfig implements WebMvcConfigurer {
 ---
 
 ### 26.8 Perfis de Configuração por Ambiente
-
 ```yaml
 # application.yml — base (produção por padrão)
 management:
@@ -10082,7 +10131,6 @@ management:
 ---
 
 ### 26.9 Checklist de Segurança do Actuator
-
 ```
 Produção — verificações obrigatórias:
 
@@ -10105,7 +10153,6 @@ Produção — verificações obrigatórias:
 ---
 
 ## 27. Autenticação Mútua com Certificados (mTLS / X.509)
-
 Na autenticação TLS padrão, apenas o servidor apresenta um certificado ao cliente.
 Na **autenticação mútua** (mTLS — Mutual TLS), **ambos os lados apresentam certificados**:
 o servidor autentica o cliente e o cliente autentica o servidor. O Spring Security suporta
@@ -10113,7 +10160,6 @@ mTLS nativamente via `X509AuthenticationFilter`, mapeando o certificado do clien
 um `UserDetails` local.
 
 ### 27.1 Como Funciona o Handshake mTLS
-
 ```mermaid
 sequenceDiagram
     participant C as Cliente
@@ -10139,7 +10185,6 @@ sequenceDiagram
 ```
 
 ### 27.2 Conceitos e Terminologia
-
 | Termo | Descrição |
 |---|---|
 | **CA** | Certificate Authority — entidade que emite e assina certificados |
@@ -10155,7 +10200,6 @@ sequenceDiagram
 ---
 
 ### 27.3 Geração de Certificados com OpenSSL
-
 Em produção, os certificados devem ser emitidos por uma CA corporativa ou pública. Para
 desenvolvimento e testes, crie uma CA local:
 
@@ -10232,7 +10276,6 @@ openssl pkcs12 -export \
 ---
 
 ### 27.4 Configuração do Servidor Tomcat (SSL/TLS Mútuo)
-
 O mTLS é configurado no nível do conector Tomcat, **antes** do Spring Security processar
 a requisição. O Tomcat extrai o certificado do cliente e o disponibiliza como atributo
 da requisição (`javax.servlet.request.X509Certificate`).
@@ -10273,7 +10316,6 @@ server:
 ---
 
 ### 27.5 SecurityFilterChain com X.509
-
 ```java
 @Configuration
 @EnableWebSecurity
@@ -10317,7 +10359,6 @@ public class MtlsSecurityConfig {
 ---
 
 ### 27.6 `X509UserDetailsService` — Mapeamento CN → Usuário
-
 ```java
 /**
  * Carrega o UserDetails a partir do CN extraído do certificado do cliente.
@@ -10400,7 +10441,6 @@ public class UserEntity {
 ---
 
 ### 27.7 Extração Customizada do Principal
-
 Por padrão, `SubjectDnX509PrincipalExtractor` extrai o CN com a regex `CN=(.*?)(?:,|$)`.
 Para extrair outros campos do Subject ou usar o SAN:
 
@@ -10455,7 +10495,6 @@ public class CustomX509PrincipalExtractor implements X509PrincipalExtractor {
 ---
 
 ### 27.8 mTLS Misto — Certificado Opcional
-
 Quando a aplicação aceita tanto autenticação por certificado quanto por JWT, use
 `client-auth: want` no Tomcat e duas `SecurityFilterChain`:
 
@@ -10508,7 +10547,6 @@ public class MixedAuthConfig {
 ---
 
 ### 27.9 Acesso ao Certificado no Controller
-
 Quando necessário inspecionar o certificado em tempo de execução (ex.: verificar validade,
 extrair campos adicionais):
 
@@ -10567,7 +10605,6 @@ public class M2MController {
 ---
 
 ### 27.10 Testando com curl e Postman
-
 ```bash
 # ── curl — requisição com certificado do cliente ──────────────────────────────
 
@@ -10605,7 +10642,6 @@ https --cert=client.crt --cert-key=client.key \
 ---
 
 ### 27.11 Gerenciamento de Certificados de Cliente
-
 Em produção, o ciclo de vida dos certificados (emissão, revogação, renovação) deve ser
 gerenciado ativamente:
 
@@ -10657,7 +10693,6 @@ public class CertificateManagementService {
 ---
 
 ### 27.12 Comparativo: mTLS vs Outros Mecanismos
-
 | Aspecto | mTLS / X.509 | JWT Bearer | API Key |
 |---|---|---|---|
 | **Autenticação** | Criptográfica (chave privada) | Assinatura HMAC/RSA | Segredo compartilhado |
@@ -10672,9 +10707,7 @@ public class CertificateManagementService {
 ---
 
 ## 28. Testes de Segurança
-
 ### 28.1 Dependência
-
 ```xml
 <dependency>
     <groupId>org.springframework.security</groupId>
@@ -10684,7 +10717,6 @@ public class CertificateManagementService {
 ```
 
 ### 28.2 Testes com @WithMockUser
-
 ```java
 @WebMvcTest(UserController.class)
 @DisplayName("UserController — Segurança")
@@ -10743,7 +10775,6 @@ class UserControllerSecurityTest {
 ```
 
 ### 28.3 Testes com JWT Real
-
 ```java
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
@@ -10815,7 +10846,6 @@ class ApiSecurityIT {
 ```
 
 ### 28.4 Testes de Method Security
-
 ```java
 @SpringBootTest
 @DisplayName("UserService — Method Security")
