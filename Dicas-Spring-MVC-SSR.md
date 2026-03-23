@@ -1,7 +1,12 @@
 # Spring MVC — Guia SSR com Thymeleaf
 
-> Derivado de **Dicas-Spring-MVC-REST-SSR.md** — contém apenas o conteúdo referente
-> a SSR (Server-Side Rendering) com Thymeleaf.
+> **Baseline principal:** Spring Boot 3.5 · Spring Framework 6.x · Java 21+ · SpringDoc OpenAPI 2.x
+>
+> **Notas de compatibilidade:** quando uma seção exigir Spring Boot 4 / Spring Framework 7 ou SpringDoc 3.x, isso será indicado explicitamente.
+
+> **Pré-requisitos:** os fundamentos de Java, Spring Framework e boas práticas de `@Service` estão em [Dicas-Spring-Inicial.md](Dicas-Spring-Inicial.md).
+
+---
 
 ## Sumário
 
@@ -255,6 +260,7 @@ flowchart LR
     DS -- "HTML response" --> Browser
     CTRL -- "call" --> MODEL
     MODEL -. "data" .-> CTRL
+   
 
     style DS fill:#E6F1FB,stroke:#185FA5,color:#0C447C
     style CTRL fill:#E1F5EE,stroke:#0F6E56,color:#085041
@@ -1276,6 +1282,319 @@ public class ProdutoForm {
 </html>
 ```
 
+#### Listagem de Produtos (`templates/produtos/lista.html`)
+
+Exemplo completo de listagem com busca, ordenação por coluna, paginação e ações por linha.
+
+**Controller:**
+
+```java
+@GetMapping
+public String listar(
+        @RequestParam(defaultValue = "") String busca,
+        @RequestParam(defaultValue = "nome") String ordem,
+        @RequestParam(defaultValue = "asc") String direcao,
+        @RequestParam(defaultValue = "0") int page,
+        @PageableDefault(size = 10) Pageable pageable,
+        Model model) {
+
+    Sort sort = direcao.equals("asc")
+            ? Sort.by(ordem).ascending()
+            : Sort.by(ordem).descending();
+
+    Pageable p = PageRequest.of(page, pageable.getPageSize(), sort);
+    Page<Produto> resultado = repository.findByNomeContainingIgnoreCase(busca, p);
+
+    model.addAttribute("produtos", resultado);
+    model.addAttribute("busca", busca);
+    model.addAttribute("ordem", ordem);
+    model.addAttribute("direcao", direcao);
+    model.addAttribute("direcaoOposta", direcao.equals("asc") ? "desc" : "asc");
+    return "produtos/lista";
+}
+```
+
+**Template:**
+
+```html
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security"
+      layout:decorate="~{layout/base}">
+<head>
+    <title>Produtos</title>
+</head>
+<body>
+<div layout:fragment="content">
+
+    <!-- ── Cabeçalho da página ─────────────────────────────────────────────── -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">Produtos</h1>
+        <a th:href="@{/produtos/novo}" class="btn btn-primary" sec:authorize="hasRole('ADMIN')">
+            <i class="fas fa-plus me-1"></i> Novo Produto
+        </a>
+    </div>
+
+    <!-- ── Mensagem flash ─────────────────────────────────────────────────── -->
+    <div th:if="${mensagem}"
+         class="alert"
+         th:classappend="'alert-' + ${tipoMensagem ?: 'success'}"
+         th:text="${mensagem}"
+         role="alert">
+    </div>
+
+    <!-- ── Barra de busca ─────────────────────────────────────────────────── -->
+    <form th:action="@{/produtos}" method="get" class="row g-2 mb-3">
+        <div class="col-sm-8 col-md-6">
+            <div class="input-group">
+                <input type="text"
+                       name="busca"
+                       th:value="${busca}"
+                       class="form-control"
+                       placeholder="Buscar por nome...">
+                <button type="submit" class="btn btn-outline-secondary">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+        <div class="col-auto" th:if="${!#strings.isEmpty(busca)}">
+            <a th:href="@{/produtos}" class="btn btn-outline-danger">
+                <i class="fas fa-times me-1"></i> Limpar
+            </a>
+        </div>
+        <!-- Preservar ordenação ao buscar -->
+        <input type="hidden" name="ordem" th:value="${ordem}">
+        <input type="hidden" name="direcao" th:value="${direcao}">
+    </form>
+
+    <!-- ── Tabela ─────────────────────────────────────────────────────────── -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+
+            <!-- Resultado vazio -->
+            <div th:if="${#lists.isEmpty(produtos.content)}" class="text-center py-5 text-muted">
+                <i class="fas fa-box-open fa-2x mb-2"></i>
+                <p th:text="${#strings.isEmpty(busca)} ? 'Nenhum produto cadastrado.' :
+                            'Nenhum produto encontrado para &quot;' + ${busca} + '&quot;.'">
+                </p>
+            </div>
+
+            <table th:unless="${#lists.isEmpty(produtos.content)}"
+                   class="table table-hover table-striped mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <!-- Cabeçalho clicável para ordenação -->
+                        <th>
+                            <a th:href="@{/produtos(busca=${busca},ordem='nome',direcao=${ordem == 'nome'} ? ${direcaoOposta} : 'asc',page=0)}"
+                               class="text-decoration-none text-dark fw-semibold">
+                                Nome
+                                <!-- Ícone de ordenação ativo -->
+                                <th:block th:if="${ordem == 'nome'}">
+                                    <i th:class="${direcao == 'asc'} ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                                </th:block>
+                                <i th:unless="${ordem == 'nome'}" class="fas fa-sort text-muted"></i>
+                            </a>
+                        </th>
+                        <th>
+                            <a th:href="@{/produtos(busca=${busca},ordem='categoria.nome',direcao=${ordem == 'categoria.nome'} ? ${direcaoOposta} : 'asc',page=0)}"
+                               class="text-decoration-none text-dark fw-semibold">
+                                Categoria
+                                <th:block th:if="${ordem == 'categoria.nome'}">
+                                    <i th:class="${direcao == 'asc'} ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                                </th:block>
+                                <i th:unless="${ordem == 'categoria.nome'}" class="fas fa-sort text-muted"></i>
+                            </a>
+                        </th>
+                        <th class="text-end">
+                            <a th:href="@{/produtos(busca=${busca},ordem='preco',direcao=${ordem == 'preco'} ? ${direcaoOposta} : 'asc',page=0)}"
+                               class="text-decoration-none text-dark fw-semibold">
+                                Preço
+                                <th:block th:if="${ordem == 'preco'}">
+                                    <i th:class="${direcao == 'asc'} ? 'fas fa-sort-up' : 'fas fa-sort-down'"></i>
+                                </th:block>
+                                <i th:unless="${ordem == 'preco'}" class="fas fa-sort text-muted"></i>
+                            </a>
+                        </th>
+                        <th class="text-center">Estoque</th>
+                        <th class="text-center">Status</th>
+                        <th class="text-center">Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="produto, iterStat : ${produtos.content}"
+                        th:classappend="${!produto.ativo} ? 'text-muted'">
+
+                        <td th:text="${produto.nome}"></td>
+                        <td th:text="${produto.categoria.nome}"></td>
+
+                        <!-- Preço formatado -->
+                        <td class="text-end">
+                            <span th:text="'R$ ' + ${#numbers.formatDecimal(produto.preco, 1, 'POINT', 2, 'COMMA')}"></span>
+                        </td>
+
+                        <!-- Estoque com alerta visual -->
+                        <td class="text-center">
+                            <span th:text="${produto.estoque}"
+                                  th:classappend="${produto.estoque == 0}   ? 'badge bg-danger'   :
+                                                  ${produto.estoque <= 5}   ? 'badge bg-warning text-dark' :
+                                                                              'badge bg-light text-dark border'">
+                            </span>
+                        </td>
+
+                        <!-- Badge de status -->
+                        <td class="text-center">
+                            <span th:text="${produto.ativo} ? 'Ativo' : 'Inativo'"
+                                  th:class="${produto.ativo} ? 'badge bg-success' : 'badge bg-secondary'">
+                            </span>
+                        </td>
+
+                        <!-- Ações -->
+                        <td class="text-center">
+                            <div class="btn-group btn-group-sm">
+                                <a th:href="@{/produtos/{id}(id=${produto.id})}"
+                                   class="btn btn-outline-primary"
+                                   title="Detalhes">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a th:href="@{/produtos/{id}/editar(id=${produto.id})}"
+                                   class="btn btn-outline-secondary"
+                                   title="Editar"
+                                   sec:authorize="hasRole('ADMIN')">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <!-- Botão de exclusão com confirmação -->
+                                <button type="button"
+                                        class="btn btn-outline-danger"
+                                        title="Excluir"
+                                        sec:authorize="hasRole('ADMIN')"
+                                        th:data-id="${produto.id}"
+                                        th:data-nome="${produto.nome}"
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#modalConfirmarExclusao"
+                                        onclick="confirmarExclusao(this)">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <td colspan="6" class="text-muted small py-2 px-3">
+                            Exibindo
+                            <strong th:text="${produtos.numberOfElements}"></strong>
+                            de
+                            <strong th:text="${produtos.totalElements}"></strong>
+                            produto(s)
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── Paginação ──────────────────────────────────────────────────────── -->
+    <nav th:if="${produtos.totalPages > 1}" class="mt-3" aria-label="Paginação">
+        <ul class="pagination justify-content-center">
+
+            <!-- Primeira página -->
+            <li class="page-item" th:classappend="${produtos.first} ? 'disabled'">
+                <a class="page-link"
+                   th:href="@{/produtos(busca=${busca},ordem=${ordem},direcao=${direcao},page=0)}">
+                    «
+                </a>
+            </li>
+
+            <!-- Anterior -->
+            <li class="page-item" th:classappend="${produtos.first} ? 'disabled'">
+                <a class="page-link"
+                   th:href="@{/produtos(busca=${busca},ordem=${ordem},direcao=${direcao},page=${produtos.number - 1})}">
+                    ‹
+                </a>
+            </li>
+
+            <!-- Páginas numeradas (janela de 5 ao redor da atual) -->
+            <th:block th:with="
+                inicio=${T(java.lang.Math).max(0, produtos.number - 2)},
+                fim=${T(java.lang.Math).min(produtos.totalPages - 1, produtos.number + 2)}">
+
+                <li th:each="i : ${#numbers.sequence(inicio, fim)}"
+                    class="page-item"
+                    th:classappend="${i == produtos.number} ? 'active'">
+                    <a class="page-link"
+                       th:href="@{/produtos(busca=${busca},ordem=${ordem},direcao=${direcao},page=${i})}"
+                       th:text="${i + 1}">
+                    </a>
+                </li>
+            </th:block>
+
+            <!-- Próxima -->
+            <li class="page-item" th:classappend="${produtos.last} ? 'disabled'">
+                <a class="page-link"
+                   th:href="@{/produtos(busca=${busca},ordem=${ordem},direcao=${direcao},page=${produtos.number + 1})}">
+                    ›
+                </a>
+            </li>
+
+            <!-- Última página -->
+            <li class="page-item" th:classappend="${produtos.last} ? 'disabled'">
+                <a class="page-link"
+                   th:href="@{/produtos(busca=${busca},ordem=${ordem},direcao=${direcao},page=${produtos.totalPages - 1})}">
+                    »
+                </a>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- ── Modal de confirmação de exclusão ──────────────────────────────── -->
+    <div class="modal fade" id="modalConfirmarExclusao" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title text-danger">
+                        <i class="fas fa-exclamation-triangle me-2"></i>Confirmar exclusão
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    Deseja excluir o produto <strong id="nomeProduto"></strong>?
+                    Esta ação não pode ser desfeita.
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        Cancelar
+                    </button>
+                    <!-- Formulário POST com _method=DELETE -->
+                    <form id="formExclusao" method="post">
+                        <input type="hidden" name="_method" value="DELETE">
+                        <input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash me-1"></i>Excluir
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ── Script: preenche o modal com id e nome do produto ─────────────── -->
+<th:block layout:fragment="scripts">
+<script th:inline="javascript">
+    function confirmarExclusao(btn) {
+        const id   = btn.dataset.id;
+        const nome = btn.dataset.nome;
+        document.getElementById('nomeProduto').textContent = nome;
+        document.getElementById('formExclusao').action = /*[[@{/produtos/}]]*/ '/produtos/' + id;
+    }
+</script>
+</th:block>
+</body>
+</html>
+```
+
 #### Formulário de Produto (`templates/produtos/formulario.html`)
 
 ```html
@@ -1403,6 +1722,583 @@ public HiddenHttpMethodFilter hiddenHttpMethodFilter() {
     <input type="hidden" name="_method" value="PUT">
     <!-- campos... -->
 </form>
+```
+
+---
+
+#### 4.3.1 Referência de Atributos e Funções Utilitárias
+
+##### Atributos principais
+
+| Atributo | Descrição | Exemplo |
+|---|---|---|
+| `th:text` | Define o texto do elemento (escapa HTML) | `th:text="${produto.nome}"` |
+| `th:utext` | Define o texto sem escapar HTML | `th:utext="${produto.descricaoHtml}"` |
+| `th:value` | Define o `value` de um `input` | `th:value="${produto.id}"` |
+| `th:href` | URL dinâmica em links `<a>` | `th:href="@{/produtos/{id}(id=${p.id})}"` |
+| `th:src` | URL dinâmica em `<img>`, `<script>` | `th:src="@{/imagens/{f}(f=${produto.foto})}"` |
+| `th:action` | URL do atributo `action` do `<form>` | `th:action="@{/produtos}"` |
+| `th:object` | Vincula o form ao model attribute | `th:object="${produtoForm}"` |
+| `th:field` | Binding de campo com o model (gera `id`, `name`, `value`) | `th:field="*{nome}"` |
+| `th:errors` | Exibe mensagens de erro do campo | `th:errors="*{nome}"` |
+| `th:errorclass` | Adiciona classe CSS se o campo tiver erro. **Requer `th:field`** no mesmo elemento para identificar o campo no `BindingResult` | `th:errorclass="is-invalid"` |
+| `th:each` | Itera sobre coleções | `th:each="p : ${produtos}"` |
+| `th:if` | Renderiza o elemento se verdadeiro | `th:if="${produto.ativo}"` |
+| `th:unless` | Renderiza o elemento se falso | `th:unless="${lista.isEmpty()}"` |
+| `th:switch` / `th:case` | Estrutura switch | `th:switch="${status}"` / `th:case="'ATIVO'"` |
+| `th:class` | Define a classe CSS completa | `th:class="${ativo} ? 'badge bg-success' : 'badge bg-secondary'"` |
+| `th:classappend` | Adiciona classe CSS condicional | `th:classappend="${ativo} ? 'text-success'"` |
+| `th:attr` | Define atributos arbitrários | `th:attr="data-id=${produto.id}"` |
+| `th:attrappend` | Adiciona valor a atributos existentes | `th:attrappend="class=${' ativo'}"` |
+| `th:disabled` | Desabilita um campo condicionalmente | `th:disabled="${!editando}"` |
+| `th:checked` | Marca checkbox condicionalmente | `th:checked="${produto.ativo}"` |
+| `th:selected` | Marca `<option>` como selecionado | `th:selected="${cat.id == form.categoriaId}"` |
+| `th:inline` | Habilita expressões em texto (`[[...]]`) | `th:inline="text"` |
+| `th:replace` | Substitui o elemento por um fragmento | `th:replace="~{layout/navbar :: navbar}"` |
+| `th:insert` | Insere fragmento dentro do elemento | `th:insert="~{fragmentos/tabela :: cabecalho}"` |
+| `th:fragment` | Declara um fragmento reutilizável | `th:fragment="cabecalho"` |
+| `th:with` | Declara variável local | `th:with="total=${lista.size()}"` |
+| `th:remove` | Remove o elemento do HTML renderizado | `th:remove="all"` |
+
+##### Pré-processamento com `__${...}__`
+
+O pré-processamento é avaliado **antes** de qualquer outro atributo Thymeleaf na mesma tag. O resultado substitui a expressão `__${...}__` no texto do atributo, e só então o Thymeleaf processa o valor resultante normalmente.
+
+**Sintaxe:**
+
+```
+__${expressão}__
+```
+
+O caso de uso principal é quando o **nome de uma variável ou campo** é dinâmico — ou seja, quando só se sabe em tempo de execução qual expressão avaliar.
+
+**Caso 1 — nome de campo dinâmico em `th:text`:**
+
+```html
+<!-- campo é uma String como "nome", "preco", "estoque" vinda do model -->
+<!-- sem pré-processamento, ${produto.campo} tentaria acessar a propriedade
+     literal "campo" no objeto produto — não o valor da variável campo -->
+<td th:text="${produto.__${campo}__}"></td>
+
+<!-- Thymeleaf processa em duas etapas:
+     1. __${campo}__ → "preco"
+     2. ${produto.preco} → 99.90                                          -->
+```
+
+**Caso 2 — chave de mensagem dinâmica em `th:text`:**
+
+```html
+<!-- msgKey = "produtos.status.ativo" ou "produtos.status.inativo" -->
+<span th:text="#{__${msgKey}__}"></span>
+
+<!-- Equivalente a: -->
+<span th:text="${produto.ativo} ? #{produtos.status.ativo} : #{produtos.status.inativo}"></span>
+```
+
+**Caso 3 — fragmento com nome dinâmico:**
+
+```html
+<!-- tipoColuna = "texto", "moeda" ou "data" — decide qual fragmento renderizar -->
+<td th:replace="~{fragmentos/colunas :: __${tipoColuna}__(${valor})}"></td>
+
+<!-- Resolve para, por exemplo: ~{fragmentos/colunas :: moeda(${valor})} -->
+```
+
+**Caso 4 — tabela genérica com colunas configuráveis:**
+
+```html
+<!--
+  Controller envia:
+    model.addAttribute("colunas", List.of("nome", "preco", "estoque"));
+    model.addAttribute("produtos", lista);
+-->
+<thead>
+    <tr>
+        <th th:each="col : ${colunas}" th:text="${col}"></th>
+    </tr>
+</thead>
+<tbody>
+    <tr th:each="produto : ${produtos}">
+        <!-- pré-processamento resolve o nome da coluna para acessar a propriedade correta -->
+        <td th:each="col : ${colunas}"
+            th:text="${produto.__${col}__}">
+        </td>
+    </tr>
+</tbody>
+```
+
+> **Atenção:** o pré-processamento aumenta a complexidade do template. Use apenas quando o nome da variável ou campo é genuinamente dinâmico. Para condicionais simples, prefira `th:if`/`th:switch` — são mais legíveis e mais fáceis de depurar.
+
+##### Variáveis de loop com `th:each`
+
+```html
+<!-- iterStat expõe metadados do loop -->
+<tr th:each="produto, iterStat : ${produtos}"
+    th:classappend="${iterStat.odd} ? 'table-secondary'">
+
+    <td th:text="${iterStat.index}"></td>    <!-- 0, 1, 2... -->
+    <td th:text="${iterStat.count}"></td>    <!-- 1, 2, 3... -->
+    <td th:text="${iterStat.size}"></td>     <!-- total de itens -->
+    <td th:text="${iterStat.first}"></td>    <!-- true no primeiro -->
+    <td th:text="${iterStat.last}"></td>     <!-- true no último -->
+    <td th:text="${produto.nome}"></td>
+</tr>
+```
+
+##### Links dinâmicos com `@{}`
+
+```html
+<!-- URL simples -->
+<a th:href="@{/produtos}">Lista</a>
+
+<!-- Path variable -->
+<a th:href="@{/produtos/{id}(id=${produto.id})}">Ver</a>
+
+<!-- Path variable + query param -->
+<a th:href="@{/produtos/{id}/editar(id=${produto.id}, origem='lista')}">Editar</a>
+
+<!-- Múltiplos path variables -->
+<a th:href="@{/pedidos/{pedidoId}/itens/{itemId}(pedidoId=${p.id},itemId=${i.id})}">Item</a>
+
+<!-- Query params opcionais (null é omitido automaticamente) -->
+<a th:href="@{/produtos(page=${page},size=${size},busca=${busca})}">Buscar</a>
+
+<!-- Link condicional -->
+<a th:href="${produto.ativo} ? @{/produtos/{id}/desativar(id=${produto.id})}
+                             : @{/produtos/{id}/ativar(id=${produto.id})}">
+    <span th:text="${produto.ativo} ? 'Desativar' : 'Ativar'"></span>
+</a>
+
+<!-- URL absoluta vinda de um objeto do modelo
+     Usar th:href="${...}" (expressão variável) em vez de @{...}
+     quando a URL completa já está no objeto — @{} processaria o valor
+     como caminho relativo ao contexto e corromperia a URL -->
+<a th:href="${produto.urlFabricante}" target="_blank" rel="noopener noreferrer"
+   th:text="${produto.urlFabricante}">
+</a>
+
+<!-- Garantir que a URL do objeto seja sempre absoluta (http/https).
+     Útil quando o campo pode conter tanto URLs completas quanto caminhos relativos -->
+<a th:with="url=${#strings.startsWith(produto.urlFabricante, 'http')
+                  ? produto.urlFabricante
+                  : 'https://' + produto.urlFabricante}"
+   th:href="${url}"
+   th:text="${url}"
+   target="_blank" rel="noopener noreferrer">
+</a>
+
+<!-- Recurso em outro contexto de aplicação no mesmo servidor.
+     @{/caminho}  → prefixa o context path da aplicação atual  (ex: /minha-app/caminho)
+     @{~/caminho} → relativo à raiz do servidor, ignora o context path atual
+                    equivalente a @{//contextName/path} em alguns ambientes servlet -->
+
+<!-- Apontar para /relatorios-app/mensal independente do context path desta app -->
+<a th:href="@{~/relatorios-app/mensal}">Relatório Mensal</a>
+<a th:href="@{~/relatorios-app/anual}">Relatório Anual</a>
+
+<!-- Com path variable no contexto externo -->
+<a th:href="@{~/admin-app/usuarios/{id}(id=${usuario.id})}">Ver no Admin</a>
+```
+
+> **Resumo da regra:**
+> - `@{/caminho}` — rota da **própria aplicação** (prefixa o context path configurado)
+> - `@{~/outro-app/caminho}` — **outro contexto no mesmo servidor** (relativo à raiz do servidor, sem o context path da aplicação atual)
+> - `${objeto.url}` — URL absoluta já pronta vinda de um objeto do modelo
+
+##### Funções utilitárias
+
+**Números — `#numbers`:**
+
+```html
+<!-- Decimal com separadores pt-BR -->
+<span th:text="${#numbers.formatDecimal(produto.preco, 1, 'POINT', 2, 'COMMA')}"></span>
+<!-- Saída: 1.299,90 -->
+
+<!-- Inteiro com separador de milhar -->
+<span th:text="${#numbers.formatInteger(produto.estoque, 1, 'POINT')}"></span>
+<!-- Saída: 1.500 -->
+
+<!-- Percentual -->
+<span th:text="${#numbers.formatPercent(0.1234, 1, 2)}"></span>
+<!-- Saída: 12,34% -->
+```
+
+**Datas — `#temporals` (Java 8+ — `LocalDate`, `LocalDateTime`):**
+
+```html
+<!-- Formatar LocalDate -->
+<span th:text="${#temporals.format(produto.criadoEm, 'dd/MM/yyyy')}"></span>
+
+<!-- Formatar LocalDateTime -->
+<span th:text="${#temporals.format(pedido.criadoEm, 'dd/MM/yyyy HH:mm')}"></span>
+
+<!-- Partes individuais -->
+<span th:text="${#temporals.day(produto.criadoEm)}"></span>
+<span th:text="${#temporals.month(produto.criadoEm)}"></span>
+<span th:text="${#temporals.year(produto.criadoEm)}"></span>
+```
+
+**Strings — `#strings`:**
+
+```html
+<!-- Verificar se está vazio ou nulo -->
+<span th:if="${#strings.isEmpty(produto.descricao)}">Sem descrição</span>
+
+<!-- Abreviar texto longo -->
+<span th:text="${#strings.abbreviate(produto.descricao, 80)}"></span>
+
+<!-- Transformações -->
+<span th:text="${#strings.toUpperCase(produto.categoria)}"></span>
+<span th:text="${#strings.capitalize(produto.nome)}"></span>
+
+<!-- Contem substring -->
+<span th:if="${#strings.contains(produto.nome, 'Pro')}">★ Pro</span>
+```
+
+**Listas e coleções — `#lists`:**
+
+```html
+<!-- Verificar se está vazia -->
+<div th:if="${#lists.isEmpty(produtos)}" class="alert alert-info">
+    Nenhum produto cadastrado.
+</div>
+
+<!-- Tamanho -->
+<span th:text="${#lists.size(produtos)}"></span>
+
+<!-- Contém elemento -->
+<span th:if="${#lists.contains(rolesSelecionadas, 'ROLE_ADMIN')}">Admin</span>
+```
+
+**Campos de formulário — `#fields`:**
+
+```html
+<!-- Verificar se campo tem erro -->
+<div th:if="${#fields.hasErrors('nome')}" class="alert alert-danger">
+    <span th:errors="*{nome}"></span>
+</div>
+
+<!-- Verificar erros globais -->
+<div th:if="${#fields.hasGlobalErrors()}" class="alert alert-danger">
+    <ul>
+        <li th:each="err : ${#fields.globalErrors()}" th:text="${err}"></ul>
+    </ul>
+</div>
+
+<!-- Verificar qualquer erro no form -->
+<div th:if="${#fields.hasAnyErrors()}" class="alert alert-warning">
+    Corrija os erros antes de continuar.
+</div>
+```
+
+**Objeto de request — `#request`, `#session`:**
+
+```html
+<!-- URL atual -->
+<span th:text="${#request.requestURI}"></span>
+
+<!-- Parâmetro de query string -->
+<span th:text="${#request.getParameter('page')}"></span>
+
+<!-- Atributo de sessão -->
+<span th:text="${#session.getAttribute('carrinhoTotal')}"></span>
+```
+
+##### Operador Elvis e expressões seguras
+
+```html
+<!-- Elvis: valor padrão quando nulo -->
+<span th:text="${produto.descricao ?: 'Sem descrição'}"></span>
+
+<!-- Navegação segura: não lança NullPointerException -->
+<span th:text="${pedido?.cliente?.nome}"></span>
+
+<!-- Condicional inline (ternário) -->
+<span th:text="${produto.estoque > 0} ? 'Em estoque' : 'Esgotado'"></span>
+
+<!-- th:with para calcular valor local -->
+<div th:with="total=${#lists.size(itens)}, subtotal=${pedido.total}">
+    <span th:text="${total}"></span> itens —
+    <span th:text="${#numbers.formatDecimal(subtotal, 1, 'POINT', 2, 'COMMA')}"></span>
+</div>
+```
+
+##### Bloco invisível com `th:block`
+
+```html
+<!-- th:block não gera tag no HTML — útil para lógica sem wrapper -->
+<th:block th:each="produto : ${produtos}">
+    <tr>
+        <td th:text="${produto.nome}"></td>
+    </tr>
+    <tr th:if="${produto.emPromocao}">
+        <td colspan="3" class="table-warning">Produto em promoção!</td>
+    </tr>
+</th:block>
+```
+
+---
+
+#### 4.3.1.1 Escapando `${}` em blocos JavaScript e JSX
+
+O Thymeleaf processa **todo o arquivo** antes de entregá-lo ao navegador. Qualquer `${...}` encontrado — inclusive dentro de `<script>` ou em strings de template JavaScript — é interpretado como expressão Thymeleaf. Isso causa conflitos com:
+
+- **Template literals JS:** `` `Olá, ${nome}` ``
+- **JSX inline:** `<span>{produto.preco}</span>` (JSX usa `{}`, não `${}`, mas o `${}` em strings JSX ainda conflita)
+- **Frameworks client-side** embutidos no template (Vue, Alpine.js) que usam `${}` ou `{{ }}`
+
+##### Opção 1 — `th:inline="none"` no bloco `<script>`
+
+Desabilita completamente o processamento Thymeleaf dentro da tag. Use quando o bloco de script não precisa de nenhuma variável server-side:
+
+```html
+<script th:inline="none">
+    // Thymeleaf não toca neste bloco
+    const mensagem = `Olá, ${nomeUsuario}`;   // ${nomeUsuario} é JS puro — sem conflito
+    const url      = `/api/produtos/${id}`;   // idem
+</script>
+```
+
+##### Opção 2 — `th:inline="javascript"` com `/*[[...]]*/`
+
+Habilita um modo especial onde apenas expressões dentro de `/*[[...]]*/` são processadas pelo Thymeleaf. Todo o restante é tratado como JavaScript puro:
+
+```html
+<script th:inline="javascript">
+    // Valores server-side: usar /*[[ ]]*/
+    const produtoId   = /*[[${produto.id}]]*/ 0;
+    const produtoNome = /*[[${produto.nome}]]*/ '';
+    const apiBase     = /*[[@{/api}]]*/ '/api';
+
+    // Template literal JS normal — sem conflito
+    const label = `Produto: ${produtoNome} (id=${produtoId})`;
+    fetch(`${apiBase}/produtos/${produtoId}`);
+</script>
+```
+
+O comentário `/*[[expr]]*/` é invisível no JavaScript final — o Thymeleaf o substitui pelo valor avaliado. O valor após o `*/` (ex: `0`, `''`) é o **fallback** usado em prototipação estática (quando o template é aberto diretamente no navegador sem o servidor).
+
+O modo `javascript` também serializa automaticamente objetos Java para JSON:
+
+```html
+<script th:inline="javascript">
+    // Thymeleaf serializa o objeto Java diretamente para JSON
+    const produto  = /*[[${produto}]]*/ {};
+    const lista    = /*[[${produtos}]]*/ [];
+
+    // Resultado gerado:
+    // const produto = {"id":1,"nome":"Notebook","preco":3499.90};
+    // const lista   = [{"id":1,...},{"id":2,...}];
+</script>
+```
+
+##### Opção 3 — escapar com colchetes duplos inline (`[[...]]` e `[(...)]`)
+
+Dentro de texto comum (fora de atributos), ativar `th:inline="text"` na tag pai permite usar `[[${expr}]]` para exibir valores sem `th:text`. Isso evita conflitos em frameworks client-side que usam `{{ }}`:
+
+```html
+<!-- Alpine.js usa x-text e :atributo — não conflita com ${}.
+     Mas se precisar misturar texto Thymeleaf com diretivas Alpine: -->
+<div th:inline="text">
+    <!-- [[...]] é escapado (equivale a th:text) -->
+    <p>Bem-vindo, [[${usuario.nome}]]!</p>
+
+    <!-- [(...)] não escapa HTML (equivale a th:utext) -->
+    <p>[( ${produto.descricaoHtml} )]</p>
+</div>
+```
+
+##### Opção 4 — desativar sintaxe `[[ ]]` quando há conflito com Vue/Angular
+
+Vue.js e Angular usam `{{ }}` como delimitadores. O Thymeleaf usa `[[` e `]]`. Para evitar que o Thymeleaf processe expressões destinadas ao framework client-side, desabilitar o inline no elemento raiz:
+
+```html
+<!-- th:inline="none" no elemento que contém o app Vue/Angular -->
+<div id="app" th:inline="none">
+    <!-- {{ variavel }} será ignorado pelo Thymeleaf e processado pelo Vue -->
+    <span>{{ produto.nome }}</span>
+</div>
+
+<!-- Fora do #app, Thymeleaf funciona normalmente -->
+<p th:text="${tituloPagina}"></p>
+```
+
+##### Resumo
+
+| Situação | Solução |
+|---|---|
+| Script sem variáveis server-side | `th:inline="none"` na tag `<script>` |
+| Script que mistura variáveis server-side e JS puro | `th:inline="javascript"` + `/*[[expr]]*/` |
+| Serializar objeto/lista Java para JSON no script | `/*[[${objeto}]]*/` com `th:inline="javascript"` |
+| Texto com expressões inline no HTML | `th:inline="text"` + `[[${expr}]]` |
+| Template com Vue.js / Angular no mesmo arquivo | `th:inline="none"` no elemento raiz do framework |
+
+---
+
+#### 4.3.2 Thymeleaf com Optional
+
+O Thymeleaf acessa propriedades via convenção JavaBean. Passar um `Optional` diretamente como variável de modelo e acessar suas propriedades causa erro — o Thymeleaf tentaria chamar `getNome()` no próprio `Optional`, não no objeto interno.
+
+**Solução recomendada — resolver no controller:**
+
+```java
+// Quando ausência é erro (404)
+@GetMapping("/{id}")
+public String detalhe(@PathVariable Long id, Model model) {
+    Produto produto = repository.findById(id)
+            .orElseThrow(() -> new EntityNotFoundException("Produto não encontrado: " + id));
+
+    model.addAttribute("produto", produto);  // objeto direto, sem Optional
+    return "produtos/detalhe";
+}
+
+// Quando ausência é cenário válido
+@GetMapping("/configuracoes")
+public String configuracoes(Model model) {
+    model.addAttribute("config", configRepository.findAtiva().orElse(null));
+    return "configuracoes";
+}
+```
+
+```html
+<!-- Template recebe o objeto direto — sem nenhuma complexidade -->
+<span th:text="${produto.nome}"></span>
+
+<!-- Para o caso nullable: th:if com null-check -->
+<div th:if="${config != null}">
+    <span th:text="${config.tema}"></span>
+</div>
+<div th:unless="${config != null}">
+    Usando configuração padrão.
+</div>
+```
+
+**Quando o Optional já está no modelo** — use a API de `Optional` via SpEL:
+
+```html
+<!-- Optional.isPresent() — via propriedade "present" no SpEL -->
+<div th:if="${usuarioLogado.present}">
+    <span th:text="${usuarioLogado.get().nome}"></span>
+</div>
+
+<!-- Optional.orElse() — via chamada de método no SpEL -->
+<span th:text="${usuarioLogado.map(u -> u.nome).orElse('Visitante')}"></span>
+
+<!-- Encadeamento com map -->
+<span th:text="${pedido.desconto.map(d -> d.percentual).orElse(0)}"></span>
+```
+
+**Regra geral:**
+
+| Situação | Abordagem |
+|---|---|
+| Ausência é erro (404) | `orElseThrow()` no controller + `@ControllerAdvice` para a exceção |
+| Ausência é cenário válido | `orElse(null)` no controller + `th:if="${obj != null}"` no template |
+| Optional inevitável no modelo | `${opt.present}` e `${opt.get().campo}` via SpEL |
+
+Evite passar `Optional` para o modelo. Templates ficam mais simples e legíveis quando recebem o objeto diretamente ou `null`.
+
+---
+
+#### 4.3.3 Thymeleaf com Records
+
+Records geram acessores sem prefixo `get` — `nome()` em vez de `getNome()`. O Thymeleaf pré-3.1 só tentava a convenção JavaBean e falhava silenciosamente. O **Thymeleaf 3.1+** (incluído no Spring Boot 3.x) tenta `getNome()` e, se não encontrar, tenta `nome()` — records funcionam diretamente.
+
+**Records como view objects — uso ideal:**
+
+Records são imutáveis e sem boilerplate, perfeitos para carregar dados no modelo:
+
+```java
+// View object — apenas para leitura no template
+public record ProdutoView(
+    Long id,
+    String nome,
+    BigDecimal preco,
+    String categoriaNome,
+    boolean ativo
+) {}
+```
+
+```java
+@GetMapping
+public String listar(Model model) {
+    List<ProdutoView> produtos = repository.findAll().stream()
+            .map(p -> new ProdutoView(
+                    p.getId(), p.getNome(), p.getPreco(),
+                    p.getCategoria().getNome(), p.isAtivo()))
+            .toList();
+
+    model.addAttribute("produtos", produtos);
+    return "produtos/lista";
+}
+```
+
+```html
+<!-- Thymeleaf 3.1+ acessa os componentes do record normalmente -->
+<tr th:each="p : ${produtos}">
+    <td th:text="${p.id}"></td>
+    <td th:text="${p.nome}"></td>
+    <td th:text="${#numbers.formatDecimal(p.preco, 1, 'POINT', 2, 'COMMA')}"></td>
+    <td th:text="${p.categoriaNome}"></td>
+    <td>
+        <span th:text="${p.ativo} ? 'Ativo' : 'Inativo'"
+              th:classappend="${p.ativo} ? 'badge bg-success' : 'badge bg-secondary'">
+        </span>
+    </td>
+    <td>
+        <a th:href="@{/produtos/{id}/editar(id=${p.id})}" class="btn btn-sm btn-outline-primary">Editar</a>
+    </td>
+</tr>
+```
+
+**Records NÃO funcionam como form objects:**
+
+Records são imutáveis — o Spring não consegue fazer binding de formulário (`@ModelAttribute`) porque precisa setar propriedades durante o binding. Use classes com getters/setters para formulários:
+
+```java
+// ERRADO — record não suporta binding de formulário
+@PostMapping
+public String salvar(@ModelAttribute ProdutoView form) { ... }
+
+// CORRETO — classe mutável para receber dados do formulário
+public class ProdutoForm {
+    @NotBlank private String nome;
+    @NotNull  private BigDecimal preco;
+    private Long categoriaId;
+    // getters e setters
+}
+
+@PostMapping
+public String salvar(@Valid @ModelAttribute("produtoForm") ProdutoForm form,
+                     BindingResult result) { ... }
+```
+
+**Separação recomendada:**
+
+| Uso no template | Tipo Java |
+|---|---|
+| Exibir dados em listas e detalhes | `record` (view object) |
+| Receber dados de formulário | classe com getters/setters (form object) |
+| Retornar erros de API | `record` (response DTO) |
+
+```java
+// Padrão completo: form object para entrada, record para saída
+@GetMapping("/{id}/editar")
+public String editar(@PathVariable Long id, Model model) {
+    Produto p = repository.findById(id).orElseThrow();
+
+    // Form object recebe os dados existentes para pré-preencher o formulário
+    ProdutoForm form = new ProdutoForm();
+    form.setNome(p.getNome());
+    form.setPreco(p.getPreco());
+    form.setCategoriaId(p.getCategoria().getId());
+
+    model.addAttribute("produtoForm", form);
+    model.addAttribute("editando", true);
+    model.addAttribute("produto", new ProdutoView(p.getId(), p.getNome(), p.getPreco(),
+                                                   p.getCategoria().getNome(), p.isAtivo()));
+    return "produtos/formulario";
+}
 ```
 
 ### 4.4 Convertendo `ConstraintViolationException` do Service em `BindingResult`

@@ -7,6 +7,7 @@ Documentação consolidada com apoio de agentes de IA (Claude Code).
 * [Frontend-Angular.md](Frontend-Angular.md) — Visão geral do Angular 21
 * [Frontend-React.md](Frontend-React.md) — Visão geral do React 19 com TypeScript
 * [Frontend-Vue.md](Frontend-Vue.md) — Visão geral do Vue 3.5 com TypeScript
+* [Frontend-Flutter.md](Frontend-Flutter.md) — Flutter 3 com Dart: navegação, estado global, backend, i18n, JWT e distribuição Android/iOS
 
 ---
 

@@ -16,7 +16,9 @@
       "Bash(node:*)",
       "Bash(python _build_inicial.py)",
       "Bash(del \"e:\\\\projetos\\\\senac\\\\dicas-desenvolvimento\\\\_build_inicial.py\")",
-      "Bash(python _fix_quotes.py)"
+      "Bash(python _fix_quotes.py)",
+      "Bash(python3 -c \":*)",
+      "Bash(python -c \":*)"
     ]
   }
 }
