@@ -1325,6 +1325,341 @@ public class InfraConfig {
 }
 ```
 
+### 2.3.1 Injetando um Bean Prototype dentro de um Singleton
+
+Por padrão, todos os beans Spring são **singleton**: o container cria uma única
+instância e a reutiliza. Um bean **prototype** gera uma nova instância a cada
+vez que é solicitado ao container. O problema surge quando você injeta um
+prototype dentro de um singleton via construtor: a injeção ocorre **uma única
+vez** na criação do singleton, e o campo nunca muda — o prototype passa a se
+comportar como singleton, anulando o objetivo do escopo.
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// PROBLEMA: injeção direta via construtor faz o prototype virar singleton
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Bean prototype — cada solicitação deveria entregar uma nova instância
+@Component
+@Scope("prototype")
+public class RelatorioBuilder {
+
+    private final List<String> linhas = new ArrayList<>();
+
+    public void adicionar(String linha) { linhas.add(linha); }
+    public String gerar() { return String.join("\n", linhas); }
+}
+
+// Bean singleton — criado UMA vez pelo container
+@Service
+public class RelatorioService {
+
+    // ❌ ERRADO: esta instância é injetada UMA única vez na criação do singleton.
+    //    Todas as chamadas a gerarRelatorio() compartilham o MESMO RelatorioBuilder,
+    //    acumulando linhas de relatórios anteriores — bug de estado compartilhado.
+    private final RelatorioBuilder builder;
+
+    public RelatorioService(RelatorioBuilder builder) {
+        this.builder = builder;   // ← injetado uma vez, nunca substituído
+    }
+
+    public String gerarRelatorio(List<String> dados) {
+        dados.forEach(builder::adicionar);
+        return builder.gerar();   // linhas de chamadas anteriores vazam aqui
+    }
+}
+```
+
+#### Solução 1 — `ObjectProvider<T>` (recomendada)
+
+`ObjectProvider<T>` é a forma idiomática moderna do Spring para obter beans
+prototype sob demanda. É injetado como qualquer outro bean e respeita toda a
+infraestrutura do container (proxies, perfis, qualificadores).
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// SOLUÇÃO 1: ObjectProvider<T> — forma recomendada (Spring 4.3+)
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Service
+public class RelatorioService {
+
+    // ObjectProvider é injetado como singleton, mas cada chamada a getObject()
+    // pede uma NOVA instância de RelatorioBuilder ao container.
+    private final ObjectProvider<RelatorioBuilder> builderProvider;
+
+    public RelatorioService(ObjectProvider<RelatorioBuilder> builderProvider) {
+        this.builderProvider = builderProvider;
+    }
+
+    public String gerarRelatorio(List<String> dados) {
+        // ✅ Nova instância a cada chamada — sem estado compartilhado entre relatórios
+        RelatorioBuilder builder = builderProvider.getObject();
+        dados.forEach(builder::adicionar);
+        return builder.gerar();
+    }
+}
+```
+
+#### Solução 2 — `@Lookup` (injeção de método)
+
+`@Lookup` instrui o Spring a sobrescrever o método anotado em uma subclasse
+CGLIB, fazendo-o retornar sempre uma nova instância do prototype. É útil quando
+a classe não pode depender de tipos Spring (ex.: frameworks ou legado).
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// SOLUÇÃO 2: @Lookup — método sobrescrito por proxy CGLIB
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Service
+public abstract class RelatorioService {   // ← precisa ser abstrata ou não-final
+
+    public String gerarRelatorio(List<String> dados) {
+        // novoBuilder() é interceptado pelo CGLIB e retorna uma nova instância
+        RelatorioBuilder builder = novoBuilder();
+        dados.forEach(builder::adicionar);
+        return builder.gerar();
+    }
+
+    // O Spring sobrescreve este método; o corpo pode ficar vazio ou lançar exceção.
+    // O nome do bean pode ser especificado em @Lookup("beanName") se necessário.
+    @Lookup
+    protected abstract RelatorioBuilder novoBuilder();
+}
+```
+
+#### Solução 3 — `ApplicationContext` (acesso direto ao container)
+
+Funciona, mas aumenta o acoplamento ao Spring e dificulta testes. Prefira
+`ObjectProvider` nas situações onde as soluções anteriores são viáveis.
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// SOLUÇÃO 3: ApplicationContext — funciona, mas acopla ao Spring
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Service
+public class RelatorioService implements ApplicationContextAware {
+
+    private ApplicationContext ctx;
+
+    @Override
+    public void setApplicationContext(ApplicationContext ctx) {
+        this.ctx = ctx;
+    }
+
+    public String gerarRelatorio(List<String> dados) {
+        // getBean() sempre retorna nova instância para beans prototype
+        RelatorioBuilder builder = ctx.getBean(RelatorioBuilder.class);
+        dados.forEach(builder::adicionar);
+        return builder.gerar();
+    }
+}
+```
+
+**Comparativo:**
+
+| Abordagem | Acoplamento ao Spring | Testabilidade | Quando usar |
+|---|---|---|---|
+| `ObjectProvider<T>` | Baixo (API Spring) | ✅ Fácil (mock/stub do provider) | Caso geral — forma recomendada |
+| `@Lookup` | Nenhum na interface pública | ✅ Boa (pode sobrescrever o método) | Quando a classe não deve referenciar tipos Spring |
+| `ApplicationContext` | Alto | ⚠️ Mais trabalhoso (mock do contexto) | Código legado ou utilitários genéricos |
+
+> **Regra prática:** se um bean precisa ser **prototype**, cada singleton que o
+> utiliza deve solicitar uma **nova instância por chamada**, nunca armazenar o
+> prototype em um campo. Use `ObjectProvider` como padrão.
+
+### 2.3.2 Injetando Beans de Escopo `request` ou `session` em Beans de Escopo Mais Amplo
+
+Os escopos web do Spring criam instâncias vinculadas ao ciclo de vida de uma
+requisição HTTP (`request`) ou de uma sessão de usuário (`session`). O escopo
+`application` é equivalente a um singleton no contexto do `ServletContext`.
+
+```
+Hierarquia de escopos (do mais curto ao mais longo):
+  request  <  session  <  application ≈ singleton
+```
+
+O problema é análogo ao do prototype: um bean de escopo mais amplo (ex.:
+`singleton`) é criado uma única vez e guarda uma referência fixa. Se o bean
+injetado é de escopo mais curto (ex.: `session`), cada usuário deveria ter sua
+própria instância — mas o singleton não troca a referência automaticamente.
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// PROBLEMA: injeção direta de bean session em singleton
+// ════════════════════════════════════════════════════════════════════════════════
+
+@Component
+@Scope("session")
+public class CarrinhoCompras {
+    private final List<Item> itens = new ArrayList<>();
+    public void adicionar(Item item) { itens.add(item); }
+    public List<Item> getItens() { return Collections.unmodifiableList(itens); }
+}
+
+@Service
+public class PedidoService {
+
+    // ❌ ERRADO: o Spring injeta o CarrinhoCompras do PRIMEIRO usuário
+    //    que ativou este bean. Todos os usuários subsequentes veem o
+    //    carrinho desse primeiro usuário — vazamento grave de dados.
+    private final CarrinhoCompras carrinho;
+
+    public PedidoService(CarrinhoCompras carrinho) {
+        this.carrinho = carrinho;   // fixado na criação do singleton
+    }
+}
+```
+
+#### Solução 1 — Scoped Proxy (recomendada para escopos web)
+
+O Spring cria um **proxy** que tem a mesma interface do bean alvo. O singleton
+recebe o proxy (que é "eterno"), e cada acesso ao proxy é redirecionado à
+instância real do escopo correto (request/session do contexto atual).
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// SOLUÇÃO 1: ScopedProxyMode — proxy que delega ao bean do escopo correto
+// ════════════════════════════════════════════════════════════════════════════════
+
+// ─── Bean de escopo session com proxy ─────────────────────────────────────────
+@Component
+@Scope(value = "session", proxyMode = ScopedProxyMode.TARGET_CLASS)
+// TARGET_CLASS → proxy CGLIB (para classes concretas)
+// INTERFACES   → proxy JDK  (para interfaces — requer que o bean implemente uma)
+public class CarrinhoCompras {
+
+    private final List<Item> itens = new ArrayList<>();
+
+    public void adicionar(Item item) { itens.add(item); }
+    public List<Item> getItens() { return Collections.unmodifiableList(itens); }
+    public void limpar() { itens.clear(); }
+}
+
+// ─── Bean request com proxy ───────────────────────────────────────────────────
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class ContextoRequisicao {
+
+    private String usuarioLogado;
+    private String ipOrigem;
+
+    // getters e setters omitidos
+}
+
+// ─── Singleton recebe o proxy — injeção via construtor funciona normalmente ───
+@Service
+public class PedidoService {
+
+    // ✅ CORRETO: carrinho é um proxy. Cada chamada a carrinho.getItens()
+    //    é redirecionada ao CarrinhoCompras da sessão HTTP ativa no momento.
+    //    Usuários diferentes veem carrinhos diferentes — sem vazamento.
+    private final CarrinhoCompras carrinho;
+    private final ContextoRequisicao contexto;
+
+    public PedidoService(CarrinhoCompras carrinho,
+                         ContextoRequisicao contexto) {
+        this.carrinho = carrinho;   // proxy session-scoped
+        this.contexto = contexto;   // proxy request-scoped
+    }
+
+    public PedidoResponse fecharPedido() {
+        // Em cada chamada, o proxy resolve o bean real da sessão/request corretas
+        List<Item> itens = carrinho.getItens();
+        String usuario   = contexto.getUsuarioLogado();
+        // ...lógica de negócio...
+        carrinho.limpar();
+        return new PedidoResponse(usuario, itens);
+    }
+}
+```
+
+#### Declarando via `@Bean` (em `@Configuration`)
+
+```java
+@Configuration
+public class WebBeansConfig {
+
+    // ─── Session-scoped via @Bean ──────────────────────────────────────────────
+    @Bean
+    @Scope(value = WebApplicationContext.SCOPE_SESSION,
+           proxyMode = ScopedProxyMode.TARGET_CLASS)
+    public CarrinhoCompras carrinhoCompras() {
+        return new CarrinhoCompras();
+    }
+
+    // ─── Request-scoped via @Bean ─────────────────────────────────────────────
+    @Bean
+    @Scope(value = WebApplicationContext.SCOPE_REQUEST,
+           proxyMode = ScopedProxyMode.TARGET_CLASS)
+    public ContextoRequisicao contextoRequisicao() {
+        return new ContextoRequisicao();
+    }
+
+    // ─── Application-scoped (equivale a singleton no ServletContext) ──────────
+    // Pode ser injetado diretamente em qualquer bean — sem proxy necessário,
+    // pois dura tanto quanto o singleton (ou mais).
+    @Bean
+    @Scope(value = WebApplicationContext.SCOPE_APPLICATION)
+    public ConfiguracoesGlobais configuracoesGlobais() {
+        return new ConfiguracoesGlobais();
+    }
+}
+```
+
+#### Solução 2 — `ObjectProvider<T>` (alternativa sem proxy)
+
+Quando não é possível ou desejável adicionar o proxy ao bean de destino (ex.:
+bean de biblioteca de terceiros), `ObjectProvider` resolve a instância correta
+no momento da chamada, sem necessidade de proxy na definição do bean.
+
+```java
+// ════════════════════════════════════════════════════════════════════════════════
+// SOLUÇÃO 2: ObjectProvider — resolução tardia sem proxy na definição do bean
+// ════════════════════════════════════════════════════════════════════════════════
+
+// Bean session SEM proxyMode — definição simples
+@Component
+@Scope("session")
+public class PreferenciasUsuario {
+    private Locale idioma = Locale.of("pt", "BR");
+    // getters e setters
+}
+
+@Service
+public class NotificacaoService {
+
+    private final ObjectProvider<PreferenciasUsuario> prefsProvider;
+
+    public NotificacaoService(ObjectProvider<PreferenciasUsuario> prefsProvider) {
+        this.prefsProvider = prefsProvider;
+    }
+
+    public void enviar(String mensagem) {
+        // getObject() resolve a instância da sessão ativa no momento da chamada
+        PreferenciasUsuario prefs = prefsProvider.getObject();
+        String mensagemLocalizada = traduzir(mensagem, prefs.getIdioma());
+        // ...
+    }
+}
+```
+
+**Comparativo:**
+
+| Abordagem | Configuração no bean alvo | Transparência para o consumidor | Quando usar |
+|---|---|---|---|
+| `ScopedProxyMode.TARGET_CLASS` | `proxyMode` na definição | ✅ Total — injeção normal via construtor | Caso geral; bean é uma classe concreta |
+| `ScopedProxyMode.INTERFACES` | `proxyMode` na definição | ✅ Total — injeção normal via construtor | Bean implementa interface; proxy JDK suficiente |
+| `ObjectProvider<T>` | Nenhuma mudança no bean | ⚠️ Requer chamada a `getObject()` | Bean de terceiros sem `proxyMode` |
+
+> **Regra de ouro dos escopos:** você pode injetar um bean de escopo **mais
+> longo** em um de escopo **mais curto** diretamente (ex.: singleton em
+> request). O inverso — escopo **mais curto** em **mais longo** — exige sempre
+> um **proxy** ou `ObjectProvider`, pois o bean receptor sobrevive ao ciclo de
+> vida do bean injetado.
+
 ### 2.4 `@Component` e Especializações (Stereotype Annotations)
 
 `@Component` é a anotação base de **detecção automática**: o Spring varre o
@@ -1758,7 +2093,8 @@ public class RelatorioService {
 // ❌ DON'T — @Autowired em campo
 @Service
 public class Ruim {
-    @Autowired private Repositorio rep;  // ← não faça
+    @Autowired  // ← não faça
+    private Repositorio rep;
 }
 
 // ❌ DON'T — @Autowired(required = true) explícito em construtor (redundante)
@@ -2005,8 +2341,6 @@ public class PedidoConfirmadoListener {
 > mais estreita. Se o bean só precisa publicar eventos, declare
 > `ApplicationEventPublisher` — não `ApplicationContext`. Isso deixa a intenção
 > clara e facilita os testes (mock mais simples).
-
----
 
 ---
 

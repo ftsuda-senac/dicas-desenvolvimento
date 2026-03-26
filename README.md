@@ -23,6 +23,7 @@ Ordem recomendada para os documentos de referência do ecossistema Spring:
 4. [Dicas-JPA-Hibernate-Queries.md](Dicas-JPA-Hibernate-Queries.md) — Consultas JPQL, Criteria API e Spring Data
 5. [Dicas-Spring-Security.md](Dicas-Spring-Security.md) — Autenticação e autorização com Spring Security
 6. [Spring-Boot-Avancado.md](Spring-Boot-Avancado.md) — Tópicos avançados do Spring Boot
+7. [Dicas-Logs-Observabilidade.md](Dicas-Logs-Observabilidade.md) — Logs estruturados, MDC, rastreamento distribuído e infraestrutura de observabilidade
 
 ---
 

@@ -122,11 +122,13 @@
     - [19.5 @SpringBootTest — Teste de Integração](#195-springboottest--teste-de-integração)
     - [19.6 Configuração de Contexto de Teste](#196-configuração-de-contexto-de-teste)
     - [19.7 Testando Upload, CORS e SSE](#197-testando-upload-cors-e-sse)
-20. [Tópicos Relevantes Não Cobertos Neste Documento](#20-tópicos-relevantes-não-cobertos-neste-documento)
-    - [20.1 Tópicos Ausentes — Alta Relevância](#201-tópicos-ausentes--alta-relevância)
-    - [20.2 Tópicos Ausentes — Relevância Moderada](#202-tópicos-ausentes--relevância-moderada)
-    - [20.3 Tópicos Ausentes — Relevância Menor mas Notáveis](#203-tópicos-ausentes--relevância-menor-mas-notáveis)
-    - [20.4 Resumo por Prioridade](#204-resumo-por-prioridade)
+20. [Tópicos Avançados](#20-tópicos-avançados)
+    - [20.1 Renomear campos do formulário (@FormField)](#201-renomear-campos-do-formulário-formfield) — binding POST + dialeto Thymeleaf `ff:field`/`ff:errors`
+21. [Tópicos Relevantes Não Cobertos Neste Documento](#21-tópicos-relevantes-não-cobertos-neste-documento)
+    - [21.1 Tópicos Ausentes — Alta Relevância](#211-tópicos-ausentes--alta-relevância)
+    - [21.2 Tópicos Ausentes — Relevância Moderada](#212-tópicos-ausentes--relevância-moderada)
+    - [21.3 Tópicos Ausentes — Relevância Menor mas Notáveis](#213-tópicos-ausentes--relevância-menor-mas-notáveis)
+    - [21.4 Resumo por Prioridade](#214-resumo-por-prioridade)
 - [Referências e Créditos](#referências-e-créditos)
 
 ---
@@ -7856,27 +7858,420 @@ class EventoControllerTest {
 
 
 
-## 20. Tópicos Relevantes Não Cobertos Neste Documento
+## 20. Tópicos Avançados
+
+### 20.1 Renomear campos do formulário (`@FormField`)
+
+**Contexto — por que renomear?**
+
+No binding padrão do `@ModelAttribute`, o Spring usa o nome do getter/setter para mapear campos do formulário HTML para atributos Java. Quando o nome enviado pelo formulário (atributo `name` do `<input>`) precisa ser diferente do atributo Java — cenário comum com formulários legados, integração com bibliotecas externas ou convenções de nomenclatura distintas — não existe um equivalente nativo ao `@JsonProperty` do Jackson.
+
+**Abordagens básicas (sem infraestrutura extra)**
+
+| Abordagem | Quando usar |
+|---|---|
+| Getter/setter com nome diferente do campo | Quando você controla a classe e quer um alias simples |
+| `th:name` manual (sem `th:field`) | Quando você controla o template e quer forçar um nome no HTML |
+
+**Opção 1 — getter/setter com nome diferente**
+
+O binding usa o nome do getter/setter, não o nome do campo privado:
+
+```java
+public class ProdutoForm {
+    private String nomeInterno;
+
+    public String getNome() { return nomeInterno; }   // HTML usa "nome"
+    public void setNome(String v) { this.nomeInterno = v; }
+}
+```
+
+```html
+<input th:field="*{nome}" />       <!-- gera name="nome" -->
+<span th:errors="*{nome}"></span>
+```
+
+**Opção 2 — `th:name` manual**
+
+Quando o formulário envia um nome diferente e você não quer alterar os getters:
+
+```html
+<!-- Formulário envia "produto_nome", Java espera "nome" via getter -->
+<input type="text" th:name="'produto_nome'" th:value="*{nome}" />
+```
+
+> Esta opção sozinha faz o binding falhar, pois o Spring procura a propriedade `produto_nome`. Precisa ser combinada com a abordagem de infraestrutura abaixo.
+
+---
+
+**Implementação com anotação `@FormField`**
+
+Para um mapeamento declarativo análogo ao `@JsonProperty`, é necessário customizar o pipeline de binding do Spring MVC com três componentes.
+
+**1. Anotação**
+
+```java
+@Target(ElementType.FIELD)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface FormField {
+    /** Nome do campo enviado pelo formulário HTML */
+    String name();
+}
+```
+
+**2. `WebDataBinder` customizado**
+
+Intercepta os valores antes do binding e renomeia os campos conforme `@FormField`, com suporte a herança:
+
+```java
+public class FormAwareWebDataBinder extends ExtendedServletRequestDataBinder {
+
+    public FormAwareWebDataBinder(Object target, String objectName) {
+        super(target, objectName);
+    }
+
+    @Override
+    protected void addBindValues(MutablePropertyValues mpvs, ServletRequest request) {
+        super.addBindValues(mpvs, request);
+        if (getTarget() != null) {
+            remapAnnotatedFields(mpvs, getTarget().getClass());
+        }
+    }
+
+    private void remapAnnotatedFields(MutablePropertyValues mpvs, Class<?> clazz) {
+        if (clazz == null || clazz == Object.class) return;
+        remapAnnotatedFields(mpvs, clazz.getSuperclass()); // suporte a herança
+
+        for (Field field : clazz.getDeclaredFields()) {
+            FormField annotation = field.getAnnotation(FormField.class);
+            if (annotation == null) continue;
+
+            String formName = annotation.name();   // nome no HTML
+            String javaName = field.getName();     // nome no Java
+
+            PropertyValue pv = mpvs.getPropertyValue(formName);
+            if (pv != null) {
+                mpvs.removePropertyValue(formName);
+                mpvs.addPropertyValue(new PropertyValue(javaName, pv.getValue()));
+            }
+        }
+    }
+}
+```
+
+**3. Factory do binder**
+
+```java
+public class FormAwareDataBinderFactory extends ServletRequestDataBinderFactory {
+
+    public FormAwareDataBinderFactory(List<InvocableHandlerMethod> binderMethods,
+                                      WebBindingInitializer initializer) {
+        super(binderMethods, initializer);
+    }
+
+    @Override
+    protected ServletRequestDataBinder createBinderInstance(Object target,
+                                                            String objectName,
+                                                            NativeWebRequest request) {
+        return new FormAwareWebDataBinder(target, objectName);
+    }
+}
+```
+
+**4. Registro no Spring Boot**
+
+```java
+@Component
+public class FormAwareMvcRegistrations implements WebMvcRegistrations {
+
+    @Override
+    public RequestMappingHandlerAdapter getRequestMappingHandlerAdapter() {
+        return new RequestMappingHandlerAdapter() {
+            @Override
+            protected InitBinderDataBinderFactory createDataBinderFactory(
+                    List<InvocableHandlerMethod> binderMethods) throws Exception {
+                return new FormAwareDataBinderFactory(binderMethods, getWebBindingInitializer());
+            }
+        };
+    }
+}
+```
+
+> Implementar `WebMvcRegistrations` é a forma idiomática do Spring Boot para customizar o `RequestMappingHandlerAdapter` sem interferir no autoconfigure.
+
+**Uso na classe de form**
+
+```java
+public class ProdutoForm {
+
+    @FormField(name = "produto_nome")   // HTML envia "produto_nome"
+    private String nome;                // Java usa "nome"
+
+    @FormField(name = "preco_venda")    // HTML envia "preco_venda"
+    @NotNull @Positive
+    private BigDecimal preco;
+
+    // getters/setters normais para "nome" e "preco"
+}
+```
+
+Template Thymeleaf — `th:field` e `th:errors` continuam usando o nome Java:
+
+```html
+<!-- Formulário com nomes diferentes (legado ou externo) -->
+<input type="text" th:name="'produto_nome'" th:value="*{nome}" />
+<input type="text" th:name="'preco_venda'"  th:value="*{preco}" />
+
+<!-- Erros usam o nome Java, igual ao comportamento padrão -->
+<span th:errors="*{nome}"></span>
+<span th:errors="*{preco}"></span>
+```
+
+Controller — sem nenhuma alteração:
+
+```java
+@PostMapping("/produtos")
+public String salvar(@ModelAttribute @Valid ProdutoForm form,
+                     BindingResult binding) {
+    if (binding.hasErrors()) return "produto/form";
+    service.salvar(form);
+    return "redirect:/produtos";
+}
+```
+
+**Fluxo resumido**
+
+```
+HTML form  →  "produto_nome=X"  →  FormAwareWebDataBinder
+                                         ↓ lê @FormField
+                                    renomeia → "nome=X"
+                                         ↓
+                                    binding normal (@ModelAttribute)
+                                         ↓
+                                    ProdutoForm.nome = "X"
+                                    BindingResult usa "nome" (Java)
+```
+
+> **Nota:** O `BindingResult` sempre registra erros pelo nome Java (`nome`, `preco`), então `th:errors` e mensagens de validação funcionam sem ajuste adicional.
+
+---
+
+**Usando `th:field` e `th:errors` com o nome do formulário**
+
+A implementação acima cobre o binding no POST (formulário → Java). Para que o template também use os nomes definidos em `@FormField` — em vez dos nomes Java — nos atributos `th:field` e `th:errors`, é necessário um **dialeto Thymeleaf customizado** com atributos `ff:field` e `ff:errors`.
+
+> `th:field` e `th:errors` operam exclusivamente sobre nomes de propriedades (getter/setter) e não podem ser tornar cientes de `@FormField` sem extensão do motor de templates.
+
+**Utilitário de resolução bidirecional**
+
+```java
+public final class FormFieldResolver {
+
+    private FormFieldResolver() {}
+
+    /** Dado o nome do formulário HTML, devolve o nome do campo Java (via @FormField). */
+    public static String toJavaName(Class<?> clazz, String formFieldName) {
+        if (clazz == null || clazz == Object.class) return null;
+        String fromSuper = toJavaName(clazz.getSuperclass(), formFieldName);
+        if (fromSuper != null) return fromSuper;
+        for (Field field : clazz.getDeclaredFields()) {
+            FormField ann = field.getAnnotation(FormField.class);
+            if (ann != null && ann.name().equals(formFieldName)) {
+                return field.getName();
+            }
+        }
+        return null;
+    }
+
+    /** Dado o nome do campo Java, devolve o nome do formulário HTML (via @FormField). */
+    public static String toFormName(Class<?> clazz, String javaFieldName) {
+        if (clazz == null || clazz == Object.class) return javaFieldName;
+        String fromSuper = toFormName(clazz.getSuperclass(), javaFieldName);
+        if (!fromSuper.equals(javaFieldName)) return fromSuper;
+        try {
+            Field field = clazz.getDeclaredField(javaFieldName);
+            FormField ann = field.getAnnotation(FormField.class);
+            return ann != null ? ann.name() : javaFieldName;
+        } catch (NoSuchFieldException e) {
+            return javaFieldName;
+        }
+    }
+}
+```
+
+**Processor `ff:field`**
+
+Usa `FieldUtils` do Thymeleaf-Spring para obter valor e status a partir do campo Java, mas gera `name` e `id` com o nome do formulário:
+
+```java
+public class FormFieldProcessor extends AbstractAttributeTagProcessor {
+
+    public FormFieldProcessor(String dialectPrefix) {
+        super(TemplateMode.HTML, dialectPrefix, null, false,
+              "field", true, 1200, true);
+    }
+
+    @Override
+    protected void doProcess(ITemplateContext context, IProcessableElementTag tag,
+                             AttributeName attributeName, String attributeValue,
+                             IElementTagStructureHandler structureHandler) {
+
+        String formFieldName = evaluateString(context, attributeValue);
+        Class<?> boundClass  = getSelectionTargetClass(context);
+
+        String javaFieldName = FormFieldResolver.toJavaName(boundClass, formFieldName);
+        if (javaFieldName == null) javaFieldName = formFieldName; // fallback sem @FormField
+
+        // Usa FieldUtils para obter valor formatado + erros — igual ao th:field interno
+        BindStatus bindStatus = FieldUtils.getBindStatus(context, "*{" + javaFieldName + "}");
+
+        // id segue a convenção "objectName.formFieldName" (para <label for="...">)
+        String path = bindStatus.getPath();   // ex.: "produto.nome"
+        String id   = path.substring(0, path.lastIndexOf('.') + 1) + formFieldName;
+
+        structureHandler.setAttribute("id",    id);
+        structureHandler.setAttribute("name",  formFieldName);
+        structureHandler.setAttribute("value",
+            bindStatus.getDisplayValue() != null ? bindStatus.getDisplayValue() : "");
+    }
+
+    private String evaluateString(ITemplateContext context, String expression) {
+        IStandardExpressionParser parser =
+            StandardExpressions.getExpressionParser(context.getConfiguration());
+        Object result = parser.parseExpression(context, expression).execute(context);
+        return result != null ? result.toString() : "";
+    }
+
+    private Class<?> getSelectionTargetClass(ITemplateContext context) {
+        if (context instanceof IEngineContext ec) {
+            Object target = ec.getSelectionTarget();
+            return target != null ? target.getClass() : null;
+        }
+        return null;
+    }
+}
+```
+
+**Processor `ff:errors`**
+
+```java
+public class FormFieldErrorsProcessor extends AbstractAttributeTagProcessor {
+
+    public FormFieldErrorsProcessor(String dialectPrefix) {
+        super(TemplateMode.HTML, dialectPrefix, null, false,
+              "errors", true, 1300, true);
+    }
+
+    @Override
+    protected void doProcess(ITemplateContext context, IProcessableElementTag tag,
+                             AttributeName attributeName, String attributeValue,
+                             IElementTagStructureHandler structureHandler) {
+
+        String formFieldName = evaluateString(context, attributeValue);
+        Class<?> boundClass  = getSelectionTargetClass(context);
+
+        String javaFieldName = FormFieldResolver.toJavaName(boundClass, formFieldName);
+        if (javaFieldName == null) javaFieldName = formFieldName;
+
+        BindStatus bindStatus = FieldUtils.getBindStatus(context, "*{" + javaFieldName + "}");
+        String[] errors = bindStatus.getErrorMessages();
+
+        if (errors.length == 0) {
+            structureHandler.removeElement();
+            return;
+        }
+        structureHandler.setBody(String.join("<br/>", errors), false);
+    }
+
+    // mesmos helpers evaluateString / getSelectionTargetClass do FormFieldProcessor
+}
+```
+
+**Dialeto e registro como bean Spring**
+
+```java
+public class FormFieldDialect extends AbstractProcessorDialect {
+
+    public FormFieldDialect() {
+        super("FormField Dialect", "ff", StandardDialect.PROCESSOR_PRECEDENCE + 1);
+    }
+
+    @Override
+    public Set<IProcessor> getProcessors(String dialectPrefix) {
+        return Set.of(
+            new FormFieldProcessor(dialectPrefix),
+            new FormFieldErrorsProcessor(dialectPrefix)
+        );
+    }
+}
+```
+
+```java
+@Configuration
+public class ThymeleafConfig {
+
+    @Bean
+    public FormFieldDialect formFieldDialect() {
+        return new FormFieldDialect();
+    }
+}
+```
+
+**Uso no template com o dialeto**
+
+Com o dialeto registrado, o template usa os nomes do formulário nos dois sentidos (leitura e escrita):
+
+```html
+<form th:object="${produto}" method="post">
+
+    <label for="produto.produto_nome">Nome</label>
+    <input type="text" ff:field="'produto_nome'" />
+    <span ff:errors="'produto_nome'"></span>
+
+    <label for="produto.preco_venda">Preço</label>
+    <input type="text" ff:field="'preco_venda'" />
+    <span ff:errors="'preco_venda'"></span>
+
+</form>
+```
+
+**Comparativo das abordagens no template**
+
+| Aspecto | `th:field` / `th:errors` (padrão) | `ff:field` / `ff:errors` (dialeto) |
+|---|---|---|
+| Nome usado no atributo | Nome Java (`nome`) | Nome do formulário (`produto_nome`) |
+| `name=` gerado | nome Java | nome do `@FormField` |
+| `id=` gerado | `obj.nomeJava` | `obj.nomeFormulário` |
+| Valor lido | getter Java | getter Java (via `FieldUtils`) |
+| Erros | `BindingResult` pelo nome Java | `BindingResult` pelo nome Java (resolvido via `@FormField`) |
+| Requer infraestrutura extra | Não | Dialeto + bean `FormFieldDialect` |
+
+> **`FieldUtils.getBindStatus()`** é a mesma infraestrutura usada internamente pelo `th:field` do Thymeleaf-Spring, garantindo que formatação de valores (`ConversionService`, `Formatter`) e mensagens i18n (`MessageSource`) funcionem igual ao comportamento padrão.
+
+---
+
+## 21. Tópicos Relevantes Não Cobertos Neste Documento
 
 Assuntos relacionados ao Spring MVC ainda ausentes neste documento, ordenados por relevância prática.
 
-### 20.1 Tópicos Ausentes — Alta Relevância
+### 21.1 Tópicos Ausentes — Alta Relevância
 
 Introduzido no Spring 6, é a forma moderna de declarar clients HTTP (similar ao Feign) usando interfaces anotadas com `@GetExchange`, `@PostExchange` etc., resolvidos por `HttpServiceProxyFactory`. Direto ao território do Spring MVC e completamente ausente.
 
 
-### 20.2 Tópicos Ausentes — Relevância Moderada
+### 21.2 Tópicos Ausentes — Relevância Moderada
 
 **3. Endpoints funcionais — `RouterFunction` / WebMvc.fn**
 Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `WebMvcConfigurer.addRouterFunctions()`. Não substitui `@Controller` no dia a dia mas é relevante para cenários de roteamento dinâmico ou bibliotecas internas.
 
-### 20.3 Tópicos Ausentes — Relevância Menor mas Notáveis
+### 21.3 Tópicos Ausentes — Relevância Menor mas Notáveis
 
 **4. `WebMvcTest` + `MockMvcRestDocumentation`** — geração de documentação a partir dos testes (Spring REST Docs)
 
 **5. Virtual Threads — seção dedicada** — mencionado em vários lugares, mas sem consolidar os impactos no MVC (thread locals, `@Async`, `SecurityContextHolder`, `TransactionSynchronizationManager`)
 
-### 20.4 Resumo por Prioridade
+### 21.4 Resumo por Prioridade
 
 | Prioridade | Tópico | Justificativa |
 |---|---|---|

@@ -27,6 +27,9 @@
 15. [Ordenação de Coleções (@OrderBy, @OrderColumn, @SortNatural)](#15-ordenação-de-coleções-orderby-ordercolumn-sortnatural)
 16. [@ElementCollection vs @OneToMany](#16-elementcollection-vs-onetomany)
 17. [@EmbeddedId vs @IdClass — PKs Compostas](#17-embeddedid-vs-idclass-pks-compostas)
+    - [Enum como @Id simples com AttributeConverter](#enum-como-id-simples-com-attributeconverter)
+       - [Enum como parte da PK — @EmbeddedId e @IdClass](#enum-como-parte-da-pk--embeddedid-e-idclass)
+    - [Padrão genérico — PersistableEnum e conversor abstrato](#padrão-genérico--persistableenum-e-conversor-abstrato)
 18. [Coleções com Map vs Set em Relacionamentos JPA](#18-coleções-com-map-vs-set-em-relacionamentos-jpa)
 
 **Parte 4 — Value Objects, @Embeddable e Tipos Customizados**
@@ -1785,6 +1788,293 @@ flowchart TD
     style D fill:#9f9,stroke:#333
     style C fill:#9cf,stroke:#333
     style E fill:#fc9,stroke:#333
+```
+
+### Enum como `@Id` simples com `AttributeConverter`
+
+Um enum pode ser usado diretamente como `@Id` de uma entidade. O `AttributeConverter` converte o enum para o tipo persistido no banco (`String`, `Integer`, etc.).
+
+#### Converter
+
+```java
+@Converter
+public class TipoDocumentoConverter implements AttributeConverter<TipoDocumento, String> {
+
+    @Override
+    public String convertToDatabaseColumn(TipoDocumento attr) {
+        return attr == null ? null : attr.getCodigo();
+    }
+
+    @Override
+    public TipoDocumento convertToEntityAttribute(String dbData) {
+        return dbData == null ? null : TipoDocumento.fromCodigo(dbData);
+    }
+}
+```
+
+#### Entidade
+
+```java
+@Entity
+public class ConfiguracaoTipo {
+
+    @Id
+    @Convert(converter = TipoDocumentoConverter.class)
+    private TipoDocumento tipo;  // PK = "CPF" ou "CNPJ" no banco
+
+    // ...
+}
+```
+
+#### Observações
+
+| Ponto | Detalhe |
+|---|---|
+| **`@GeneratedValue` não funciona** | O enum é o próprio ID — geração automática não se aplica. O campo deve ser setado manualmente. |
+| **`equals`/`hashCode`** | Enums já têm identidade por referência (`==`), sem necessidade de sobrescrever. |
+| **`findById` / `getReferenceById`** | Funcionam normalmente, passando o enum como parâmetro. |
+| **Hibernate 6+** | O converter é aplicado corretamente ao `@Id`. No Hibernate 5 havia bugs pontuais. |
+| **`@Column(name = ...)`** | Pode ser combinado normalmente para nomear a coluna da PK. |
+
+#### Alternativa sem converter
+
+Se a representação padrão do enum já serve, `@Enumerated` dispensa o converter:
+
+```java
+@Id
+@Enumerated(EnumType.STRING)   // persiste o nome do enum: "CPF", "CNPJ"
+private TipoDocumento tipo;
+```
+
+Use `AttributeConverter` quando precisar de uma representação diferente dos nomes (`name()`) ou ordinais (`ordinal()`) padrão.
+
+---
+
+### Enum como parte da PK — `@EmbeddedId` e `@IdClass`
+
+Enums podem compor PKs compostas com `AttributeConverter`. O converter converte o enum para um tipo simples (`String`, `Integer`) que o JDBC usa como coluna de chave primária.
+
+#### @EmbeddedId com enum
+
+O `@Convert` vai na field dentro do `@Embeddable`:
+
+```java
+@Embeddable
+public class ConfiguracaoId implements Serializable {
+
+    @Convert(converter = TipoDocumentoConverter.class)
+    private TipoDocumento tipo;
+
+    private Long tenantId;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ConfiguracaoId that)) return false;
+        return tipo == that.tipo && Objects.equals(tenantId, that.tenantId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tipo, tenantId);
+    }
+}
+
+@Entity
+public class Configuracao {
+
+    @EmbeddedId
+    private ConfiguracaoId id;
+}
+```
+
+#### @IdClass com enum
+
+O `@Convert` vai na field `@Id` da **entidade** — a `@IdClass` é apenas um espelho sem anotações JPA:
+
+```java
+public class ConfiguracaoId implements Serializable {
+    private TipoDocumento tipo;  // sem @Convert aqui
+    private Long tenantId;
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ConfiguracaoId that)) return false;
+        return tipo == that.tipo && Objects.equals(tenantId, that.tenantId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(tipo, tenantId);
+    }
+}
+
+@Entity
+@IdClass(ConfiguracaoId.class)
+public class Configuracao {
+
+    @Id
+    @Convert(converter = TipoDocumentoConverter.class)
+    private TipoDocumento tipo;
+
+    @Id
+    private Long tenantId;
+}
+```
+
+#### Comparação
+
+| | `@EmbeddedId` | `@IdClass` |
+|---|---|---|
+| `@Convert` fica em | campo do `@Embeddable` | campo `@Id` da entidade |
+| `@IdClass` precisa do converter? | N/A | Não |
+| `findById(id)` | passa objeto `ConfiguracaoId` | passa objeto `ConfiguracaoId` |
+| Hibernate 5 | com bugs em converters em embeddables | mais estável |
+| Hibernate 6+ | OK | OK |
+
+> **Atenção:** `@GeneratedValue` não se aplica — o enum **é** o valor da PK. O campo deve ser setado manualmente antes do `save()`.
+
+### Padrão genérico — `PersistableEnum` e conversor abstrato
+
+Para evitar repetir a lógica de conversão em cada enum, use uma interface genérica + conversor abstrato. Cada novo enum precisa apenas implementar a interface e ter um conversor de 3 linhas.
+
+#### Interface `PersistableEnum<T>`
+
+Define o contrato que todo enum persistível deve implementar:
+
+```java
+public interface PersistableEnum<T> {
+
+    T getValue();
+
+    static <E extends Enum<E> & PersistableEnum<T>, T> E fromValue(Class<E> enumClass, T value) {
+        if (value == null) return null;
+        for (E constant : enumClass.getEnumConstants()) {
+            if (constant.getValue().equals(value)) return constant;
+        }
+        throw new IllegalArgumentException(
+            "Valor inválido para " + enumClass.getSimpleName() + ": " + value);
+    }
+}
+```
+
+#### Conversor abstrato genérico
+
+Contém toda a lógica de conversão. As subclasses só informam o tipo do enum:
+
+```java
+public abstract class PersistableEnumConverter<E extends Enum<E> & PersistableEnum<T>, T>
+        implements AttributeConverter<E, T> {
+
+    private final Class<E> enumClass;
+
+    protected PersistableEnumConverter(Class<E> enumClass) {
+        this.enumClass = enumClass;
+    }
+
+    @Override
+    public T convertToDatabaseColumn(E attribute) {
+        return attribute == null ? null : attribute.getValue();
+    }
+
+    @Override
+    public E convertToEntityAttribute(T dbData) {
+        return PersistableEnum.fromValue(enumClass, dbData);
+    }
+}
+```
+
+#### Enums implementando a interface
+
+```java
+public enum TipoDocumento implements PersistableEnum<String> {
+
+    CPF("cpf"),
+    CNPJ("cnpj");
+
+    private final String value;
+
+    TipoDocumento(String value) { this.value = value; }
+
+    @Override
+    public String getValue() { return value; }
+}
+```
+
+```java
+public enum StatusPedido implements PersistableEnum<Integer> {
+
+    PENDENTE(1),
+    APROVADO(2),
+    CANCELADO(3);
+
+    private final Integer value;
+
+    StatusPedido(Integer value) { this.value = value; }
+
+    @Override
+    public Integer getValue() { return value; }
+}
+```
+
+#### Conversores concretos — código mínimo
+
+```java
+@Converter(autoApply = true)
+public class TipoDocumentoConverter
+        extends PersistableEnumConverter<TipoDocumento, String> {
+
+    public TipoDocumentoConverter() { super(TipoDocumento.class); }
+}
+```
+
+```java
+@Converter(autoApply = true)
+public class StatusPedidoConverter
+        extends PersistableEnumConverter<StatusPedido, Integer> {
+
+    public StatusPedidoConverter() { super(StatusPedido.class); }
+}
+```
+
+#### Uso nas entidades
+
+Com `autoApply = true`, o converter é aplicado automaticamente em todos os campos daquele tipo — incluindo `@Id`, campos de `@EmbeddedId` e `@IdClass`. Não é necessário anotar cada campo com `@Convert`:
+
+```java
+@Entity
+public class Pedido {
+
+    @Id @GeneratedValue
+    private Long id;
+
+    private StatusPedido status;       // converter aplicado automaticamente
+    private TipoDocumento tipoDoc;     // converter aplicado automaticamente
+}
+
+@Entity
+public class ConfiguracaoTipo {
+
+    @Id
+    private TipoDocumento tipo;        // enum como PK — autoApply funciona aqui também
+}
+```
+
+Se `autoApply` não for desejado globalmente, o converter pode ser aplicado pontualmente:
+
+```java
+@Convert(converter = StatusPedidoConverter.class)
+private StatusPedido status;
+```
+
+#### Resumo do padrão
+
+```
+PersistableEnum<T>             → interface: getValue() + fromValue() estático
+PersistableEnumConverter<E, T> → abstract: toda a lógica de conversão
+TipoDocumentoConverter         → 3 linhas: só informa o tipo do enum
+TipoDocumento                  → implementa PersistableEnum<String>
 ```
 
 ---
