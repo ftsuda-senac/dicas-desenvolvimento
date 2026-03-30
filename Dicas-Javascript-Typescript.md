@@ -827,30 +827,228 @@ Array.from({ length: 3 }, (_, i) => i); // [0, 1, 2]
 
 ### Objetos — operações essenciais
 
+> MDN: [Object](https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Reference/Global_Objects/Object)
+
+#### Criação e acesso
+
+```js
+// Literal (forma mais comum)
+const pessoa = { nome: 'Ana', idade: 30, cidade: 'SP' };
+
+// Acesso a propriedades
+pessoa.nome;           // "Ana" — notação de ponto
+pessoa['nome'];        // "Ana" — notação de colchetes (útil para chaves dinâmicas)
+
+const campo = 'email';
+pessoa[campo];         // equivale a pessoa.email
+
+// Shorthand properties (ES2015) — quando variável e chave têm o mesmo nome
+const nome = 'Ana';
+const idade = 30;
+const obj = { nome, idade }; // equivale a { nome: nome, idade: idade }
+
+// Shorthand methods (ES2015)
+const usuario = {
+  nome: 'Ana',
+  saudar() {             // equivale a saudar: function() { ... }
+    return `Olá, ${this.nome}!`;
+  },
+};
+
+// Propriedade computada (ES2015) — chave definida em tempo de execução
+const prefixo = 'get';
+const api = {
+  [prefixo + 'Nome']() { return 'Ana'; },  // método getNome()
+  [`${prefixo}Idade`]() { return 30; },    // método getIdade()
+};
+```
+
+#### Métodos estáticos essenciais
+
 ```js
 const pessoa = { nome: 'Ana', idade: 30, cidade: 'SP' };
 
-// Acesso
-pessoa.nome;           // "Ana"
-pessoa['nome'];        // "Ana" — útil para chaves dinâmicas
+// Listar chaves, valores e entradas
+Object.keys(pessoa);    // ["nome", "idade", "cidade"]
+Object.values(pessoa);  // ["Ana", 30, "SP"]
+Object.entries(pessoa); // [["nome","Ana"], ["idade",30], ["cidade","SP"]]
 
-// Métodos estáticos
-Object.keys(pessoa);   // ["nome", "idade", "cidade"]
-Object.values(pessoa); // ["Ana", 30, "SP"]
-Object.entries(pessoa);// [["nome","Ana"], ["idade",30], ["cidade","SP"]]
+// Criar objeto a partir de entradas (ES2019) — inverso de Object.entries
+Object.fromEntries([['nome', 'Ana'], ['idade', 30]]); // { nome: "Ana", idade: 30 }
 
-// Copiar/mesclar objetos (shallow copy)
+// Útil para transformar objetos via Map
+const precos = { banana: 1.5, maca: 2.0, uva: 3.5 };
+const comDesconto = Object.fromEntries(
+  Object.entries(precos).map(([chave, val]) => [chave, val * 0.9])
+);
+// { banana: 1.35, maca: 1.8, uva: 3.15 }
+
+// Copiar/mesclar objetos (shallow copy — cópia rasa)
 const copia = { ...pessoa };
 const mesclado = { ...pessoa, profissao: 'Dev' };
 const mesclado2 = Object.assign({}, pessoa, { profissao: 'Dev' });
 
-// Verificar propriedade
-'nome' in pessoa;               // true
-pessoa.hasOwnProperty('nome'); // true
+// Propriedades posteriores sobrescrevem as anteriores
+const a = { x: 1, y: 2 };
+const b = { y: 99, z: 3 };
+const merged = { ...a, ...b }; // { x: 1, y: 99, z: 3 }
 
-// Propriedade computada
-const campo = 'email';
-const contato = { [campo]: 'ana@email.com' }; // { email: "ana@email.com" }
+// Verificar propriedade
+'nome' in pessoa;                    // true — inclui propriedades herdadas
+pessoa.hasOwnProperty('nome');       // true — apenas propriedades próprias
+Object.hasOwn(pessoa, 'nome');       // true — forma moderna (ES2022), preferir
+Object.hasOwn(pessoa, 'toString');   // false — toString é herdado do protótipo
+
+// Comparação de identidade (Object.is — mais rigoroso que ===)
+Object.is(NaN, NaN);   // true  — diferente de NaN === NaN (false)
+Object.is(0, -0);      // false — diferente de 0 === -0 (true)
+Object.is(1, 1);       // true
+```
+
+#### Imutabilidade
+
+```js
+const config = { host: 'localhost', porta: 3000, debug: true };
+
+// Object.freeze — impede adição, remoção e alteração de propriedades (raso)
+const frozen = Object.freeze(config);
+frozen.porta = 9000;    // silencioso em modo normal, TypeError em strict mode
+frozen.porta;           // 3000 — não foi alterado
+Object.isFrozen(frozen); // true
+
+// Object.seal — impede adição e remoção, mas permite alterar valores existentes
+const sealed = Object.seal({ x: 1, y: 2 });
+sealed.x = 99;   // permitido — alteração de valor
+sealed.z = 3;    // ignorado — adição bloqueada
+delete sealed.x; // ignorado — remoção bloqueada
+Object.isSealed(sealed); // true
+
+// Atenção: freeze e seal são rasos — objetos aninhados não são protegidos
+const app = Object.freeze({ config: { debug: true } });
+app.config.debug = false; // FUNCIONA — config aponta para objeto não congelado
+app.config = {};          // bloqueado — a propriedade config em si não muda
+
+// Deep freeze (recursivo)
+function deepFreeze(obj) {
+  Object.keys(obj).forEach(key => {
+    if (typeof obj[key] === 'object' && obj[key] !== null) {
+      deepFreeze(obj[key]);
+    }
+  });
+  return Object.freeze(obj);
+}
+```
+
+#### Descritores de propriedade
+
+```js
+// Object.defineProperty — controle fino sobre uma propriedade
+const obj = {};
+Object.defineProperty(obj, 'id', {
+  value: 42,
+  writable: false,    // não pode ser reatribuída
+  enumerable: false,  // não aparece em for...in, Object.keys, spread
+  configurable: false // não pode ser deletada ou redefinida
+});
+
+obj.id;           // 42
+obj.id = 99;      // silencioso (ou TypeError em strict mode)
+Object.keys(obj); // [] — id não é enumerável
+'id' in obj;      // true — ainda está lá
+
+// Getters e setters via defineProperty
+const pessoa = { _nome: 'Ana' };
+Object.defineProperty(pessoa, 'nome', {
+  get() { return this._nome.toUpperCase(); },
+  set(val) { this._nome = val.trim(); },
+  enumerable: true,
+  configurable: true,
+});
+
+pessoa.nome;         // "ANA"
+pessoa.nome = '  Bob  ';
+pessoa._nome;        // "Bob"
+
+// Getter/setter na notação literal (mais comum)
+const circulo = {
+  raio: 5,
+  get area() { return Math.PI * this.raio ** 2; },
+  set diametro(d) { this.raio = d / 2; },
+};
+circulo.area;        // 78.53...
+circulo.diametro = 20;
+circulo.raio;        // 10
+
+// Inspecionar descritor
+Object.getOwnPropertyDescriptor(pessoa, '_nome');
+// { value: "Bob", writable: true, enumerable: true, configurable: true }
+```
+
+#### Clonagem profunda
+
+```js
+// structuredClone (ES2022) — deep clone nativo, sem dependências externas
+const original = {
+  nome: 'Ana',
+  endereco: { cidade: 'SP', bairro: 'Centro' },
+  tags: ['dev', 'js'],
+};
+
+const clone = structuredClone(original);
+clone.endereco.cidade = 'RJ';  // não afeta o original
+original.endereco.cidade;       // "SP"
+
+// structuredClone suporta: Date, Map, Set, RegExp, ArrayBuffer, etc.
+// Não suporta: funções, nós do DOM, objetos com referências circulares complexas
+
+// Alternativa legada (não recomendada — perde Date, Map, Set, undefined, etc.)
+const cloneLegado = JSON.parse(JSON.stringify(original));
+```
+
+#### Padrões utilitários
+
+```js
+// Filtrar propriedades (selecionar apenas algumas chaves)
+const usuario = { id: 1, nome: 'Ana', senha: 'secret', role: 'admin' };
+
+// Pick — manter apenas as chaves desejadas
+const publico = Object.fromEntries(
+  Object.entries(usuario).filter(([k]) => ['id', 'nome', 'role'].includes(k))
+);
+// { id: 1, nome: "Ana", role: "admin" }
+
+// Omit — excluir chaves específicas
+const semSenha = Object.fromEntries(
+  Object.entries(usuario).filter(([k]) => k !== 'senha')
+);
+// { id: 1, nome: "Ana", role: "admin" }
+
+// Agrupar array de objetos por propriedade (Object.groupBy — ES2024)
+const produtos = [
+  { nome: 'Caneta', categoria: 'escritório' },
+  { nome: 'Borracha', categoria: 'escritório' },
+  { nome: 'Mouse', categoria: 'tecnologia' },
+];
+const porCategoria = Object.groupBy(produtos, p => p.categoria);
+// { escritório: [...], tecnologia: [...] }
+
+// Verificar se objeto está vazio
+const vazio = obj => Object.keys(obj).length === 0;
+vazio({});         // true
+vazio({ a: 1 });   // false
+
+// Mescla profunda simples (sem bibliotecas)
+function mergeDeep(alvo, ...fontes) {
+  for (const fonte of fontes) {
+    for (const [chave, val] of Object.entries(fonte)) {
+      alvo[chave] =
+        val && typeof val === 'object' && !Array.isArray(val)
+          ? mergeDeep(alvo[chave] ?? {}, val)
+          : val;
+    }
+  }
+  return alvo;
+}
 ```
 
 ---

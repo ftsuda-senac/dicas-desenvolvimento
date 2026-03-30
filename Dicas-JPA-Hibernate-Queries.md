@@ -597,6 +597,163 @@ public interface AlunoRepository extends JpaRepository<Aluno, Long> {
 | `Top` / `First` | `LIMIT` | `findTop10By...()` / `findFirstBy...()` |
 | `Distinct` | `SELECT DISTINCT` | `findDistinctByNome(String)` |
 
+### Métodos `default` na interface do repository
+
+Métodos `default` permitem adicionar lógica reutilizável diretamente na interface, sem precisar de uma classe de implementação separada. A lógica é construída sobre os métodos abstratos do próprio repository, que o Spring Data já implementa.
+
+**Casos de uso típicos:** combinar múltiplas queries, aplicar regras de negócio simples, encapsular buscas com fallback, orquestrar operações compostas.
+
+```java
+public interface MatriculaRepository extends JpaRepository<Matricula, Long> {
+
+    // ── Métodos abstratos usados pelos defaults ──────────────────────────────
+
+    List<Matricula> findByCursoId(Long cursoId);
+
+    List<Matricula> findByAlunoId(Long alunoId);
+
+    List<Matricula> findByAlunoIdAndStatus(Long alunoId, StatusMatricula status);
+
+    Optional<Matricula> findByCursoIdAndAlunoId(Long cursoId, Long alunoId);
+
+    // ── Métodos default — lógica construída sobre os abstratos acima ─────────
+
+    /**
+     * Verifica se um aluno já está matriculado em um curso específico.
+     * Encapsula a lógica de verificação de duplicidade antes de nova matrícula.
+     */
+    default boolean alunoJaMatriculado(Long cursoId, Long alunoId) {
+        return findByCursoIdAndAlunoId(cursoId, alunoId).isPresent();
+    }
+
+    /**
+     * Retorna matrículas ativas de um aluno.
+     * Delega para a derived query, que traduz o filtro de status em SQL —
+     * nunca carregue todas as matrículas para filtrar em memória.
+     */
+    default List<Matricula> findAtivasByAluno(Long alunoId) {
+        return findByAlunoIdAndStatus(alunoId, StatusMatricula.ATIVA);
+    }
+
+    /**
+     * Busca a matrícula de um aluno em um curso, lançando exceção de negócio
+     * se não encontrada. Centraliza o tratamento de "não encontrado" em um
+     * único lugar, evitando repetição nos services.
+     */
+    default Matricula findOrThrow(Long cursoId, Long alunoId) {
+        return findByCursoIdAndAlunoId(cursoId, alunoId)
+                .orElseThrow(() -> new MatriculaNaoEncontradaException(cursoId, alunoId));
+    }
+}
+```
+
+> **Quando usar:** prefira métodos `default` para lógica que combina chamadas ao próprio repository (filtragem em memória, fallbacks, exceções de negócio). Para lógica que precisa de `EntityManager`, queries dinâmicas ou injeção de outros beans, use repository fragments (seção abaixo).
+
+### Repository Fragments — Implementações Customizadas Compostas
+
+Quando a lógica exige `EntityManager`, `JdbcTemplate`, `CriteriaBuilder` ou injeção de outros beans, métodos `default` não são suficientes. O Spring Data permite compor implementações customizadas via **fragments**: pares interface + classe que são mesclados automaticamente no repository final.
+
+```java
+// 1. Interface do fragmento — define o contrato da parte customizada
+public interface MatriculaRepositoryCustom {
+
+    List<Matricula> buscarComFiltrosDinamicos(FiltroMatricula filtro);
+
+    Map<StatusMatricula, Long> contarPorStatus(Long cursoId);
+}
+```
+
+```java
+// 2. Implementação — nome obrigatório: <NomeDoFragmento>Impl
+@RequiredArgsConstructor
+public class MatriculaRepositoryCustomImpl implements MatriculaRepositoryCustom {
+
+    private final EntityManager em;
+
+    @Override
+    public List<Matricula> buscarComFiltrosDinamicos(FiltroMatricula filtro) {
+        var cb  = em.getCriteriaBuilder();
+        var cq  = cb.createQuery(Matricula.class);
+        var root = cq.from(Matricula.class);
+
+        var predicates = new ArrayList<Predicate>();
+
+        if (filtro.status() != null) {
+            predicates.add(cb.equal(root.get("status"), filtro.status()));
+        }
+        if (filtro.cursoId() != null) {
+            predicates.add(cb.equal(root.get("curso").get("id"), filtro.cursoId()));
+        }
+        if (filtro.notaMinima() != null) {
+            predicates.add(cb.greaterThanOrEqualTo(root.get("nota"), filtro.notaMinima()));
+        }
+
+        cq.where(predicates.toArray(Predicate[]::new));
+        return em.createQuery(cq).getResultList();
+    }
+
+    @Override
+    public Map<StatusMatricula, Long> contarPorStatus(Long cursoId) {
+        return em.createQuery("""
+                    SELECT m.status, COUNT(m)
+                    FROM Matricula m
+                    WHERE m.curso.id = :cursoId
+                    GROUP BY m.status
+                    """, Object[].class)
+                .setParameter("cursoId", cursoId)
+                .getResultList()
+                .stream()
+                .collect(Collectors.toMap(
+                        row -> (StatusMatricula) row[0],
+                        row -> (Long) row[1]
+                ));
+    }
+}
+```
+
+```java
+// 3. Repository final — estende JpaRepository e o fragmento
+//    O Spring Data compõe os dois automaticamente no startup
+public interface MatriculaRepository
+        extends JpaRepository<Matricula, Long>, MatriculaRepositoryCustom {
+
+    // Derived queries e métodos default convivem normalmente
+    List<Matricula> findByAlunoIdAndStatus(Long alunoId, StatusMatricula status);
+
+    Optional<Matricula> findByCursoIdAndAlunoId(Long cursoId, Long alunoId);
+
+    default boolean alunoJaMatriculado(Long cursoId, Long alunoId) {
+        return findByCursoIdAndAlunoId(cursoId, alunoId).isPresent();
+    }
+}
+```
+
+Uso no service — sem nenhuma diferença sintática em relação aos métodos gerados pelo Spring Data:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class MatriculaService {
+
+    private final MatriculaRepository matriculaRepository;
+
+    public List<Matricula> buscar(FiltroMatricula filtro) {
+        // chama o método do fragmento transparentemente
+        return matriculaRepository.buscarComFiltrosDinamicos(filtro);
+    }
+}
+```
+
+**Convenção de nomes obrigatória:** a classe de implementação deve terminar com `Impl` (sufixo configurável via `@EnableJpaRepositories(repositoryImplementationPostfix = "...")`, padrão `Impl`). O Spring Data localiza a implementação por convenção — sem anotação explícita.
+
+| | `default` na interface | Repository Fragment |
+|---|---|---|
+| Acessa `EntityManager` / `JdbcTemplate` | Não | Sim |
+| Injeta outros beans Spring | Não | Sim |
+| Query dinâmica com `CriteriaBuilder` | Não | Sim |
+| Lógica sobre métodos do próprio repository | Sim | Desnecessário |
+| Arquivo de implementação separado | Não | Sim (`...Impl`) |
+
 ---
 
 
@@ -1707,6 +1864,42 @@ flowchart TD
 ## 6. Specifications — Filtros Dinâmicos Tipados
 
 Para consultas com filtros opcionais construídos em runtime. Combina com Metamodel para type-safety.
+
+### A interface `Specification<T>`
+
+`Specification` é uma interface funcional do Spring Data que encapsula um único predicado JPA. Sua implementação produz um `Predicate` que será composto na cláusula `WHERE` da query.
+
+```java
+// Definição original — Spring Data JPA (org.springframework.data.jpa.domain)
+@FunctionalInterface
+public interface Specification<T> {
+
+    // Método principal: retorna o Predicate que representa o filtro.
+    //   root  — ponto de partida da query (equivale ao FROM); acesso aos campos da entidade
+    //   query — objeto CriteriaQuery; permite subqueries e controle de SELECT/ORDER BY
+    //   cb    — CriteriaBuilder; fábrica de predicados (equal, like, between, and, or...)
+    @Nullable
+    Predicate toPredicate(Root<T> root, CriteriaQuery<?> query, CriteriaBuilder cb);
+
+    // Métodos default para composição declarativa
+    default Specification<T> and(Specification<T> other) { ... }
+    default Specification<T> or(Specification<T> other)  { ... }
+
+    // Métodos estáticos utilitários
+    static <T> Specification<T> not(Specification<T> spec)   { ... }
+    static <T> Specification<T> where(Specification<T> spec) { ... }
+    static <T> Specification<T> allOf(Iterable<Specification<T>> specs) { ... }
+    static <T> Specification<T> anyOf(Iterable<Specification<T>> specs) { ... }
+}
+```
+
+Por ser `@FunctionalInterface`, uma `Specification` pode ser criada como lambda — o parâmetro único é o método `toPredicate`:
+
+```java
+// Lambda equivalente a implementar toPredicate
+Specification<Matricula> ativa = (root, query, cb) ->
+        cb.equal(root.get("status"), StatusMatricula.ATIVA);
+```
 
 ### Setup
 

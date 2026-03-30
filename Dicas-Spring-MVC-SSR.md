@@ -566,6 +566,113 @@ spring:
 
 ```
 
+#### Valores com padrão (`${VAR:default}`) e valores opcionais
+
+Use `${VARIAVEL:valor_padrao}` para definir um fallback quando a variável de ambiente (ou propriedade de sistema) não estiver definida. Use `${VARIAVEL:}` (dois-pontos sem nada) para tornar a variável opcional — o campo ficará vazio em vez de lançar exceção na inicialização.
+
+```yaml
+spring:
+  datasource:
+    # Obrigatório em produção — usa variável de ambiente; sem fallback intencional
+    # para forçar configuração explícita e evitar conexão acidental ao banco errado.
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  thymeleaf:
+    cache: ${THYMELEAF_CACHE:true}  # fallback: cache ativo (adequado para produção)
+
+  mail:
+    host: ${MAIL_HOST:smtp.mailtrap.io}      # fallback para servidor de testes local
+    port: ${MAIL_PORT:2525}                  # fallback para porta padrão do Mailtrap
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            # Opcional — funcionalidade de login com Google só ativa se configurado
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+
+app:
+  url-base: ${APP_BASE_URL:http://localhost:8080}  # fallback para desenvolvimento local
+  upload:
+    diretorio: ${UPLOAD_DIR:${java.io.tmpdir}/uploads}  # fallback usando propriedade de sistema
+```
+
+#### Carregando um arquivo `.env`
+
+Há duas abordagens para carregar um arquivo `.env` no Spring Boot:
+
+**Opção 1 — Nativa (Spring Boot 2.4+, sem dependência extra)**
+
+O Spring Boot suporta importação de arquivos externos via `spring.config.import`. O prefixo `optional:` instrui o Spring a **não falhar** caso o arquivo não exista — ideal para o `.env` de desenvolvimento local, que não estará presente em produção.
+
+```yaml
+# application.yml
+spring:
+  config:
+    # Importa .env da raiz do projeto como arquivo properties (KEY=VALUE).
+    # optional: → não falha se o arquivo não existir (ex.: em produção ou CI).
+    import: "optional:file:.env[.properties]"
+```
+
+**Opção 2 — Biblioteca `spring-dotenv`**
+
+Integra o `.env` ao `Environment` do Spring sem configuração adicional no `application.yml`.
+
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>me.paulschwarz</groupId>
+    <artifactId>spring-dotenv</artifactId>
+    <version>4.0.0</version>
+</dependency>
+```
+
+Com a dependência no classpath, o arquivo `.env` é carregado automaticamente — nenhuma propriedade `spring.config.import` é necessária.
+
+---
+
+Crie o arquivo `.env` na raiz do projeto (mesmo formato de `.properties`):
+
+```bash
+# .env  — NÃO commitar; adicionar ao .gitignore
+DB_URL=jdbc:postgresql://localhost:5432/meu_banco
+DB_USERNAME=app_user
+DB_PASSWORD=senha_local
+MAIL_HOST=smtp.mailtrap.io
+MAIL_PORT=2525
+APP_BASE_URL=http://localhost:8080
+```
+
+```bash
+# .env.example — commitar como documentação das variáveis necessárias
+DB_URL=
+DB_USERNAME=
+DB_PASSWORD=
+MAIL_HOST=
+MAIL_PORT=
+APP_BASE_URL=
+```
+
+As variáveis do `.env` ficam disponíveis em `application.yml` com a mesma sintaxe `${VAR}` e também via `@Value` e `@ConfigurationProperties`:
+
+```java
+@ConfigurationProperties(prefix = "app")
+public record AppProperties(
+    String urlBase,
+    UploadProperties upload
+) {
+    public record UploadProperties(String diretorio) {}
+}
+```
+
+> **Em produção** (containers, cloud), não usar `.env` — definir as variáveis diretamente no ambiente (Docker, Kubernetes Secrets, AWS Parameter Store etc.). Com `optional:`, a ausência do arquivo não causa erro.
+
 ---
 
 

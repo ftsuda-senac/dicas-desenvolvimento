@@ -31,8 +31,10 @@
     - [3.8 Tipos de Retorno dos Métodos de Controller](#38-tipos-de-retorno-dos-métodos-de-controller)
 4. [Controllers REST](#4-controllers-rest)
     - [4.1 Estrutura Completa de um Controller REST](#41-estrutura-completa-de-um-controller-rest)
-    - [4.2 DTOs com Records (Java 16+)](#42-dtos-com-records-java-16)
-    - [4.3 Mapeamento de Método HTTP com Exemplos Práticos](#43-mapeamento-de-método-http-com-exemplos-práticos)
+    - [4.2 Atributos de Mapeamento — `consumes`, `produces`, `params` e `headers`](#42-atributos-de-mapeamento--consumes-produces-params-e-headers)
+    - [4.3 DTOs com Records (Java 16+)](#43-dtos-com-records-java-16)
+    - [4.4 Mapeamento de Método HTTP com Exemplos Práticos](#44-mapeamento-de-método-http-com-exemplos-práticos)
+    - [4.5 PATCH — Boas Práticas e JSON Merge Patch](#45-patch--boas-práticas-e-json-merge-patch)
 5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated)
     - [5.1 Diferença Conceitual](#51-diferença-conceitual)
     - [5.2 Exemplo Prático de Grupos de Validação](#52-exemplo-prático-de-grupos-de-validação)
@@ -60,6 +62,7 @@
     - [9.1 Configuração Principal](#91-configuração-principal)
     - [9.2 Anotações nos Controllers e DTOs](#92-anotações-nos-controllers-e-dtos)
     - [9.3 Ocultando Endpoints do Swagger](#93-ocultando-endpoints-do-swagger)
+    - [9.4 Meta-anotações Compostas — `@Parameter` + anotações Spring MVC](#94-meta-anotações-compostas--parameter--anotações-spring-mvc)
 10. [Recursos Avançados e Pouco Explorados](#10-recursos-avançados-e-pouco-explorados)
     - [10.1 HandlerInterceptor — Auditoria e Métricas](#101-handlerinterceptor--auditoria-e-métricas)
     - [10.2 Content Negotiation — Mesmo Endpoint, Múltiplos Formatos](#102-content-negotiation--mesmo-endpoint-múltiplos-formatos)
@@ -521,6 +524,113 @@ springdoc:
   default-produces-media-type: application/json
   show-actuator: false
 ```
+
+#### Valores com padrão (`${VAR:default}`) e valores opcionais
+
+Use `${VARIAVEL:valor_padrao}` para definir um fallback quando a variável de ambiente (ou propriedade de sistema) não estiver definida. Use `${VARIAVEL:}` (dois-pontos sem nada) para tornar a variável opcional — o campo ficará vazio em vez de lançar exceção na inicialização.
+
+```yaml
+spring:
+  datasource:
+    # Obrigatório em produção — usa variável de ambiente; sem fallback intencional
+    # para forçar configuração explícita e evitar conexão acidental ao banco errado.
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            # Opcional — funcionalidade de login com Google só ativa se configurado
+            client-id: ${GOOGLE_CLIENT_ID:}
+            client-secret: ${GOOGLE_CLIENT_SECRET:}
+
+  mail:
+    host: ${MAIL_HOST:smtp.mailtrap.io}      # fallback para servidor de testes local
+    port: ${MAIL_PORT:2525}                  # fallback para porta padrão do Mailtrap
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+
+app:
+  url-base: ${APP_BASE_URL:http://localhost:8080}  # fallback para desenvolvimento local
+  jwt:
+    secret: ${JWT_SECRET}                          # obrigatório — sem fallback
+    expiracao-segundos: ${JWT_EXPIRACAO:3600}      # fallback: 1 hora
+  upload:
+    diretorio: ${UPLOAD_DIR:${java.io.tmpdir}/uploads}  # fallback usando propriedade de sistema
+```
+
+#### Carregando um arquivo `.env`
+
+Há duas abordagens para carregar um arquivo `.env` no Spring Boot:
+
+**Opção 1 — Nativa (Spring Boot 2.4+, sem dependência extra)**
+
+O Spring Boot suporta importação de arquivos externos via `spring.config.import`. O prefixo `optional:` instrui o Spring a **não falhar** caso o arquivo não exista — ideal para o `.env` de desenvolvimento local, que não estará presente em produção.
+
+```yaml
+# application.yml
+spring:
+  config:
+    # Importa .env da raiz do projeto como arquivo properties (KEY=VALUE).
+    # optional: → não falha se o arquivo não existir (ex.: em produção ou CI).
+    import: "optional:file:.env[.properties]"
+```
+
+**Opção 2 — Biblioteca `spring-dotenv`**
+
+Integra o `.env` ao `Environment` do Spring sem configuração adicional no `application.yml`.
+
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>me.paulschwarz</groupId>
+    <artifactId>spring-dotenv</artifactId>
+    <version>4.0.0</version>
+</dependency>
+```
+
+Com a dependência no classpath, o arquivo `.env` é carregado automaticamente — nenhuma propriedade `spring.config.import` é necessária.
+
+---
+
+Crie o arquivo `.env` na raiz do projeto (mesmo formato de `.properties`):
+
+```bash
+# .env  — NÃO commitar; adicionar ao .gitignore
+DB_URL=jdbc:postgresql://localhost:5432/meu_banco
+DB_USERNAME=app_user
+DB_PASSWORD=senha_local
+JWT_SECRET=segredo_local_apenas_dev
+MAIL_HOST=smtp.mailtrap.io
+MAIL_PORT=2525
+```
+
+```bash
+# .env.example — commitar como documentação das variáveis necessárias
+DB_URL=
+DB_USERNAME=
+DB_PASSWORD=
+JWT_SECRET=
+MAIL_HOST=
+MAIL_PORT=
+```
+
+As variáveis do `.env` ficam disponíveis em `application.yml` com a mesma sintaxe `${VAR}` e também via `@Value` e `@ConfigurationProperties`:
+
+```java
+@ConfigurationProperties(prefix = "app")
+public record AppProperties(
+    String urlBase,
+    JwtProperties jwt
+) {
+    public record JwtProperties(String secret, long expiracaoSegundos) {}
+}
+```
+
+> **Em produção** (containers, cloud), não usar `.env` — definir as variáveis diretamente no ambiente (Docker, Kubernetes Secrets, AWS Parameter Store etc.). Com `optional:`, a ausência do arquivo não causa erro.
 
 ---
 ## 3. Anotações do Controller — Referência Rápida
@@ -1274,7 +1384,232 @@ public ResponseEntity<Page<ProdutoResponse>> listar(
 }
 ```
 
-### 4.2 DTOs com Records (Java 16+)
+### 4.2 Atributos de Mapeamento — `consumes`, `produces`, `params` e `headers`
+
+Todas as anotações de mapeamento (`@GetMapping`, `@PostMapping`, etc.) aceitam atributos que **restringem** quais requisições o método irá atender, além do método HTTP e do path. O Spring usa esses atributos como critérios de seleção — se mais de um método bate no mesmo path, os atributos desempatam.
+
+#### Atributos disponíveis
+
+| Atributo | Filtra por | Exemplo |
+|---|---|---|
+| `value` / `path` | Caminho da URL | `"/produtos/{id}"` |
+| `consumes` | `Content-Type` da requisição | `"application/json"` |
+| `produces` | Header `Accept` do cliente | `"application/json"` |
+| `params` | Query parameters (presença, ausência ou valor) | `"versao=2"`, `"!debug"` |
+| `headers` | Headers HTTP (presença, ausência ou valor) | `"X-API-Version=2"` |
+
+---
+
+#### `value` / `path` — múltiplos caminhos e variáveis
+
+```java
+// Caminho único
+@GetMapping("/produtos")
+public List<ProdutoResponse> listar() { ... }
+
+// Path variable
+@GetMapping("/produtos/{id}")
+public ResponseEntity<ProdutoResponse> buscar(@PathVariable Long id) { ... }
+
+// Múltiplos caminhos no mesmo método
+@GetMapping({"/produtos", "/itens"})
+public List<ProdutoResponse> listarAlias() { ... }
+
+// Wildcard — aceita /arquivos/relatorio.pdf, /arquivos/foto.png etc.
+@GetMapping("/arquivos/*.{extensao}")
+public ResponseEntity<Resource> download(@PathVariable String extensao) { ... }
+```
+
+---
+
+#### `consumes` — restringir pelo `Content-Type` da requisição
+
+Garante que o método só processa requisições com o corpo no formato esperado. Retorna **415 Unsupported Media Type** para outros tipos.
+
+```java
+// Aceita apenas JSON
+@PostMapping(value = "/produtos", consumes = MediaType.APPLICATION_JSON_VALUE)
+public ResponseEntity<ProdutoResponse> criar(@RequestBody @Valid ProdutoCreateRequest req) { ... }
+
+// Aceita apenas multipart (upload de arquivo)
+@PostMapping(value = "/produtos/importar",
+             consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+public ResponseEntity<ImportacaoResult> importar(@RequestPart MultipartFile arquivo) { ... }
+
+// Aceita JSON Merge Patch (RFC 7396)
+@PatchMapping(value = "/produtos/{id}",
+              consumes = "application/merge-patch+json")
+public ResponseEntity<ProdutoResponse> patch(
+        @PathVariable Long id,
+        @RequestBody ProdutoPatchRequest patch) { ... }
+
+// Nega um tipo — aceita qualquer Content-Type EXCETO XML
+@PostMapping(value = "/produtos", consumes = "!application/xml")
+public ResponseEntity<ProdutoResponse> criarSemXml(@RequestBody @Valid ProdutoCreateRequest req) { ... }
+
+// Múltiplos tipos aceitos
+@PostMapping(value = "/eventos",
+             consumes = {MediaType.APPLICATION_JSON_VALUE,
+                         MediaType.APPLICATION_XML_VALUE})
+public ResponseEntity<EventoResponse> criarEvento(@RequestBody @Valid EventoRequest req) { ... }
+```
+
+---
+
+#### `produces` — restringir pelo header `Accept` do cliente
+
+Indica o formato da resposta. O Spring negocia o tipo com base no `Accept` enviado pelo cliente e retorna **406 Not Acceptable** quando nenhum formato compatível é encontrado.
+
+```java
+// Responde apenas com JSON
+@GetMapping(value = "/produtos/{id}",
+            produces = MediaType.APPLICATION_JSON_VALUE)
+public ProdutoResponse buscarJson(@PathVariable Long id) { ... }
+
+// Mesmo path, responde com CSV quando cliente pede text/csv
+@GetMapping(value = "/produtos",
+            produces = "text/csv")
+public ResponseEntity<byte[]> exportarCsv() { ... }
+
+// Responde com PDF
+@GetMapping(value = "/produtos/{id}/relatorio",
+            produces = MediaType.APPLICATION_PDF_VALUE)
+public ResponseEntity<Resource> gerarRelatorio(@PathVariable Long id) { ... }
+
+// Múltiplos formatos — Spring escolhe com base no Accept
+@GetMapping(value = "/produtos/{id}",
+            produces = {MediaType.APPLICATION_JSON_VALUE,
+                        MediaType.APPLICATION_XML_VALUE})
+public ResponseEntity<ProdutoResponse> buscar(@PathVariable Long id) { ... }
+```
+
+> **`consumes` + `produces` juntos** é o padrão mais comum em APIs que aceitam JSON e devolvem JSON. Declará-los explicitamente documenta o contrato e evita negociação indesejada.
+
+```java
+@PostMapping(value = "/produtos",
+             consumes = MediaType.APPLICATION_JSON_VALUE,
+             produces = MediaType.APPLICATION_JSON_VALUE)
+public ResponseEntity<ProdutoResponse> criar(@RequestBody @Valid ProdutoCreateRequest req) { ... }
+```
+
+---
+
+#### `params` — restringir por query parameters
+
+Permite direcionar a requisição para métodos diferentes com base na **presença**, **ausência** ou **valor** de um query parameter. Útil para versionar endpoints ou ativar comportamentos opcionais.
+
+```java
+// Só atende quando ?formato=resumido está presente com esse valor
+@GetMapping(value = "/produtos", params = "formato=resumido")
+public List<ProdutoResumo> listarResumido() { ... }
+
+// Só atende quando ?formato=completo
+@GetMapping(value = "/produtos", params = "formato=completo")
+public List<ProdutoResponse> listarCompleto() { ... }
+
+// Atende quando o parâmetro 'embed' está presente (qualquer valor)
+@GetMapping(value = "/pedidos/{id}", params = "embed")
+public ResponseEntity<PedidoComItensResponse> buscarComItens(@PathVariable Long id) { ... }
+
+// Atende quando o parâmetro 'embed' está AUSENTE
+@GetMapping(value = "/pedidos/{id}", params = "!embed")
+public ResponseEntity<PedidoResponse> buscar(@PathVariable Long id) { ... }
+
+// Múltiplas condições — todas devem ser satisfeitas (AND)
+@GetMapping(value = "/relatorios",
+            params = {"tipo=vendas", "!cache"})
+public ResponseEntity<byte[]> relatorioVendasSemCache() { ... }
+```
+
+> **Alternativa mais legível:** em vez de `params`, prefira paths distintos (`/produtos/resumido`, `/produtos/completo`) ou um único método com `@RequestParam`. Use `params` quando o path precisa ser idêntico e o comportamento varia por parâmetro opcional.
+
+---
+
+#### `headers` — restringir por headers HTTP
+
+Funciona como `params`, mas para headers da requisição. Comum para versionamento de API via header customizado.
+
+```java
+// Versão 1 da API via header
+@GetMapping(value = "/produtos/{id}", headers = "X-API-Version=1")
+public ResponseEntity<ProdutoResponseV1> buscarV1(@PathVariable Long id) { ... }
+
+// Versão 2 da API via header
+@GetMapping(value = "/produtos/{id}", headers = "X-API-Version=2")
+public ResponseEntity<ProdutoResponseV2> buscarV2(@PathVariable Long id) { ... }
+
+// Exige presença do header (qualquer valor)
+@GetMapping(value = "/admin/config", headers = "X-Internal-Request")
+public ResponseEntity<ConfigResponse> config() { ... }
+
+// Rejeita quando o header está presente
+@GetMapping(value = "/produtos", headers = "!X-Legacy-Client")
+public List<ProdutoResponse> listarModerno() { ... }
+```
+
+> Para versionamento de API considere a abordagem nativa do Spring Framework 7 (`@HttpExchange` com `version`) ou `Accept: application/vnd.empresa.v2+json` via `produces`. Versionar por header customizado funciona, mas é menos visível em ferramentas como Swagger.
+
+---
+
+#### Visão consolidada — combinando atributos
+
+```java
+@RestController
+@RequestMapping("/api/v1/produtos")
+public class ProdutoController {
+
+    // GET /api/v1/produtos                             → lista paginada JSON
+    @GetMapping(produces = APPLICATION_JSON_VALUE)
+    public Page<ProdutoResponse> listar(Pageable pageable) { ... }
+
+    // GET /api/v1/produtos?formato=csv                → exportação CSV
+    @GetMapping(params = "formato=csv",
+                produces = "text/csv")
+    public ResponseEntity<byte[]> exportarCsv() { ... }
+
+    // GET /api/v1/produtos/{id}                       → detalhe JSON ou XML
+    @GetMapping(value = "/{id}",
+                produces = {APPLICATION_JSON_VALUE, APPLICATION_XML_VALUE})
+    public ResponseEntity<ProdutoResponse> buscar(@PathVariable Long id) { ... }
+
+    // POST /api/v1/produtos        body: JSON          → criar produto
+    @PostMapping(consumes = APPLICATION_JSON_VALUE,
+                 produces = APPLICATION_JSON_VALUE)
+    public ResponseEntity<ProdutoResponse> criar(
+            @RequestBody @Valid ProdutoCreateRequest req,
+            UriComponentsBuilder uri) { ... }
+
+    // POST /api/v1/produtos/importar   body: multipart → importar CSV
+    @PostMapping(value = "/importar",
+                 consumes = MULTIPART_FORM_DATA_VALUE,
+                 produces = APPLICATION_JSON_VALUE)
+    public ResponseEntity<ImportacaoResult> importar(
+            @RequestPart MultipartFile arquivo) { ... }
+
+    // PUT /api/v1/produtos/{id}    body: JSON          → substituição total
+    @PutMapping(value = "/{id}",
+                consumes = APPLICATION_JSON_VALUE,
+                produces = APPLICATION_JSON_VALUE)
+    public ResponseEntity<ProdutoResponse> atualizar(
+            @PathVariable Long id,
+            @RequestBody @Valid ProdutoUpdateRequest req) { ... }
+
+    // PATCH /api/v1/produtos/{id}  body: merge-patch   → atualização parcial
+    @PatchMapping(value = "/{id}",
+                  consumes = "application/merge-patch+json",
+                  produces = APPLICATION_JSON_VALUE)
+    public ResponseEntity<ProdutoResponse> patch(
+            @PathVariable Long id,
+            @RequestBody @Valid ProdutoPatchRequest req) { ... }
+
+    // DELETE /api/v1/produtos/{id}                    → remoção
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void excluir(@PathVariable Long id) { ... }
+}
+```
+
+### 4.3 DTOs com Records (Java 16+)
 
 ```java
 // ─── Request DTO com validações ───────────────────────────────────────────────
@@ -1327,7 +1662,7 @@ public record ProdutoResponse(
 ) {}
 ```
 
-### 4.3 Mapeamento de Método HTTP com Exemplos Práticos
+### 4.4 Mapeamento de Método HTTP com Exemplos Práticos
 
 ```mermaid
 graph LR
@@ -1354,6 +1689,294 @@ graph LR
     PUT --> s200
     DELETE --> s204
 ```
+
+### 4.5 PATCH — Boas Práticas e JSON Merge Patch
+
+#### O problema: `null` vs campo ausente
+
+Em operações PATCH, o desserializador Jackson não diferencia dois cenários semanticamente distintos:
+
+| Requisição JSON | Significado desejado | Jackson (comportamento padrão) |
+|---|---|---|
+| `{"nome": null}` | Limpar o campo (setar como `null`) | `nome = null` |
+| `{}` (campo omitido) | Não alterar o campo | `nome = null` (valor padrão do tipo) |
+
+Ambos resultam em `null` no DTO, tornando impossível saber se o cliente quis **anular** o campo ou simplesmente **não o enviou**.
+
+#### JSON Merge Patch — RFC 7396
+
+A **RFC 7396** (*JSON Merge Patch*, outubro de 2014) define as regras semânticas para atualizações parciais via PATCH:
+
+> *"If the provided merge patch contains members that do not appear within the target, those members are added. If the target does contain the member, the value is replaced. Null values in the merge patch are given special meaning to indicate the removal of existing values in the target."*
+
+Resumindo:
+
+- Campo **presente com valor** → atualizar com o novo valor
+- Campo **presente com `null`** → remover/anular o campo
+- Campo **ausente** → manter como está
+
+> **Nota histórica:** a RFC 7386 foi o rascunho original substituído definitivamente pela RFC 7396, que é a especificação vigente. Use `Content-Type: application/merge-patch+json` no cliente para sinalizar esse formato explicitamente.
+
+#### Solução: `JsonNullable` (jackson-databind-nullable)
+
+A biblioteca `jackson-databind-nullable` do projeto OpenAPI Generator fornece o tipo `JsonNullable<T>`, que envolve cada campo do DTO e permite distinguir os três estados:
+
+| Estado | Como verificar | Significado |
+|---|---|---|
+| `JsonNullable.undefined()` | `!nullable.isPresent()` | Campo **não enviado** na requisição |
+| `JsonNullable.of(null)` | `nullable.isPresent() && nullable.get() == null` | Campo enviado **explicitamente como `null`** |
+| `JsonNullable.of(valor)` | `nullable.isPresent() && nullable.get() != null` | Campo enviado **com valor** |
+
+**1. Dependência Maven**
+
+```xml
+<dependency>
+    <groupId>org.openapitools</groupId>
+    <artifactId>jackson-databind-nullable</artifactId>
+    <version>0.2.6</version>
+</dependency>
+```
+
+**2. Registrar o módulo Jackson**
+
+```java
+@Configuration
+public class JacksonConfig {
+
+    @Bean
+    public JsonNullableModule jsonNullableModule() {
+        return new JsonNullableModule();
+    }
+}
+```
+
+> Com Spring Boot, registrar o `@Bean` é suficiente — o `ObjectMapper` autoconfigurável detecta e registra qualquer `Module` automaticamente.
+
+**3. DTO com `JsonNullable`**
+
+```java
+import org.openapitools.jackson.nullable.JsonNullable;
+
+// PATCH /api/v1/produtos/{id}
+public record ProdutoPatchRequest(
+
+    JsonNullable<String>     nome,
+    JsonNullable<String>     descricao,
+    JsonNullable<BigDecimal> preco,
+    JsonNullable<Integer>    estoque,
+    JsonNullable<Long>       categoriaId   // null = desvincular categoria
+
+) {
+    // Construtor compacto: garante undefined como default para campos ausentes.
+    // Necessário em Records pois o Jackson injeta null quando o campo não vem no JSON.
+    public ProdutoPatchRequest {
+        if (nome        == null) nome        = JsonNullable.undefined();
+        if (descricao   == null) descricao   = JsonNullable.undefined();
+        if (preco       == null) preco       = JsonNullable.undefined();
+        if (estoque     == null) estoque     = JsonNullable.undefined();
+        if (categoriaId == null) categoriaId = JsonNullable.undefined();
+    }
+}
+```
+
+**4. Controller**
+
+```java
+@PatchMapping(value = "/{id}",
+              consumes = "application/merge-patch+json")   // RFC 7396
+public ResponseEntity<ProdutoResponse> atualizarParcial(
+        @PathVariable @Positive Long id,
+        @RequestBody ProdutoPatchRequest patch) {   // sem @Valid aqui — validar no service
+
+    return ResponseEntity.ok(produtoService.aplicarPatch(id, patch));
+}
+```
+
+> Usar `consumes = "application/merge-patch+json"` documenta e reforça o contrato. Clientes que enviarem `application/json` ainda funcionarão, mas o media type correto torna a semântica explícita.
+
+**5. Service — aplicar o patch manualmente**
+
+```java
+@Service
+@Transactional
+public class ProdutoService {
+
+    public ProdutoResponse aplicarPatch(Long id, ProdutoPatchRequest patch) {
+        Produto produto = produtoRepository.findById(id)
+                .orElseThrow(() -> new EntidadeNaoEncontradaException("Produto", id));
+
+        // Só altera se o campo foi enviado na requisição (isPresent = true)
+        if (patch.nome().isPresent()) {
+            String novoNome = patch.nome().get();
+            if (novoNome == null || novoNome.isBlank()) {
+                throw new ValidacaoException("nome", "Nome não pode ser nulo ou vazio");
+            }
+            produto.setNome(novoNome);
+        }
+
+        if (patch.descricao().isPresent()) {
+            produto.setDescricao(patch.descricao().get()); // null é aceito (limpa descrição)
+        }
+
+        if (patch.preco().isPresent()) {
+            BigDecimal novoPreco = patch.preco().get();
+            if (novoPreco == null || novoPreco.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new ValidacaoException("preco", "Preço deve ser positivo");
+            }
+            produto.setPreco(novoPreco);
+        }
+
+        if (patch.estoque().isPresent()) {
+            produto.setEstoque(patch.estoque().get());
+        }
+
+        if (patch.categoriaId().isPresent()) {
+            Long catId = patch.categoriaId().get();
+            produto.setCategoria(catId == null ? null
+                    : categoriaRepository.findById(catId)
+                            .orElseThrow(() -> new EntidadeNaoEncontradaException("Categoria", catId)));
+        }
+
+        return produtoMapper.toResponse(produtoRepository.save(produto));
+    }
+}
+```
+
+**6. Alternativa com MapStruct — `JsonNullableMapper`**
+
+Se o projeto usa MapStruct, é possível minimizar o boilerplate com um mapper auxiliar e a estratégia de mapeamento `IGNORE`:
+
+```java
+// Mapper auxiliar que desempacota JsonNullable<T>
+@Mapper(componentModel = "spring")
+public abstract class JsonNullableMapper {
+
+    public <T> T unwrap(JsonNullable<T> nullable) {
+        return nullable == null ? null : nullable.orElse(null);
+    }
+
+    public <T> JsonNullable<T> wrap(T value) {
+        return JsonNullable.of(value);
+    }
+}
+```
+
+```java
+// Mapper de patch — ignora campos cujo JsonNullable é undefined
+@Mapper(
+    componentModel = "spring",
+    nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE,
+    uses = JsonNullableMapper.class
+)
+public interface ProdutoPatchMapper {
+
+    // Atualiza apenas os campos presentes; campos undefined são ignorados
+    void update(@MappingTarget Produto target, ProdutoPatchRequest patch);
+}
+```
+
+```java
+// No service, substituir o bloco manual por:
+produtoPatchMapper.update(produto, patch);
+produtoRepository.save(produto);
+```
+
+> **Atenção:** `NullValuePropertyMappingStrategy.IGNORE` faz o MapStruct ignorar campos cujo valor desempacotado é `null`, inclusive quando o cliente enviou `null` explicitamente para anular um campo. Para campos que precisam ser anuláveis, mantenha o tratamento manual nesses casos específicos.
+
+#### Bean Validation com `JsonNullable` — `ValueExtractor`
+
+Por padrão, anotações como `@NotBlank` e `@Size` não sabem inspecionar o interior de `JsonNullable<T>`. A Bean Validation 2.0+ resolve isso com **Value Extractors**: uma classe que ensina o validador a desempacotar o tipo contêiner antes de aplicar as constraints.
+
+**Comportamento do extractor:**
+
+- Campo **`undefined`** (ausente) → extractor não aciona o receiver → constraint **não é avaliada**
+- Campo **`JsonNullable.of(null)`** → extractor entrega `null` → `@NotNull` **falha**, demais constraints pulam
+- Campo **`JsonNullable.of(valor)`** → extractor entrega o valor → constraint avaliada normalmente
+
+**1. Implementar o `ValueExtractor`**
+
+```java
+import jakarta.validation.valueextraction.ExtractedValue;
+import jakarta.validation.valueextraction.UnwrapByDefault;
+import jakarta.validation.valueextraction.ValueExtractor;
+import org.openapitools.jackson.nullable.JsonNullable;
+
+@UnwrapByDefault  // aplica desempacotamento automático para todas as constraints
+public class JsonNullableValueExtractor
+        implements ValueExtractor<JsonNullable<@ExtractedValue ?>> {
+
+    @Override
+    public void extractValues(JsonNullable<?> original, ValueReceiver receiver) {
+        // Se undefined, não chama receiver → constraint não é avaliada
+        if (original != null && original.isPresent()) {
+            receiver.value(null, original.get());
+        }
+    }
+}
+```
+
+**2. Registrar via SPI**
+
+Criar o arquivo `src/main/resources/META-INF/services/jakarta.validation.valueextraction.ValueExtractor` com o conteúdo:
+
+```
+com.exemplo.validation.JsonNullableValueExtractor
+```
+
+**3. DTO com constraints direto no `JsonNullable`**
+
+Com o extractor ativo, as anotações funcionam normalmente — avaliadas apenas quando o campo é enviado:
+
+```java
+public record ProdutoPatchRequest(
+
+    @Size(min = 2, max = 200)
+    JsonNullable<String>     nome,
+
+    @Size(max = 2000)
+    JsonNullable<String>     descricao,
+
+    @DecimalMin("0.01")
+    @Digits(integer = 10, fraction = 2)
+    JsonNullable<BigDecimal> preco,
+
+    @Min(0)
+    JsonNullable<Integer>    estoque
+
+) {
+    public ProdutoPatchRequest {
+        if (nome        == null) nome        = JsonNullable.undefined();
+        if (descricao   == null) descricao   = JsonNullable.undefined();
+        if (preco       == null) preco       = JsonNullable.undefined();
+        if (estoque     == null) estoque     = JsonNullable.undefined();
+    }
+}
+```
+
+**4. Controller com `@Valid`**
+
+```java
+@PatchMapping(value = "/{id}", consumes = "application/merge-patch+json")
+public ResponseEntity<ProdutoResponse> atualizarParcial(
+        @PathVariable @Positive Long id,
+        @RequestBody @Valid ProdutoPatchRequest patch) {   // @Valid funciona normalmente
+
+    return ResponseEntity.ok(produtoService.aplicarPatch(id, patch));
+}
+```
+
+> **`@NotNull` em `JsonNullable`**: se o cliente enviar o campo com `null` explícito, a constraint falha; se não enviar o campo (`undefined`), a constraint é ignorada. Isso expressa exatamente *"se enviado, não pode ser nulo"*.
+
+#### Resumo — Quando usar cada abordagem
+
+| Abordagem | Quando usar |
+|---|---|
+| DTO simples (`@Nullable`) sem `JsonNullable` | APIs internas simples onde nulos não precisam ser distinguidos de ausência |
+| `JsonNullable` + `ValueExtractor` + `@Valid` | Projetos que querem validação declarativa com Bean Validation no DTO |
+| `JsonNullable` + aplicação manual no service | Controle total, validações com lógica condicional complexa, sem `@Valid` no controller |
+| `JsonNullable` + MapStruct `IGNORE` | Projetos com MapStruct que querem minimizar boilerplate (campos não anuláveis) |
+| `ObjectMapper.readerForUpdating(obj)` | Alternativa sem `JsonNullable`: aplica o JSON sobre um objeto já carregado do banco |
+
 
 ---
 ## 5. Bean Validation — @Valid vs @Validated
@@ -2411,6 +3034,321 @@ public List<ProdutoResponse> listar(
     @Parameter(hidden = true) @AuthenticationPrincipal UserDetails user,
     @RequestParam(defaultValue = "0") int page) { ... }
 ```
+
+### 9.4 Meta-anotações Compostas — `@Parameter` + anotações Spring MVC
+
+Java permite que uma anotação seja anotada com outras (meta-anotação). O Spring processa isso via `AnnotatedElementUtils.getMergedAnnotation()`, que reconhece `@AliasFor` para pontes de atributos; o SpringDoc usa as mesmas utilitárias, então `@Parameter` também é encontrado ao traversar meta-anotações.
+
+> **Inferência automática do SpringDoc:** o SpringDoc inspeciona as anotações Spring MVC e gera a documentação OpenAPI sem necessidade de `@Parameter` explícito. `@PathVariable` já implica `in: path` e `required: true`; `@RequestParam` implica `in: query` com `required` e `defaultValue` inferidos; `@RequestHeader` implica `in: header`. A anotação `@Parameter` só é necessária para enriquecer o que o SpringDoc não consegue inferir: `description`, `example`, `deprecated`, `hidden` etc. Nos exemplos abaixo, os atributos `in` e `required` marcados como **redundantes** são mantidos para fins didáticos.
+
+#### `@ApiQueryParam` — `@RequestParam` + `@Parameter`
+
+```java
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@RequestParam
+@Parameter(in = ParameterIn.QUERY)  // redundante — SpringDoc infere in:query a partir de @RequestParam
+public @interface ApiQueryParam {
+
+    @AliasFor(annotation = RequestParam.class, attribute = "name")
+    String name() default "";
+
+    @AliasFor(annotation = RequestParam.class, attribute = "required")
+    boolean required() default true;
+
+    @AliasFor(annotation = RequestParam.class, attribute = "defaultValue")
+    String defaultValue() default ValueConstants.DEFAULT_NONE;
+
+    // Atributos OpenAPI — sem @AliasFor (veja limitações abaixo)
+    String description() default "";
+    String example() default "";
+}
+```
+
+#### `@ApiPathVar` — `@PathVariable` + `@Parameter`
+
+```java
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@PathVariable
+@Parameter(in = ParameterIn.PATH, required = true)  // redundante — SpringDoc infere in:path e required:true a partir de @PathVariable
+public @interface ApiPathVar {
+
+    @AliasFor(annotation = PathVariable.class, attribute = "name")
+    String name() default "";
+
+    @AliasFor(annotation = PathVariable.class, attribute = "required")
+    boolean required() default true;
+
+    String description() default "";
+    String example() default "";
+}
+```
+
+#### `@ApiHeader` — `@RequestHeader` + `@Parameter`
+
+```java
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@RequestHeader
+@Parameter(in = ParameterIn.HEADER)  // redundante — SpringDoc infere in:header a partir de @RequestHeader
+public @interface ApiHeader {
+
+    @AliasFor(annotation = RequestHeader.class, attribute = "name")
+    String name() default "";
+
+    @AliasFor(annotation = RequestHeader.class, attribute = "required")
+    boolean required() default false;
+
+    @AliasFor(annotation = RequestHeader.class, attribute = "defaultValue")
+    String defaultValue() default ValueConstants.DEFAULT_NONE;
+
+    String description() default "";
+}
+```
+
+#### Uso no controller
+
+```java
+@GetMapping("/pedidos")
+public Page<PedidoResponse> listar(
+        @ApiQueryParam(name = "status", required = false,
+                       description = "Filtrar por status do pedido",
+                       example = "ABERTO")
+        String status,
+
+        @ApiQueryParam(name = "page", defaultValue = "0",
+                       description = "Número da página")
+        int page,
+
+        @ApiHeader(name = "X-Tenant-ID", required = true,
+                   description = "Identificador do tenant")
+        String tenantId) { ... }
+
+@GetMapping("/pedidos/{id}")
+public ResponseEntity<PedidoResponse> buscar(
+        @ApiPathVar(name = "id", description = "ID do pedido")
+        @Positive Long id) { ... }
+```
+
+#### Limitação — atributos dinâmicos do `@Parameter`
+
+`@AliasFor` só cria pontes para anotações processadas pelo Spring. O SpringDoc *localiza* `@Parameter` via meta-anotação, mas não processa `@AliasFor` sobre os atributos dela — por isso `description` e `example` ficam como atributos simples da meta-anotação, sem ponte automática para o `@Parameter`.
+
+Para propagar esses valores dinamicamente, use um `OperationCustomizer`:
+
+```java
+@Component
+public class ApiParamCustomizer implements OperationCustomizer {
+
+    @Override
+    public Operation customize(Operation operation, HandlerMethod handlerMethod) {
+        for (MethodParameter mp : handlerMethod.getMethodParameters()) {
+            ApiQueryParam ann = mp.getParameterAnnotation(ApiQueryParam.class);
+            if (ann == null) continue;
+
+            String paramName = ann.name().isEmpty() ? mp.getParameterName() : ann.name();
+
+            operation.getParameters().stream()
+                    .filter(p -> paramName.equals(p.getName()))
+                    .findFirst()
+                    .ifPresent(p -> {
+                        if (!ann.description().isEmpty()) p.setDescription(ann.description());
+                        if (!ann.example().isEmpty())     p.setExample(ann.example());
+                    });
+        }
+        return operation;
+    }
+}
+```
+
+#### Compondo anotações de método — `@GetMapping` + `@Operation` + `@SecurityRequirement`
+
+O mesmo princípio se aplica a anotações de **nível de método**. A diferença prática é que `@Operation` com valores fixos (como `security` e `responses` padrão) propaga corretamente via meta-anotação — o SpringDoc localiza `@Operation` ao traversar as meta-anotações do método e usa os valores lá declarados.
+
+**`@SecuredGetMapping` — HTTP GET + segurança + respostas padrão**
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+@Operation(
+    security = @SecurityRequirement(name = "bearerAuth"),  // fixo — propaga corretamente
+    responses = {
+        @ApiResponse(responseCode = "400", description = "Dados inválidos"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado")
+    }
+)
+public @interface SecuredGetMapping {
+
+    // Pontes para @GetMapping via @AliasFor
+    @AliasFor(annotation = GetMapping.class, attribute = "value")
+    String[] value() default {};
+
+    @AliasFor(annotation = GetMapping.class, attribute = "params")
+    String[] params() default {};
+
+    @AliasFor(annotation = GetMapping.class, attribute = "headers")
+    String[] headers() default {};
+
+    @AliasFor(annotation = GetMapping.class, attribute = "produces")
+    String[] produces() default {MediaType.APPLICATION_JSON_VALUE};
+
+    // Atributos OpenAPI dinâmicos — sem ponte @AliasFor (veja OperationCustomizer)
+    String summary() default "";
+    String description() default "";
+    String[] tags() default {};
+}
+```
+
+**`@SecuredPostMapping` — HTTP POST + segurança**
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@PostMapping(
+    consumes = MediaType.APPLICATION_JSON_VALUE,
+    produces = MediaType.APPLICATION_JSON_VALUE
+)
+@Operation(
+    security = @SecurityRequirement(name = "bearerAuth"),
+    responses = {
+        @ApiResponse(responseCode = "400", description = "Dados inválidos"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado"),
+        @ApiResponse(responseCode = "409", description = "Conflito / duplicidade")
+    }
+)
+public @interface SecuredPostMapping {
+
+    @AliasFor(annotation = PostMapping.class, attribute = "value")
+    String[] value() default {};
+
+    @AliasFor(annotation = PostMapping.class, attribute = "consumes")
+    String[] consumes() default {MediaType.APPLICATION_JSON_VALUE};
+
+    @AliasFor(annotation = PostMapping.class, attribute = "produces")
+    String[] produces() default {MediaType.APPLICATION_JSON_VALUE};
+
+    String summary() default "";
+    String description() default "";
+    String[] tags() default {};
+}
+```
+
+**Alternativa desacoplada — `@SecuredOperation` sem amarrar o método HTTP**
+
+Quando os requisitos de segurança são uniformes mas o método HTTP varia por endpoint, uma anotação puramente documental é mais flexível:
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Operation(
+    security = {
+        @SecurityRequirement(name = "bearerAuth"),
+        @SecurityRequirement(name = "oauth2", scopes = {"read", "write"})
+    },
+    responses = {
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado")
+    }
+)
+public @interface SecuredOperation {
+    String summary() default "";
+    String description() default "";
+    String[] tags() default {};
+}
+```
+
+**Uso no controller**
+
+```java
+@RestController
+@RequestMapping("/api/v1/pedidos")
+@Tag(name = "Pedidos")
+public class PedidoController {
+
+    // Compõe método HTTP + segurança + produces em uma linha
+    @SecuredGetMapping(summary = "Listar pedidos", tags = "Pedidos")
+    public Page<PedidoResponse> listar(Pageable pageable) { ... }
+
+    @SecuredGetMapping(value = "/{id}", summary = "Buscar pedido por ID")
+    public ResponseEntity<PedidoResponse> buscar(
+            @ApiPathVar(name = "id") @Positive Long id) { ... }
+
+    @SecuredPostMapping(summary = "Criar pedido")
+    public ResponseEntity<PedidoResponse> criar(
+            @RequestBody @Valid PedidoCreateRequest req,
+            UriComponentsBuilder uri) { ... }
+
+    // Com a anotação desacoplada — HTTP method definido separadamente
+    @DeleteMapping("/{id}")
+    @SecuredOperation(summary = "Cancelar pedido", tags = "Pedidos")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void cancelar(@ApiPathVar(name = "id") Long id) { ... }
+}
+```
+
+**`OperationCustomizer` para propagar `summary`, `description` e `tags`**
+
+Os atributos dinâmicos da meta-anotação precisam ser propagados manualmente para o `@Operation` que o SpringDoc constrói:
+
+```java
+@Component
+public class SecuredMappingCustomizer implements OperationCustomizer {
+
+    @Override
+    public Operation customize(Operation operation, HandlerMethod handlerMethod) {
+        // Suporta tanto @SecuredGetMapping quanto @SecuredPostMapping
+        processAnnotation(operation, handlerMethod.getMethodAnnotation(SecuredGetMapping.class));
+        processAnnotation(operation, handlerMethod.getMethodAnnotation(SecuredPostMapping.class));
+        processAnnotation(operation, handlerMethod.getMethodAnnotation(SecuredOperation.class));
+        return operation;
+    }
+
+    private void processAnnotation(Operation op, SecuredGetMapping ann) {
+        if (ann == null) return;
+        if (!ann.summary().isEmpty())     op.setSummary(ann.summary());
+        if (!ann.description().isEmpty()) op.setDescription(ann.description());
+        if (ann.tags().length > 0)        op.setTags(List.of(ann.tags()));
+    }
+
+    private void processAnnotation(Operation op, SecuredPostMapping ann) {
+        if (ann == null) return;
+        if (!ann.summary().isEmpty())     op.setSummary(ann.summary());
+        if (!ann.description().isEmpty()) op.setDescription(ann.description());
+        if (ann.tags().length > 0)        op.setTags(List.of(ann.tags()));
+    }
+
+    private void processAnnotation(Operation op, SecuredOperation ann) {
+        if (ann == null) return;
+        if (!ann.summary().isEmpty())     op.setSummary(ann.summary());
+        if (!ann.description().isEmpty()) op.setDescription(ann.description());
+        if (ann.tags().length > 0)        op.setTags(List.of(ann.tags()));
+    }
+}
+```
+
+> Para eliminar a duplicação dos três métodos `processAnnotation`, extraia os atributos comuns para uma interface que as três anotações implementem — ou use reflexão sobre os atributos `summary`, `description` e `tags`.
+
+#### Resumo — o que funciona
+
+| Recurso | Funciona? | Observação |
+|---|---|---|
+| Spring encontra `@RequestParam`/`@PathVariable` via meta-anotação | ✅ | `AnnotatedElementUtils` traversa meta-anotações |
+| `@AliasFor` para atributos de `@RequestParam`/`@PathVariable` | ✅ | Processado pelo Spring normalmente |
+| `@AliasFor` para atributos de `@GetMapping`/`@PostMapping` | ✅ | Idem — são anotações Spring |
+| SpringDoc encontra `@Parameter` / `@Operation` via meta-anotação | ✅ | Usa as mesmas utilitárias do Spring |
+| `@SecurityRequirement` e `@ApiResponse` fixos na meta-anotação | ✅ | Valores constantes propagam corretamente |
+| `@AliasFor` para atributos de `@Parameter` / `@Operation` (Swagger) | ❌ | Não processado pelo mecanismo `@AliasFor` |
+| `summary`, `description`, `tags` dinâmicos na meta-anotação | ⚠️ | Requer `OperationCustomizer` |
 
 ---
 ## 10. Recursos Avançados e Pouco Explorados
@@ -3726,6 +4664,8 @@ flowchart TD
 - [ ] Documentar com `@Tag`, `@Operation`, `@ApiResponse`
 - [ ] Tratar erros com `@RestControllerAdvice` e `ProblemDetail` (RFC 9457)
 - [ ] CORS configurado explicitamente (nunca `*` em produção)
+- [ ] PATCH usa `JsonNullable<T>` para distinguir campo ausente de campo enviado como `null`
+- [ ] PATCH declara `consumes = "application/merge-patch+json"` (RFC 7396)
 ### 11.3 Checklist — Validação
 
 - [ ] Bean Validation nas camadas Controller E Service (`@Validated`)
@@ -6511,6 +7451,7 @@ Alternativa ao `@Controller` introduzida no Spring 5, disponível no MVC via `We
 | Especificação | URL |
 |---|---|
 | RFC 9457 — Problem Details for HTTP APIs | https://www.rfc-editor.org/rfc/rfc9457 |
+| RFC 7396 — JSON Merge Patch | https://www.rfc-editor.org/rfc/rfc7396 |
 | RFC 8594 — Sunset HTTP Header | https://www.rfc-editor.org/rfc/rfc8594 |
 | Jakarta EE 10 Platform | https://jakarta.ee/specifications/platform/10/ |
 | WHATWG HTML — `data-*` attributes | https://html.spec.whatwg.org/multipage/dom.html#embedding-custom-non-visible-data-with-the-data-*-attributes |

@@ -4193,6 +4193,102 @@ public class AsyncTaskService {
 }
 ```
 
+### 10.8 `@CurrentSecurityContext` — Injeção do Contexto em Controllers
+
+`@CurrentSecurityContext` é uma anotação do Spring Security que injeta o `SecurityContext` (ou qualquer expressão SpEL avaliada sobre ele) diretamente em parâmetros de métodos de controller, sem precisar chamar `SecurityContextHolder.getContext()` explicitamente.
+
+É análoga ao `@AuthenticationPrincipal`, mas opera um nível acima: enquanto `@AuthenticationPrincipal` extrai o `principal` da `Authentication`, `@CurrentSecurityContext` dá acesso ao `SecurityContext` inteiro.
+
+```
+SecurityContext
+  └── Authentication
+        ├── principal       ← injetado por @AuthenticationPrincipal
+        ├── credentials
+        └── authorities
+```
+
+#### Casos de uso
+
+```java
+// 1. Injetar o SecurityContext completo
+@GetMapping("/debug/context")
+public String debugContext(
+        @CurrentSecurityContext SecurityContext ctx) {
+
+    Authentication auth = ctx.getAuthentication();
+    return auth.getName() + " — " + auth.getAuthorities();
+}
+
+// 2. Injetar a Authentication diretamente via expressão SpEL
+@GetMapping("/me")
+public InfoResponse me(
+        @CurrentSecurityContext(expression = "authentication")
+        Authentication auth) {
+
+    return new InfoResponse(auth.getName(), auth.getAuthorities());
+}
+
+// 3. Injetar apenas o nome do usuário
+@GetMapping("/me/nome")
+public String nome(
+        @CurrentSecurityContext(expression = "authentication.name")
+        String nome) {
+
+    return nome;
+}
+
+// 4. Injetar as authorities
+@GetMapping("/me/permissoes")
+public Collection<? extends GrantedAuthority> permissoes(
+        @CurrentSecurityContext(expression = "authentication.authorities")
+        Collection<? extends GrantedAuthority> authorities) {
+
+    return authorities;
+}
+
+// 5. Injetar o principal tipado (equivalente ao @AuthenticationPrincipal)
+@GetMapping("/me/detalhes")
+public PerfilResponse detalhes(
+        @CurrentSecurityContext(expression = "authentication.principal")
+        UsuarioDetails principal) {
+
+    return new PerfilResponse(principal.getId(), principal.getEmail());
+}
+```
+
+#### Atributo `errorOnInvalidType`
+
+Por padrão, se a expressão retornar um tipo incompatível com o parâmetro, o valor é `null`. Para lançar uma exceção em vez de silenciar o erro:
+
+```java
+@GetMapping("/me")
+public InfoResponse me(
+        @CurrentSecurityContext(expression = "authentication",
+                                errorOnInvalidType = true)
+        Authentication auth) { ... }
+```
+
+#### Comparativo com as alternativas
+
+| Abordagem | O que injeta | Observação |
+|---|---|---|
+| `SecurityContextHolder.getContext()` | `SecurityContext` | Chamada estática — funciona em qualquer camada, mas acopla ao holder |
+| `Principal` (parâmetro do Spring MVC) | `java.security.Principal` | Tipo genérico, sem acesso a authorities ou claims extras |
+| `@AuthenticationPrincipal` | `Authentication.getPrincipal()` | Atalho para o objeto principal tipado (ex.: `UserDetails`) |
+| `@CurrentSecurityContext` | `SecurityContext` ou expressão SpEL sobre ele | Máxima flexibilidade — acessa qualquer parte do contexto |
+| `@CurrentSecurityContext(expression = "authentication")` | `Authentication` | Equivalente a injetar `Principal`, mas com tipo correto do Spring Security |
+
+#### Quando preferir cada um
+
+- Use **`@AuthenticationPrincipal`** quando precisar apenas do objeto `UserDetails` / principal customizado — é o caso mais comum.
+- Use **`@CurrentSecurityContext(expression = "authentication")`** quando precisar da `Authentication` completa (authorities, credentials, details).
+- Use **`@CurrentSecurityContext`** sem expressão quando precisar do `SecurityContext` inteiro — raro, útil em middlewares ou interceptors que recebem o contexto como parâmetro.
+- Use **`SecurityContextHolder.getContext()`** em camadas sem injeção de parâmetros (services, components), lembrando das limitações em contextos assíncronos descritas nas seções anteriores.
+
+#### Como funciona internamente
+
+A anotação é processada pelo `CurrentSecurityContextArgumentResolver`, registrado automaticamente quando o módulo de integração MVC do Spring Security está ativo (`spring-security-web` + `@EnableWebSecurity`). Não requer configuração adicional.
+
 ---
 
 ## 11. Session Management Avançado

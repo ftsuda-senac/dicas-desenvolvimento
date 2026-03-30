@@ -1,15 +1,6 @@
-## Referências para desenvolvimento Frontend Web
+# Dicas e referências para Desenvolvimento Web
 
-Documentação consolidada com apoio de agentes de IA (Claude Code).
-
-* [Dicas-Desenvolvimento-Web-Frontend.md](Dicas-Desenvolvimento-Web-Frontend.md) — Usabilidade, acessibilidade. mobile-first, Figma, HTML, CSS moderno e SCSS
-* [Dicas-Javascript-Typescript.md](Dicas-Javascript-Typescript.md)
-* [Frontend-Angular.md](Frontend-Angular.md) — Visão geral do Angular 21
-* [Frontend-React.md](Frontend-React.md) — Visão geral do React 19 com TypeScript
-* [Frontend-Vue.md](Frontend-Vue.md) — Visão geral do Vue 3.5 com TypeScript
-* [Frontend-Flutter.md](Frontend-Flutter.md) — Flutter 3 com Dart: navegação, estado global, backend, i18n, JWT e distribuição Android/iOS
-
----
+Repositório de documentação técnica de referência para disciplinas de desenvolvimento web, cobrindo backend com Java e Spring Boot, frontend moderno (Angular, React, Vue, Flutter) e tópicos transversais como segurança, observabilidade e boas práticas. Os documentos foram produzidos e revisados com apoio de agentes de IA e servem como guia de consulta rápida durante o desenvolvimento, reunindo padrões, exemplos de código e orientações práticas organizados por tema.
 
 ## Referências para desenvolvimento com Spring Boot
 
@@ -24,10 +15,30 @@ Ordem recomendada para os documentos de referência do ecossistema Spring:
 5. [Dicas-Spring-Security.md](Dicas-Spring-Security.md) — Autenticação e autorização com Spring Security
 6. [Spring-Boot-Avancado.md](Spring-Boot-Avancado.md) — Tópicos avançados do Spring Boot
 7. [Dicas-Logs-Observabilidade.md](Dicas-Logs-Observabilidade.md) — Logs estruturados, MDC, rastreamento distribuído e infraestrutura de observabilidade
+---
+
+
+## Referências para desenvolvimento Frontend Web
+
+Documentação consolidada com apoio de agentes de IA (Claude Code).
+
+* [Dicas-Desenvolvimento-Web-Frontend.md](Dicas-Desenvolvimento-Web-Frontend.md) — Usabilidade, acessibilidade. mobile-first, Figma, HTML, CSS moderno e SCSS
+* [Dicas-Javascript-Typescript.md](Dicas-Javascript-Typescript.md)
+* [Frontend-Angular.md](Frontend-Angular.md) — Visão geral do Angular 21
+* [Frontend-React.md](Frontend-React.md) — Visão geral do React 19 com TypeScript
+* [Frontend-Vue.md](Frontend-Vue.md) — Visão geral do Vue 3.5 com TypeScript
+* [Frontend-Flutter.md](Frontend-Flutter.md) — Flutter 3 com Dart: navegação, estado global, backend, i18n, JWT e distribuição Android/iOS
 
 ---
 
-# Dicas e boas práticas de desenvolvimento (antigo)
+
+
+## Segurança de Software
+
+* [Analise-Seguranca.md](Analise-Seguranca.md) — DevSecOps, SAST, SCA, DAST, secrets, segurança no frontend/backend/banco de dados, pipeline CI/CD seguro, monitoramento e resposta a incidentes
+---
+
+# Dicas e boas práticas de desenvolvimento (legado)
 
 Documentações, tutoriais e dicas gerais
 

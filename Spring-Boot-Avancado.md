@@ -114,6 +114,44 @@ src/main/resources/templates/mail/boas-vindas.html
 </html>
 ```
 
+Configuração do Template Engine do Thymeleaf:
+
+```java
+@Configuration
+public class ThymeleafEmailConfig {
+
+    // PRECISA ADICIONAR O ACESSO AO MESSAGE SOURCE PARA SUPORTE A i18n
+	@Bean(name = "emailMessageSource")
+	MessageSource emailMessageSource() {
+		ReloadableResourceBundleMessageSource messageSource = new ReloadableResourceBundleMessageSource();
+		messageSource.setBasename("classpath:i18n/email-messages"); // Arquivos em /resources/i18n/email-messages_[LOCALE].properties
+		messageSource.setDefaultEncoding(StandardCharsets.UTF_8.toString());
+		messageSource.setFallbackToSystemLocale(true);
+		messageSource.setCacheSeconds(10); //reload messages every 10 seconds
+		return messageSource;
+	}
+
+	@Bean(name = "emailTemplateEngine")
+	TemplateEngine emailTemplateEngine(@Qualifier("emailMessageSource") MessageSource emailMessageSource) {
+		ClassLoaderTemplateResolver configurationTemplateResolver = new ClassLoaderTemplateResolver();
+		configurationTemplateResolver.setTemplateMode(TemplateMode.HTML);
+		configurationTemplateResolver.setPrefix("templates/email/");
+		configurationTemplateResolver.setSuffix(".html");
+		configurationTemplateResolver.setCharacterEncoding(StandardCharsets.UTF_8.toString());
+		configurationTemplateResolver.setOrder(1);
+		configurationTemplateResolver.setCheckExistence(true);
+
+		SpringTemplateEngine templateEngine = new SpringTemplateEngine();
+		templateEngine.setTemplateResolver(configurationTemplateResolver);
+		templateEngine.setMessageSource(emailMessageSource);
+		templateEngine.setTemplateEngineMessageSource(emailMessageSource);
+		templateEngine.setEnableSpringELCompiler(true);
+		templateEngine.addDialect(new LayoutDialect()); // REQUER dependency do layout-dialect no pom.xml
+		return templateEngine;
+	}
+}
+```
+
 Servico:
 
 ```java
@@ -135,7 +173,8 @@ public class EmailTemplateService {
     private final JavaMailSender mailSender;
     private final TemplateEngine templateEngine;
 
-    public EmailTemplateService(JavaMailSender mailSender, TemplateEngine templateEngine) {
+    public EmailTemplateService(JavaMailSender mailSender,
+            @Qualifier("emailTemplateEngine") TemplateEngine templateEngine) {
         this.mailSender = mailSender;
         this.templateEngine = templateEngine;
     }
@@ -145,7 +184,7 @@ public class EmailTemplateService {
         Context context = new Context();
         context.setVariables(variaveis);
 
-        String html = templateEngine.process("mail/boas-vindas", context);
+        String html = templateEngine.process("boas-vindas", context); // Arquvo  src/main/templates/email/boas-vindas.html
 
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(
@@ -396,7 +435,7 @@ Boas praticas:
 Os templates estaticos ficam versionados com a aplicacao:
 
 ```text
-src/main/resources/templates/mail/
+src/main/resources/templates/email/
   notificacao.html
   redefinicao-senha.html
   cobranca.html
@@ -462,7 +501,7 @@ public interface MailTemplateRepository extends JpaRepository<MailTemplate, Long
 }
 ```
 
-Configuracao do renderizador:
+Configuracao do renderizador (ou usar configuração mostrada anteriormente)
 
 ```java
 package br.com.exemplo.mail.template;
