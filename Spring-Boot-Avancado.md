@@ -1,23 +1,23 @@
-# Spring Boot Avancado
+# Spring Boot Avançado
 
-Este documento reune informacoes e exemplos praticos sobre recursos avancados usados com frequencia em aplicacoes Spring Boot:
+Este documento reúne informações e exemplos práticos sobre recursos avançados usados com frequência em aplicações Spring Boot:
 
-- envio de e-mails com configuracao padrao, configuracao dinamica de servidores SMTP e templates Thymeleaf;
-- execucao de jobs com Quartz, incluindo persistencia em banco, controle dinamico e disparo manual;
-- uso de JMS com Artemis, cobrindo filas, pub-sub, filas duraveis, uso de `pooled-jms` e mensagens com resposta.
-- uso de Spring Events para comunicacao interna desacoplada, com listeners sincronos, assincronos e transacionais;
-- mecanismos de resiliencia, incluindo timeout, retry, circuit breaker, bulkhead, rate limiter e fallback;
-- rate limiting com Bucket4j para controle de acesso por IP, usuario, tenant ou chave de negocio.
+- envio de e-mails com configuração padrão, configuração dinâmica de servidores SMTP e templates Thymeleaf;
+- execução de jobs com Quartz, incluindo persistencia em banco, controle dinâmico e disparo manual;
+- uso de JMS com Artemis, cobrindo filas, pub-sub, filas duráveis, uso de `pooled-jms` e mensagens com resposta.
+- uso de Spring Events para comunicação interna desacoplada, com listeners síncronos, assíncronos e transacionais;
+- mecanismos de resiliência, incluindo timeout, retry, circuit breaker, bulkhead, rate limiter e fallback;
+- rate limiting com Bucket4j para controle de acesso por IP, usuário, tenant ou chave de negocio.
 - processamento em lote com Spring Batch, incluindo `Job`, `Step`, chunk processing, restart, skip e retry.
-- cache e Spring Session, incluindo `@Cacheable`, `@CachePut`, `@CacheEvict`, Caffeine, Redis e sessao distribuida.
-- upload e download de arquivos, incluindo `MultipartFile`, streaming, armazenamento local e validacoes de seguranca.
-- leitura e exportacao de dados em CSV e Excel com Apache Commons CSV, Apache POI e `excel-streaming-reader`.
+- cache e Spring Session, incluindo `@Cacheable`, `@CachePut`, `@CacheEvict`, Caffeine, Redis e sessão distribuída.
+- upload e download de arquivos, incluindo `MultipartFile`, streaming, armazenamento local, validações de segurança e detecção de tipo real com Apache Tika.
+- leitura e exportação de dados em CSV e Excel com Apache Commons CSV, Apache POI e `excel-streaming-reader`.
 
-Os exemplos abaixo seguem um estilo compativel com Spring Boot 3.x e Jakarta EE.
+Os exemplos abaixo seguem um estilo compatível com Spring Boot 3.x e Jakarta EE.
 
 ## 1. Envio de e-mails
 
-### 1.1. Dependencias
+### 1.1. Dependências
 
 ```xml
 <dependencies>
@@ -43,9 +43,9 @@ Os exemplos abaixo seguem um estilo compativel com Spring Boot 3.x e Jakarta EE.
 </dependencies>
 ```
 
-### 1.2. Configuracao padrao
+### 1.2. Configuração padrão
 
-Quando a aplicacao usa um unico servidor SMTP, a forma padrao e configurar tudo em `application.yml`.
+Quando a aplicação usa um único servidor SMTP, a forma padrão e configurar tudo em `application.yml`.
 
 ```yaml
 spring:
@@ -97,7 +97,7 @@ public class EmailService {
 
 ### 1.4. Exemplo de envio HTML com Thymeleaf
 
-Template estatico:
+Template estático:
 
 ```text
 src/main/resources/templates/mail/boas-vindas.html
@@ -109,7 +109,7 @@ src/main/resources/templates/mail/boas-vindas.html
 <body>
     <h1>Bem-vindo(a), <span th:text="${nome}">Nome</span>!</h1>
     <p>Seu cadastro foi realizado com sucesso.</p>
-    <p>Codigo de ativacao: <strong th:text="${codigoAtivacao}">0000</strong></p>
+    <p>Código de ativacao: <strong th:text="${codigoAtivacao}">0000</strong></p>
 </body>
 </html>
 ```
@@ -152,7 +152,7 @@ public class ThymeleafEmailConfig {
 }
 ```
 
-Servico:
+Serviço:
 
 ```java
 package br.com.exemplo.mail;
@@ -202,9 +202,9 @@ public class EmailTemplateService {
 }
 ```
 
-### 1.5. Cadastro e obtencao dinamica dos servidores de e-mail
+### 1.5. Cadastro e obtenção dinamica dos servidores de e-mail
 
-Quando a aplicacao precisa suportar varios clientes, tenants ou unidades, e comum armazenar as configuracoes SMTP no banco.
+Quando a aplicação precisa suportar vários clientes, tenants ou unidades, é comum armazenar as configurações SMTP no banco.
 
 Entidade:
 
@@ -257,7 +257,7 @@ public class MailServerConfig {
 }
 ```
 
-Repositorio:
+Repositório:
 
 ```java
 package br.com.exemplo.mail.config;
@@ -271,7 +271,7 @@ public interface MailServerConfigRepository extends JpaRepository<MailServerConf
 }
 ```
 
-Fabrica dinamica de `JavaMailSender`:
+Fábrica dinâmica de `JavaMailSender`:
 
 ```java
 package br.com.exemplo.mail.config;
@@ -303,7 +303,7 @@ public class DynamicMailSenderFactory {
 }
 ```
 
-Servico de envio usando configuracao dinamica:
+Serviço de envio usando configuração dinâmica:
 
 ```java
 package br.com.exemplo.mail;
@@ -334,7 +334,7 @@ public class DynamicMailService {
     public void enviar(String codigoServidor, String destinatario, String assunto, String html)
             throws Exception {
         MailServerConfig config = repository.findByCodigoAndAtivoTrue(codigoServidor)
-                .orElseThrow(() -> new IllegalArgumentException("Servidor SMTP nao encontrado"));
+                .orElseThrow(() -> new IllegalArgumentException("Servidor SMTP não encontrado"));
 
         JavaMailSender sender = mailSenderFactory.criar(config);
 
@@ -354,7 +354,7 @@ public class DynamicMailService {
 }
 ```
 
-API basica para cadastro e consulta:
+API básica para cadastro e consulta:
 
 ```java
 package br.com.exemplo.mail.api;
@@ -416,23 +416,23 @@ public class MailServerConfigController {
     @GetMapping("/{codigo}")
     public MailServerConfig buscar(@PathVariable String codigo) {
         return repository.findByCodigoAndAtivoTrue(codigo)
-                .orElseThrow(() -> new IllegalArgumentException("Configuracao nao encontrada"));
+                .orElseThrow(() -> new IllegalArgumentException("Configuração não encontrada"));
     }
 }
 ```
 
-Boas praticas:
+Boas práticas:
 
 - proteger senha com criptografia ou secret manager;
-- validar conectividade antes de ativar a configuracao;
-- manter cache com invalidacao se houver muitas leituras;
+- validar conectividade antes de ativar a configuração;
+- manter cache com invalidação se houver muitas leituras;
 - nunca expor credenciais em logs ou APIs administrativas.
 
 ### 1.6. Gerenciamento de templates com Thymeleaf
 
-#### Templates estaticos
+#### Templates estáticos
 
-Os templates estaticos ficam versionados com a aplicacao:
+Os templates estáticos ficam versionados com a aplicação:
 
 ```text
 src/main/resources/templates/email/
@@ -441,15 +441,15 @@ src/main/resources/templates/email/
   cobranca.html
 ```
 
-Eles sao ideais quando:
+Eles são ideais quando:
 
 - o layout muda pouco;
-- a equipe quer revisar alteracoes pelo Git;
-- a publicacao do template faz parte do deploy.
+- a equipe quer revisar alterações pelo Git;
+- a publicação do template faz parte do deploy.
 
-#### Templates dinamicos
+#### Templates dinâmicos
 
-Quando o conteudo precisa ser alterado sem novo deploy, pode-se salvar o HTML no banco e processa-lo com `StringTemplateResolver`.
+Quando o conteúdo precisa ser alterado sem novo deploy, pode-se salvar o HTML no banco e processa-lo com `StringTemplateResolver`.
 
 Entidade:
 
@@ -501,7 +501,7 @@ public interface MailTemplateRepository extends JpaRepository<MailTemplate, Long
 }
 ```
 
-Configuracao do renderizador (ou usar configuração mostrada anteriormente)
+Configuração do renderizador (ou usar configuração mostrada anteriormente)
 
 ```java
 package br.com.exemplo.mail.template;
@@ -554,7 +554,7 @@ public class DynamicTemplateRenderer {
 
     public RenderedMail render(String codigoTemplate, Map<String, Object> variaveis) {
         MailTemplate template = repository.findByCodigoAndAtivoTrue(codigoTemplate)
-                .orElseThrow(() -> new IllegalArgumentException("Template nao encontrado"));
+                .orElseThrow(() -> new IllegalArgumentException("Template não encontrado"));
 
         Context context = new Context();
         context.setVariables(variaveis);
@@ -574,7 +574,7 @@ public record RenderedMail(String assunto, String html) {
 }
 ```
 
-Exemplo de template dinamico salvo em banco:
+Exemplo de template dinâmico salvo em banco:
 
 ```html
 <html>
@@ -586,19 +586,19 @@ Exemplo de template dinamico salvo em banco:
 </html>
 ```
 
-Cuidados com templates dinamicos:
+Cuidados com templates dinâmicos:
 
 - validar a sintaxe antes de publicar;
-- manter historico e versao do template;
+- manter histórico e versão do template;
 - limitar quem pode editar;
-- higienizar HTML quando houver edicao rica;
+- higienizar HTML quando houver edição rica;
 - considerar fallback para template estatico.
 
-Uma estrategia muito pratica e manter templates tecnicos como estaticos e comunicacoes mais volateis como dinamicas.
+Uma estratégia muito pratica é manter templates técnicos como estáticos e comunicações mais voláteis como dinâmicas.
 
 ## 2. Jobs com Quartz
 
-### 2.1. Dependencias
+### 2.1. Dependências
 
 ```xml
 <dependency>
@@ -607,7 +607,7 @@ Uma estrategia muito pratica e manter templates tecnicos como estaticos e comuni
 </dependency>
 ```
 
-Quando houver persistencia funcional das definicoes:
+Quando houver persistência funcional das definições:
 
 ```xml
 <dependency>
@@ -616,7 +616,7 @@ Quando houver persistencia funcional das definicoes:
 </dependency>
 ```
 
-### 2.2. Configuracao padrao
+### 2.2. Configuração padrão
 
 ```yaml
 spring:
@@ -640,8 +640,8 @@ spring:
 Notas importantes:
 
 - `job-store-type: jdbc` persiste jobs, triggers e `JobDataMap` no banco;
-- o ideal em producao e criar as tabelas do Quartz por migration;
-- `isClustered: true` e importante quando ha mais de uma instancia da aplicacao.
+- o ideal em produção é criar as tabelas do Quartz por migration;
+- `isClustered: true` é importante quando há mais de uma instância da aplicação.
 
 ### 2.3. Exemplo de job
 
@@ -676,9 +676,9 @@ public class EnvioRelatorioJob implements Job {
 }
 ```
 
-O uso de `@DisallowConcurrentExecution` evita que duas execucoes do mesmo job rodem ao mesmo tempo.
+O uso de `@DisallowConcurrentExecution` evita que duas execuções do mesmo job rodem ao mesmo tempo.
 
-### 2.4. Registro padrao de `JobDetail` e `Trigger`
+### 2.4. Registro padrão de `JobDetail` e `Trigger`
 
 ```java
 package br.com.exemplo.quartz;
@@ -715,11 +715,11 @@ public class QuartzConfig {
 }
 ```
 
-Essa e a forma padrao quando a agenda faz parte fixa da aplicacao.
+Essa é a forma padrão quando a agenda faz parte fixa da aplicação.
 
-### 2.5. Gerenciamento dinamico de jobs e triggers com dados em banco
+### 2.5. Gerenciamento dinâmico de jobs e triggers com dados em banco
 
-Quando horarios, parametros e ativacao precisam mudar sem deploy, uma estrategia muito comum e manter uma tabela funcional da aplicacao e sincronizar isso com o Quartz.
+Quando horários, parâmetros e ativação precisam mudar sem deploy, uma estratégia muito comum é manter uma tabela funcional da aplicação e sincronizar isso com o Quartz.
 
 Entidade funcional:
 
@@ -766,7 +766,7 @@ public class ScheduledJobDefinition {
 }
 ```
 
-Servico administrativo:
+Serviço administrativo:
 
 ```java
 package br.com.exemplo.quartz.admin;
@@ -846,21 +846,21 @@ public class QuartzAdminService {
 }
 ```
 
-Na pratica, os dados dinamicos podem ficar:
+Na prática, os dados dinâmicos podem ficar:
 
 - no `JobDataMap`, quando forem pequenos e de uso direto pelo Quartz;
-- em uma tabela funcional da aplicacao, quando exigirem auditoria, filtros e historico;
+- em uma tabela funcional da aplicação, quando exigirem auditoria, filtros e histórico;
 - nas duas camadas, usando a tabela funcional como fonte principal e o Quartz como runtime.
 
 Campos comuns em base funcional:
 
-- expressao cron;
+- expressão cron;
 - identificador do tenant;
-- parametros de negocio;
-- usuario que criou ou alterou;
+- parâmetros de negocio;
+- usuário que criou ou alterou;
 - flag de ativo/inativo;
-- ultima e proxima execucao;
-- resultado da ultima tentativa.
+- última e próxima execução;
+- resultado da última tentativa.
 
 ### 2.6. Ativar e desativar jobs
 
@@ -892,9 +892,9 @@ public class QuartzToggleService {
 }
 ```
 
-Tambem e comum manter `ativo = false` na tabela funcional e sincronizar isso com o scheduler ao salvar ou inicializar a aplicacao.
+Também é comum manter `ativo = false` na tabela funcional e sincronizar isso com o scheduler ao salvar ou inicializar a aplicação.
 
-### 2.7. Execucao manual de jobs
+### 2.7. Execução manual de jobs
 
 ```java
 package br.com.exemplo.quartz.admin;
@@ -927,9 +927,9 @@ public class QuartzManualExecutionService {
 Casos de uso:
 
 - reprocessamento;
-- execucao sob demanda via painel administrativo;
-- teste de agenda em homologacao;
-- reenvio de relatorios e integracoes.
+- execução sob demanda via painel administrativo;
+- teste de agenda em homologação;
+- reenvio de relatórios e integrações.
 
 ### 2.8. Endpoint administrativo de exemplo
 
@@ -975,17 +975,17 @@ public class QuartzAdminController {
 }
 ```
 
-Boas praticas com Quartz:
+Boas práticas com Quartz:
 
-- use `@DisallowConcurrentExecution` quando houver risco de concorrencia;
+- use `@DisallowConcurrentExecution` quando houver risco de concorrência;
 - mantenha o job fino e delegue regra de negocio para services;
 - trate `misfire` explicitamente em agendas criticas;
-- monitore falhas, tempo medio e quantidade de reprocessamentos;
+- monitore falhas, tempo médio e quantidade de reprocessamentos;
 - evite objetos grandes no `JobDataMap`.
 
 ## 3. JMS com Artemis
 
-### 3.1. Dependencias
+### 3.1. Dependências
 
 ```xml
 <dependency>
@@ -999,7 +999,7 @@ Boas praticas com Quartz:
 </dependency>
 ```
 
-### 3.2. Configuracao basica
+### 3.2. Configuração básica
 
 Exemplo com broker externo:
 
@@ -1016,13 +1016,13 @@ spring:
       concurrency: 2-10
 ```
 
-Para desenvolvimento, tambem e possivel usar broker embarcado se o projeto incluir as dependencias necessarias.
+Para desenvolvimento, também e possível usar broker embarcado se o projeto incluir as dependências necessárias.
 
 #### Exemplo para Artemis embarcado em ambiente dev
 
-Segundo a documentacao oficial do Spring Boot, para usar Artemis embarcado a aplicacao precisa ter o starter JMS do Artemis e tambem a dependencia do broker embarcado no classpath.
+Segundo a documentação oficial do Spring Boot, para usar Artemis embarcado a aplicação precisa ter o starter JMS do Artemis e também a dependência do broker embarcado no classpath.
 
-Dependencia adicional:
+Dependência adicional:
 
 ```xml
 <dependency>
@@ -1031,7 +1031,7 @@ Dependencia adicional:
 </dependency>
 ```
 
-Configuracao recomendada para desenvolvimento:
+Configuração recomendada para desenvolvimento:
 
 ```yaml
 spring:
@@ -1047,16 +1047,16 @@ spring:
       session-cache-size: 5
 ```
 
-O que essa configuracao faz:
+O que essa configuração faz:
 
 - `mode: embedded` exige broker embarcado;
-- `persistent: false` evita gravacao em disco, o que costuma ser adequado para dev;
-- `queues` e `topics` criam destinos basicos com opcoes padrao;
+- `persistent: false` evita gravação em disco, o que costuma ser adequado para dev;
+- `queues` e `topics` criam destinos básicos com opções padrão;
 - `session-cache-size` mantem o uso simples e eficiente durante desenvolvimento.
 
-Se houver necessidade de configuracao mais avancada das filas e topicos, o proprio Spring Boot recomenda declarar beans do tipo `JMSQueueConfiguration` e `TopicConfiguration`.
+Se houver necessidade de configuração mais avançada das filas e tópicos, o próprio Spring Boot recomenda declarar beans do tipo `JMSQueueConfiguration` e `TopicConfiguration`.
 
-Exemplo com fila duravel e topico predefinido:
+Exemplo com fila durável e tópico predefinido:
 
 ```java
 package br.com.exemplo.jms.config;
@@ -1088,34 +1088,34 @@ public class ArtemisEmbeddedDevConfig {
 }
 ```
 
-Para ambiente dev, esse modelo embarcado e util quando:
+Para ambiente dev, esse modelo embarcado é útil quando:
 
-- a equipe quer subir tudo com a propria aplicacao;
-- nao compensa manter um broker externo local;
-- os testes manuais precisam de filas e topicos ja disponiveis;
-- o objetivo e reduzir dependencia de infraestrutura no setup local.
+- a equipe quer subir tudo com a própria aplicação;
+- não compensa manter um broker externo local;
+- os testes manuais precisam de filas e tópicos já disponíveis;
+- o objetivo é reduzir dependência de infraestrutura no setup local.
 
-Para homologacao ou producao, normalmente vale migrar para um broker externo dedicado.
+Para homologação ou produção, normalmente vale migrar para um broker externo dedicado.
 
-### 3.3. Filas duraveis
+### 3.3. Filas duráveis
 
-Em ActiveMQ Artemis, uma fila duravel e uma fila que sobrevive a restart ou falha do broker. Entretanto, para que a mensagem em si sobreviva, ela tambem precisa ser enviada como mensagem duravel ou persistente.
+Em ActiveMQ Artemis, uma fila durável é uma fila que sobrevive a restart ou falha do broker. Entretanto, para que a mensagem em si sobreviva, ela também precisa ser enviada como mensagem durável ou persistente.
 
-Na pratica:
+Na prática:
 
-- fila duravel protege a existencia da fila;
-- mensagem duravel protege o conteudo da mensagem;
-- para persistencia completa, os dois pontos precisam estar alinhados.
+- fila durável protege a existência da fila;
+- mensagem durável protege o conteúdo da mensagem;
+- para persistência completa, os dois pontos precisam estar alinhados.
 
 #### O que considerar em Artemis
 
-- filas auto-criadas pelo broker sao duraveis, nao temporarias e nao transientes;
-- mesmo assim, elas podem ser removidas automaticamente se as politicas de `auto-delete-queues` estiverem habilitadas;
-- para filas de negocio, normalmente vale predefinir a fila ou desabilitar auto-delete para aquele conjunto de enderecos.
+- filas auto-criadas pelo broker são duráveis, não temporárias e não transientes;
+- mesmo assim, elas podem ser removidas automaticamente se as políticas de `auto-delete-queues` estiverem habilitadas;
+- para filas de negócio, normalmente vale predefinir a fila ou desabilitar auto-delete para aquele conjunto de endereços.
 
 #### Exemplo para broker embarcado no Spring Boot
 
-Quando a aplicacao usa Artemis embarcado, o Spring Boot permite declarar beans do tipo `JMSQueueConfiguration` para configuracoes avancadas de fila.
+Quando a aplicação usa Artemis embarcado, o Spring Boot permite declarar beans do tipo `JMSQueueConfiguration` para configurações avançadas de fila.
 
 ```java
 package br.com.exemplo.jms.config;
@@ -1138,16 +1138,16 @@ public class ArtemisEmbeddedQueuesConfig {
 }
 ```
 
-Esse modelo e util quando a propria aplicacao sobe o broker e precisa garantir que determinadas filas de negocio existam desde a inicializacao.
+Esse modelo é útil quando a própria aplicação sobe o broker e precisa garantir que determinadas filas de negócio existam desde a inicialização.
 
-#### Exemplo de configuracao no `broker.xml`
+#### Exemplo de configuração no `broker.xml`
 
-Para broker externo ou administrado separadamente, uma configuracao tipica e:
+Para broker externo ou administrado separadamente, uma configuração típica é:
 
-- em uma instalacao standalone do Artemis, o arquivo fica em `<broker-instance>/etc/broker.xml`;
-- ou seja, ele nao deve ser colocado em `${ARTEMIS_HOME}`, mas no diretorio da instancia criada do broker;
-- em Docker, o caminho padrao da imagem oficial e `/var/lib/artemis-instance/etc/broker.xml`;
-- quando for usado mecanismo de sobrescrita da imagem oficial, os arquivos customizados podem ser colocados em `/var/lib/artemis-instance/etc-override`, de onde serao copiados para `etc`.
+- em uma instalação standalone do Artemis, o arquivo fica em `<broker-instance>/etc/broker.xml`;
+- ou seja, ele não deve ser colocado em `${ARTEMIS_HOME}`, mas no diretório da instancia criada do broker;
+- em Docker, o caminho padrão da imagem oficial e `/var/lib/artemis-instance/etc/broker.xml`;
+- quando for usado mecanismo de sobrescrita da imagem oficial, os arquivos customizados podem ser colocados em `/var/lib/artemis-instance/etc-override`, de onde serão copiados para `etc`.
 
 Exemplo:
 
@@ -1163,7 +1163,7 @@ Exemplo:
 </addresses>
 ```
 
-Se a fila for de negocio e nao puder desaparecer automaticamente, uma configuracao complementar muito comum e:
+Se a fila for de negócio e não puder desaparecer automaticamente, uma configuração complementar muito comum é:
 
 ```xml
 <address-settings>
@@ -1176,7 +1176,7 @@ Se a fila for de negocio e nao puder desaparecer automaticamente, uma configurac
 
 #### Garantindo envio persistente da mensagem
 
-Se a fila e duravel, mas a mensagem for enviada como nao persistente, ela nao estara protegida em caso de reinicio ou falha do broker.
+Se a fila é durável, mas a mensagem for enviada como não persistente, ela não estará protegida em caso de reinicio ou falha do broker.
 
 Exemplo com `JmsClient`:
 
@@ -1204,24 +1204,24 @@ public class PedidoDuravelProducer {
 }
 ```
 
-Resumo pratico:
+Resumo prático:
 
-- fila duravel + mensagem persistente: indicado para pedidos, pagamentos, integracoes criticas;
-- fila duravel + mensagem nao persistente: a fila continua existindo, mas a mensagem pode se perder;
-- fila temporaria ou nao duravel: mais adequada para cenarios efemeros, testes ou respostas temporarias.
+- fila durável + mensagem persistente: indicado para pedidos, pagamentos, integrações críticas;
+- fila durável + mensagem não persistente: a fila continua existindo, mas a mensagem pode se perder;
+- fila temporária ou não durável: mais adequada para cenários efêmeros, testes ou respostas temporárias.
 
 ### 3.4. Uso de `pooled-jms`
 
-Por padrao, o Spring Boot envolve a `ConnectionFactory` nativa com uma `CachingConnectionFactory`, configuravel por `spring.jms.*`. Se for preferivel usar pooling nativo de JMS, o Spring Boot suporta isso com a dependencia `org.messaginghub:pooled-jms` e propriedades `spring.artemis.pool.*`.
+Por padrão, o Spring Boot envolve a `ConnectionFactory` nativa com uma `CachingConnectionFactory`, configuravel por `spring.jms.*`. Se for preferível usar pooling nativo de JMS, o Spring Boot suporta isso com a dependência `org.messaginghub:pooled-jms` e propriedades `spring.artemis.pool.*`.
 
-Segundo a documentacao do Spring Boot, o caminho padrao para Artemis e:
+Segundo a documentação do Spring Boot, o caminho padrão para Artemis e:
 
 - cache simples via `spring.jms.cache.session-cache-size`;
 - pooling nativo via `spring.artemis.pool.enabled=true`.
 
-Segundo a documentacao do `pooled-jms`, o `JmsPoolConnectionFactory` faz pooling de `Connection`, `Session` e `MessageProducer`, reduzindo o custo de criacao repetida desses recursos.
+Segundo a documentação do `pooled-jms`, o `JmsPoolConnectionFactory` faz pooling de `Connection`, `Session` e `MessageProducer`, reduzindo o custo de criação repetida desses recursos.
 
-#### Dependencia
+#### Dependência
 
 ```xml
 <dependency>
@@ -1230,7 +1230,7 @@ Segundo a documentacao do `pooled-jms`, o `JmsPoolConnectionFactory` faz pooling
 </dependency>
 ```
 
-#### Configuracao com Spring Boot
+#### Configuração com Spring Boot
 
 ```yaml
 spring:
@@ -1248,34 +1248,34 @@ spring:
 
 Em geral:
 
-- `max-connections` controla quantas conexoes fisicas podem ser mantidas;
-- `max-sessions-per-connection` ajuda em cenarios com muitas sessoes simultaneas;
+- `max-connections` controla quantas conexões físicas podem ser mantidas;
+- `max-sessions-per-connection` ajuda em cenários com muitas sessões simultâneas;
 - `idle-timeout` evita manter recursos ociosos por tempo excessivo.
 
-#### Quando `pooled-jms` e util
+#### Quando `pooled-jms` e útil
 
-Ele costuma ser especialmente util quando ha:
+Ele costuma ser especialmente útil quando há:
 
-- muitos envios JMS de curta duracao;
+- muitos envios JMS de curta duração;
 - alto volume de produtores concorrentes;
-- request-reply com criacao frequente de sessoes;
-- uso intensivo de `JmsTemplate` ou `JmsClient` em chamadas sincronas ou bursts.
+- request-reply com criação frequente de sessões;
+- uso intensivo de `JmsTemplate` ou `JmsClient` em chamadas síncronas ou bursts.
 
-Exemplos tipicos:
+Exemplos típicos:
 
-- API HTTP que publica muitas mensagens por requisicao;
-- servico integrador que envia mensagens para varias filas;
-- aplicacao com alto throughput de producao e baixa necessidade de listeners customizados.
+- API HTTP que publica muitas mensagens por requisição;
+- serviço integrador que envia mensagens para varias filas;
+- aplicação com alto throughput de produção e baixa necessidade de listeners customizados.
 
 #### Quando avaliar com mais cuidado
 
-Para listeners de longa duracao, a vantagem pode ser menor. A propria documentacao do Spring Boot destaca que, na maioria dos cenarios, os message listener containers devem trabalhar contra a `ConnectionFactory` nativa, pois assim cada listener container mantem sua propria conexao e responsabilidade de recuperacao local.
+Para listeners de longa duração, a vantagem pode ser menor. A própria documentação do Spring Boot destaca que, na maioria dos cenários, os message listener containers devem trabalhar contra a `ConnectionFactory` nativa, pois assim cada listener container mantem sua própria conexão e responsabilidade de recuperação local.
 
-Em outras palavras, `pooled-jms` tende a ser mais interessante para o lado produtor do que como principal preocupacao para consumidores de longa vida.
+Em outras palavras, `pooled-jms` tende a ser mais interessante para o lado produtor do que como principal preocupação para consumidores de longa vida.
 
 #### Exemplo de uso com `JmsClient`
 
-Nao ha mudanca no codigo de envio. O ganho fica na infraestrutura da `ConnectionFactory`.
+Não há mudança no código de envio. O ganho fica na infraestrutura da `ConnectionFactory`.
 
 ```java
 package br.com.exemplo.jms.notificacao;
@@ -1300,13 +1300,13 @@ public class NotificacaoPublisherPooled {
 }
 ```
 
-Ou seja, a troca esta na configuracao do pool, nao no estilo do producer.
+Ou seja, a troca está na configuração do pool, não no estilo do producer.
 
-### 3.5. Padronizando serializacao JSON
+### 3.5. Padronizando serialização JSON
 
-Em projetos reais, e recomendavel padronizar a troca de mensagens em JSON. Assim, os exemplos com `JmsTemplate`, `JmsClient` e `@JmsListener` passam a trabalhar com DTOs de forma consistente, sem depender de `ObjectMessage`.
+Em projetos reais, é recomendável padronizar a troca de mensagens em JSON. Assim, os exemplos com `JmsTemplate`, `JmsClient` e `@JmsListener` passam a trabalhar com DTOs de forma consistente, sem depender de `ObjectMessage`.
 
-Uma configuracao comum e registrar um `MappingJackson2MessageConverter`:
+Uma configuração comum é registrar um `MappingJackson2MessageConverter`:
 
 ```java
 package br.com.exemplo.jms.config;
@@ -1329,23 +1329,23 @@ public class JmsMessageConverterConfig {
 }
 ```
 
-Com essa configuracao:
+Com essa configuração:
 
 - os DTOs podem ser enviados como JSON em `TextMessage`;
-- o header `_type` ajuda na desserializacao do tipo;
+- o header `_type` ajuda na deserialização do tipo;
 - o `JmsTemplate` auto-configurado passa a usar esse converter;
-- o `JmsClient` auto-configurado tambem acompanha esse comportamento, pois reutiliza a infraestrutura JMS configurada pela aplicacao.
+- o `JmsClient` auto-configurado também acompanha esse comportamento, pois reutiliza a infraestrutura JMS configurada pela aplicação.
 
 ### 3.6. Exemplos com `JmsClient` no Spring Boot 4
 
-No Spring Boot 4, o `JmsClient` e auto-configurado e pode ser injetado diretamente nos beans da aplicacao. Ele oferece uma API fluente para envio, recebimento sincrono e request-reply, funcionando sobre a infraestrutura tradicional do Spring JMS.
+No Spring Boot 4, o `JmsClient` e autoconfigurado e pode ser injetado diretamente nos beans da aplicação. Ele oferece uma API fluente para envio, recebimento síncrono e request-reply, funcionando sobre a infraestrutura tradicional do Spring JMS.
 
 Pontos importantes:
 
-- o `JmsClient` e muito pratico para envio e recebimento sincrono;
-- para consumo assincrono, `@JmsListener` continua sendo a abordagem mais comum;
-- o cliente auto-configurado reutiliza a configuracao do `JmsTemplate`;
-- quando a aplicacao mistura fila e topico, pode ser util ter clientes diferentes para cada dominio.
+- o `JmsClient` é muito pratico para envio e recebimento síncrono;
+- para consumo assíncrono, `@JmsListener` continua sendo a abordagem mais comum;
+- o cliente autoconfigurado reutiliza a configuração do `JmsTemplate`;
+- quando a aplicação mistura fila e tópico, pode ser útil ter clientes diferentes para cada domínio.
 
 #### Exemplo simples de envio
 
@@ -1404,7 +1404,7 @@ public class PedidoProducerComQoS {
 }
 ```
 
-#### Recebimento sincrono com timeout
+#### Recebimento síncrono com timeout
 
 ```java
 package br.com.exemplo.jms.pedido;
@@ -1437,7 +1437,7 @@ public class PedidoPollingService {
 }
 ```
 
-Esse tipo de consumo sincrono costuma ser util em rotinas administrativas, testes de integracao ou fluxos request-reply.
+Esse tipo de consumo síncrono costuma ser útil em rotinas administrativas, testes de integração ou fluxos request-reply.
 
 #### Request-reply com `sendAndReceive`
 
@@ -1472,11 +1472,11 @@ public class CreditoClientComJmsClient {
 
 Esse formato simplifica bastante o fluxo de ida e volta, preservando o estilo do Spring Messaging.
 
-#### Criando um `JmsClient` dedicado para topicos
+#### Criando um `JmsClient` dedicado para tópicos
 
-Quando o projeto trabalha com fila e pub-sub na mesma aplicacao, o cliente auto-configurado costuma ser suficiente para filas. Para topicos, uma abordagem clara e criar um `JmsClient` baseado em um `JmsTemplate` com `pubSubDomain = true`.
+Quando o projeto trabalha com fila e pub-sub na mesma aplicação, o cliente autoconfigurado costuma ser suficiente para filas. Para tópicos, uma abordagem clara e criar um `JmsClient` baseado em um `JmsTemplate` com `pubSubDomain = true`.
 
-Se existirem dois beans do tipo `JmsClient`, use `@Qualifier` na injecao para deixar explicito qual cliente deve ser usado em cada fluxo.
+Se existirem dois beans do tipo `JmsClient`, use `@Qualifier` na injeção para deixar explicito qual cliente deve ser usado em cada fluxo.
 
 ```java
 package br.com.exemplo.jms.config;
@@ -1525,14 +1525,14 @@ public class NotificacaoPublisherComJmsClient {
 }
 ```
 
-### 3.7. Suportando fila e pub-sub na mesma aplicacao
+### 3.7. Suportando fila e pub-sub na mesma aplicação
 
-A mesma aplicacao pode trabalhar com:
+A mesma aplicação pode trabalhar com:
 
 - filas para processamento ponto a ponto;
-- topicos para eventos e notificacoes para varios consumidores.
+- tópicos para eventos e notificações para vários consumidores.
 
-Uma configuracao clara e separar `JmsTemplate` e `JmsListenerContainerFactory` para cada modelo.
+Uma configuração clara e separar `JmsTemplate` e `JmsListenerContainerFactory` para cada modelo.
 
 Destinations centralizadas:
 
@@ -1550,7 +1550,7 @@ public final class Destinations {
 }
 ```
 
-Configuracao:
+Configuração:
 
 ```java
 package br.com.exemplo.jms.config;
@@ -1653,7 +1653,7 @@ public class PedidoConsumer {
 }
 ```
 
-### 3.9. Exemplo com topicos
+### 3.9. Exemplo com tópicos
 
 Evento:
 
@@ -1709,7 +1709,7 @@ public class NotificacaoSubscriber {
 
 ### 3.10. Mensagens que necessitam de retorno
 
-Quando o emissor envia uma mensagem e aguarda resposta, o modelo usado normalmente e request-reply.
+Quando o emissor envia uma mensagem e aguarda resposta, o modelo usado normalmente é request-reply.
 
 Conceitos principais:
 
@@ -1784,12 +1784,12 @@ public class CreditoRequestReplyConsumer {
 
 Nesse modelo:
 
-- o produtor envia a requisicao;
+- o produtor envia a requisição;
 - o Spring usa o destino de resposta adequado;
 - a resposta volta ao emissor;
 - o `JMSCorrelationID` ajuda a amarrar ida e volta.
 
-### 3.11. Exemplo com correlacao explicita
+### 3.11. Exemplo com correlação explicita
 
 ```java
 package br.com.exemplo.jms.requestreply;
@@ -1818,33 +1818,33 @@ public class CreditoClientComCorrelacao {
 }
 ```
 
-Esse formato e util quando:
+Esse formato e útil quando:
 
-- ha integracao com sistemas legados;
-- a resposta nao sera imediata;
-- o identificador de correlacao precisa ser persistido.
+- há integração com sistemas legados;
+- a resposta não será imediata;
+- o identificador de correlação precisa ser persistido.
 
-### 3.12. Boas praticas com Artemis e JMS
+### 3.12. Boas práticas com Artemis e JMS
 
 - usar nomes claros para destinations, como `queue.` e `topic.`;
-- para filas criticas, alinhar fila duravel com mensagens persistentes;
-- evitar `auto-delete` em filas de negocio que precisam sobreviver ao ciclo de vida do consumidor;
+- para filas criticas, alinhar fila durável com mensagens persistentes;
+- evitar `auto-delete` em filas de negócio que precisam sobreviver ao ciclo de vida do consumidor;
 - definir politica de redelivery e dead letter queue;
-- padronizar a serializacao em JSON com `MessageConverter`;
+- padronizar a serialização em JSON com `MessageConverter`;
 - evitar payloads muito grandes;
 - monitorar filas, tempos de consumo e erros;
-- usar correlation ID em fluxos criticos;
-- avaliar `pooled-jms` principalmente quando houver muitos producers e criacao frequente de sessoes;
-- documentar quais consumers sao de fila e quais sao de topico.
+- usar correlation ID em fluxos críticos;
+- avaliar `pooled-jms` principalmente quando houver muitos producers e criação frequente de sessões;
+- documentar quais consumers são de fila e quais são de topico.
 
 ## 4. Events do Spring
 
-Os Events do Spring sao um mecanismo simples para comunicacao interna entre componentes da mesma aplicacao. Eles ajudam a reduzir acoplamento entre services e sao muito uteis quando uma acao de negocio precisa disparar reacoes adicionais, como auditoria, notificacao ou integracoes internas.
+Os Events do Spring são um mecanismo simples para comunicação interna entre componentes da mesma aplicação. Eles ajudam a reduzir acoplamento entre services e são muito uteis quando uma ação de negócio precisa disparar reações adicionais, como auditoria, notificação ou integrações internas.
 
 Casos comuns:
 
-- apos concluir um cadastro;
-- apos confirmar um pagamento;
+- após concluir um cadastro;
+- após confirmar um pagamento;
 - para auditoria interna;
 - para disparar tarefas complementares sem acoplar tudo no mesmo service.
 
@@ -1852,39 +1852,39 @@ Casos comuns:
 
 Spring Events funcionam muito bem quando:
 
-- produtor e consumidor estao na mesma aplicacao;
-- nao ha necessidade de broker externo;
-- o objetivo principal e desacoplamento interno;
+- produtor e consumidor estão na mesma aplicação;
+- não há necessidade de broker externo;
+- o objetivo principal é desacoplamento interno;
 - o fluxo pode ser tratado de forma simples no mesmo processo.
 
-Nao sao a melhor escolha quando:
+Não são a melhor escolha quando:
 
-- a mensagem precisa sobreviver a queda da aplicacao;
-- varios sistemas externos precisam consumir o mesmo evento;
-- ha necessidade de garantia de entrega entre processos;
-- o caso pede mensageria distribuida, como JMS, Kafka ou AMQP.
+- a mensagem precisa sobreviver a queda da aplicação;
+- vários sistemas externos precisam consumir o mesmo evento;
+- há necessidade de garantia de entrega entre processos;
+- o caso pede mensageria distribuída, como JMS, Kafka ou AMQP.
 
-### 4.2. Eventos padrao do Spring mais usados
+### 4.2. Eventos padrão do Spring mais usados
 
-O Spring Framework publica alguns eventos padrao ligados ao ciclo de vida do `ApplicationContext` e, em aplicacoes web baseadas em `DispatcherServlet`, tambem eventos ligados ao processamento de requests.
+O Spring Framework publica alguns eventos padrão ligados ao ciclo de vida do `ApplicationContext` e, em aplicações web baseadas em `DispatcherServlet`, também eventos ligados ao processamento de requests.
 
-| Evento | Quando ocorre | Uso comum | Observacoes |
+| Evento | Quando ocorre | Uso comum | Observações |
 | --- | --- | --- | --- |
-| `ContextRefreshedEvent` | Quando o `ApplicationContext` e inicializado ou atualizado com `refresh()` | carregar caches, aquecer recursos, validar configuracoes apos subida | pode ocorrer mais de uma vez em contextos que suportam refresh |
+| `ContextRefreshedEvent` | Quando o `ApplicationContext` é inicializado ou atualizado com `refresh()` | carregar caches, aquecer recursos, validar configurações após subida | pode ocorrer mais de uma vez em contextos que suportam refresh |
 | `ContextStartedEvent` | Quando o contexto recebe `start()` | iniciar componentes que dependem do ciclo de vida do contexto | menos comum em apps Spring Boot do dia a dia |
-| `ContextStoppedEvent` | Quando o contexto recebe `stop()` | parar componentes de forma controlada | tambem e menos comum em apps Spring Boot convencionais |
-| `ContextClosedEvent` | Quando o contexto e fechado com `close()` | liberar recursos, encerrar agendadores, flush final | representa encerramento do ciclo de vida do contexto |
-| `RequestHandledEvent` | Quando uma requisicao HTTP foi concluida | auditoria, log tecnico, metricas simples por request | evento especifico de aplicacoes web usando `DispatcherServlet` |
-| `ServletRequestHandledEvent` | Variante web com mais detalhes sobre a request servida | observabilidade e auditoria com metodo, URL, tempo e status | herda de `RequestHandledEvent` e costuma ser mais util em apps MVC |
+| `ContextStoppedEvent` | Quando o contexto recebe `stop()` | parar componentes de forma controlada | também é menos comum em apps Spring Boot convencionais |
+| `ContextClosedEvent` | Quando o contexto é fechado com `close()` | liberar recursos, encerrar agendadores, flush final | representa encerramento do ciclo de vida do contexto |
+| `RequestHandledEvent` | Quando uma requisição HTTP foi concluída | auditoria, log técnico, métricas simples por request | evento específico de aplicações web usando `DispatcherServlet` |
+| `ServletRequestHandledEvent` | Variante web com mais detalhes sobre a request servida | observabilidade e auditoria com método, URL, tempo e status | herda de `RequestHandledEvent` e costuma ser mais útil em apps MVC |
 
 Na pratica:
 
-- `ContextRefreshedEvent` e um dos mais usados para tarefas de inicializacao;
-- `ContextClosedEvent` e bastante util para shutdown controlado;
-- `RequestHandledEvent` e `ServletRequestHandledEvent` ajudam em cenarios web;
-- `ContextStartedEvent` e `ContextStoppedEvent` aparecem mais em cenarios que usam explicitamente o ciclo de vida do contexto.
+- `ContextRefreshedEvent` é um dos mais usados para tarefas de inicialização;
+- `ContextClosedEvent` é bastante útil para shutdown controlado;
+- `RequestHandledEvent` e `ServletRequestHandledEvent` ajudam em cenários web;
+- `ContextStartedEvent` e `ContextStoppedEvent` aparecem mais em cenários que usam explicitamente o ciclo de vida do contexto.
 
-Exemplo ouvindo um evento padrao do contexto:
+Exemplo ouvindo um evento padrão do contexto:
 
 ```java
 package br.com.exemplo.events;
@@ -2003,7 +2003,7 @@ public class NotificacaoPedidoListener {
 }
 ```
 
-Com isso, o `PedidoService` nao precisa conhecer nenhum desses consumidores.
+Com isso, o `PedidoService` não precisa conhecer nenhum desses consumidores.
 
 Exemplo de `@EventListener` com `condition` usando SpEL:
 
@@ -2023,28 +2023,28 @@ public class PedidoAltoValorEventListener {
 }
 ```
 
-Nesse caso, o listener so e executado quando a expressao SpEL retornar `true`.
+Nesse caso, o listener só e executado quando a expressao SpEL retornar `true`.
 
-### 4.5. Eventos sincronos
+### 4.5. Eventos síncronos
 
-Por padrao, o processamento de eventos do Spring e sincrono. Isso significa:
+Por padrão, o processamento de eventos do Spring é síncrono. Isso significa:
 
 - o listener roda na mesma thread do publisher;
-- se um listener falhar, a excecao pode afetar o fluxo principal;
-- o tempo do listener impacta diretamente o tempo da operacao original.
+- se um listener falhar, a exceção pode afetar o fluxo principal;
+- o tempo do listener impacta diretamente o tempo da operação original.
 
-Esse comportamento e adequado para:
+Esse comportamento é adequado para:
 
 - regras internas pequenas;
 - auditoria simples;
-- validacoes complementares;
-- fluxos que precisam participar da mesma transacao logica.
+- validações complementares;
+- fluxos que precisam participar da mesma transação logica.
 
-### 4.6. Eventos assincronos com `@Async`
+### 4.6. Eventos assíncronos com `@Async`
 
-Quando o processamento nao deve bloquear o fluxo principal, pode-se combinar eventos com execucao assincrona.
+Quando o processamento não deve bloquear o fluxo principal, pode-se combinar eventos com execução assíncrona.
 
-Configuracao:
+Configuração:
 
 ```java
 package br.com.exemplo.events;
@@ -2072,7 +2072,7 @@ public class AsyncEventsConfig {
 }
 ```
 
-Listener assincrono:
+Listener assíncrono:
 
 ```java
 package br.com.exemplo.events;
@@ -2094,13 +2094,13 @@ public class EmailPedidoListener {
 
 Cuidados:
 
-- excecoes assincronas nao sobem naturalmente para o publisher;
-- e importante monitorar falhas e tempo de execucao;
-- para tarefas criticas, pode ser melhor usar fila ou broker.
+- exceções assíncronas não sobem naturalmente para o publisher;
+- é importante monitorar falhas e tempo de execução;
+- para tarefas críticas, pode ser melhor usar fila ou broker.
 
 ### 4.7. Eventos transacionais com `@TransactionalEventListener`
 
-Quando o evento depende do sucesso da transacao, a melhor opcao costuma ser `@TransactionalEventListener`.
+Quando o evento depende do sucesso da transação, a melhor opção costuma ser `@TransactionalEventListener`.
 
 Exemplo:
 
@@ -2163,16 +2163,16 @@ public class ClienteCadastradoListener {
 
 Fases mais comuns:
 
-- `AFTER_COMMIT`: executa apenas se a transacao confirmar;
+- `AFTER_COMMIT`: executa apenas se a transação confirmar;
 - `AFTER_ROLLBACK`: executa se houver rollback;
 - `AFTER_COMPLETION`: executa ao final, independentemente do resultado;
 - `BEFORE_COMMIT`: executa antes do commit.
 
-Na maioria dos casos de integracao ou notificacao, `AFTER_COMMIT` e a opcao mais segura.
+Na maioria dos casos de integração ou notificação, `AFTER_COMMIT` é a opção mais segura.
 
-### 4.8. Ordenacao e condicoes
+### 4.8. Ordenação e condições
 
-Se houver varios listeners para o mesmo evento, e possivel controlar ordem:
+Se houver vários listeners para o mesmo evento, é possível controlar ordem:
 
 ```java
 package br.com.exemplo.events;
@@ -2192,7 +2192,7 @@ public class AuditoriaPrioritariaListener {
 }
 ```
 
-Tambem e possivel usar condicoes:
+Também é possível usar condições:
 
 ```java
 package br.com.exemplo.events;
@@ -2212,7 +2212,7 @@ public class PedidoAltoValorListener {
 
 ### 4.9. Event listeners retornando novos eventos
 
-Um listener tambem pode retornar outro evento, permitindo encadear reacoes:
+Um listener também pode retornar outro evento, permitindo encadear reações:
 
 ```java
 package br.com.exemplo.events;
@@ -2237,54 +2237,54 @@ public record NotaFiscalGeradaEvent(Long pedidoId, String numeroNota) {
 }
 ```
 
-Esse recurso e util, mas deve ser usado com moderacao para nao tornar o fluxo dificil de rastrear.
+Esse recurso é útil, mas deve ser usado com moderação para não tornar o fluxo difícil de rastrear.
 
 ### 4.10. Comparando Spring Events e JMS
 
 Use Spring Events quando:
 
-- a comunicacao for interna;
+- a comunicação for interna;
 - o processamento puder ocorrer no mesmo processo;
 - o objetivo principal for desacoplamento entre beans.
 
 Use JMS quando:
 
-- a comunicacao precisar ser distribuida;
-- a entrega precisar ser desacoplada do ciclo de vida da aplicacao;
-- houver necessidade de broker, retry, fila, topico ou persistencia de mensagens.
+- a comunicação precisar ser distribuída;
+- a entrega precisar ser desacoplada do ciclo de vida da aplicação;
+- houver necessidade de broker, retry, fila, tópico ou persistência de mensagens.
 
 Em muitos sistemas corporativos, os dois coexistem:
 
-- Spring Events para comunicacao interna entre services;
-- JMS para integracao externa ou comunicacao entre sistemas.
+- Spring Events para comunicação interna entre services;
+- JMS para integração externa ou comunicação entre sistemas.
 
-### 4.11. Boas praticas com Spring Events
+### 4.11. Boas práticas com Spring Events
 
-- mantenha os eventos pequenos e focados no fato de negocio;
-- nao coloque regra complexa diretamente no listener;
+- mantenha os eventos pequenos e focados no fato de negócio;
+- não coloque regra complexa diretamente no listener;
 - prefira nomes orientados a acontecimentos, como `PedidoFaturadoEvent`;
-- para integracoes dependentes de commit, use `@TransactionalEventListener`;
-- para carga alta ou necessidade de resiliencia, considere mensageria externa;
-- documente quais eventos sao internos e quais disparam integracoes.
+- para integrações dependentes de commit, use `@TransactionalEventListener`;
+- para carga alta ou necessidade de resiliência, considere mensageria externa;
+- documente quais eventos são internos e quais disparam integrações.
 
-### 4.12. Eventos padrao relacionados ao Spring Security
+### 4.12. Eventos padrão relacionados ao Spring Security
 
-O Spring Security tambem publica eventos padrao para autenticacao, autorizacao, logout e aspectos da sessao. Eles sao muito uteis para:
+O Spring Security também publica eventos padrão para autenticação, autorização, logout e aspectos da sessão. Eles são muito uteis para:
 
 - auditoria de login e logout;
-- metricas de falha por credencial invalida, conta bloqueada ou usuario desabilitado;
-- monitoramento de negacoes de acesso;
-- rastreamento de eventos de seguranca;
-- reacoes tecnicas como alertas e trilhas de auditoria.
+- métricas de falha por credencial invalida, conta bloqueada ou usuário desabilitado;
+- monitoramento de negações de acesso;
+- rastreamento de eventos de segurança;
+- reações técnicas como alertas e trilhas de auditoria.
 
 Na pratica, vale separar mentalmente esses eventos em dois grupos:
 
-- eventos de autenticacao;
-- eventos de autorizacao.
+- eventos de autenticação;
+- eventos de autorização.
 
-#### Configuracao para publicacao dos eventos
+#### Configuração para publicação dos eventos
 
-Para eventos de autenticacao, a documentacao oficial do Spring Security recomenda registrar um `AuthenticationEventPublisher`, normalmente usando `DefaultAuthenticationEventPublisher`.
+Para eventos de autenticação, a documentação oficial do Spring Security recomenda registrar um `AuthenticationEventPublisher`, normalmente usando `DefaultAuthenticationEventPublisher`.
 
 ```java
 package br.com.exemplo.events.security;
@@ -2307,7 +2307,7 @@ public class SecurityAuthenticationEventsConfig {
 }
 ```
 
-Para eventos de autorizacao, a documentacao oficial recomenda registrar um `AuthorizationEventPublisher`, por exemplo com `SpringAuthorizationEventPublisher`.
+Para eventos de autorização, a documentação oficial recomenda registrar um `AuthorizationEventPublisher`, por exemplo com `SpringAuthorizationEventPublisher`.
 
 ```java
 package br.com.exemplo.events.security;
@@ -2330,31 +2330,31 @@ public class SecurityAuthorizationEventsConfig {
 }
 ```
 
-#### Eventos padrao mais usados
+#### Eventos padrão mais usados
 
-| Evento | Quando ocorre | Uso comum | Observacoes |
+| Evento | Quando ocorre | Uso comum | Observações |
 | --- | --- | --- | --- |
-| `AuthenticationSuccessEvent` | autenticacao concluida com sucesso | auditoria de login, metricas de sucesso, registro de ultimo acesso | representa sucesso de autenticacao |
-| `AbstractAuthenticationFailureEvent` | autenticacao falhou | tratamento centralizado de falhas | classe base para eventos de falha |
-| `AuthenticationFailureBadCredentialsEvent` | credenciais invalidas | contador de tentativas erradas, alertas, bloqueio progressivo | muito comum em login por usuario e senha |
-| `AuthenticationFailureDisabledEvent` | usuario desabilitado tentou autenticar | auditoria e suporte operacional | bom para monitorar contas desativadas ainda em uso |
-| `AuthenticationFailureLockedEvent` | autenticacao falhou porque a conta esta bloqueada | seguranca e suporte | util em fluxos de bloqueio por excesso de tentativas |
-| `AuthenticationFailureCredentialsExpiredEvent` | autenticacao falhou porque a credencial expirou | forcar redefinicao de senha | comum em politicas corporativas de senha |
-| `InteractiveAuthenticationSuccessEvent` | autenticacao interativa foi bem-sucedida | auditoria de login web real | nao estende `AuthenticationSuccessEvent` para evitar duplicidade |
-| `LogoutSuccessEvent` | logout realizado com sucesso | trilha de auditoria, encerramento de sessao | disponivel desde Spring Security 5.2 |
-| `SessionFixationProtectionEvent` | o ID da sessao mudou por protecao contra session fixation | monitoramento de seguranca de sessao | informa sessao antiga e nova |
-| `AuthorizationDeniedEvent` | uma autorizacao foi negada | auditoria de acesso negado, alertas, metricas | recomendado para negacoes em modelos atuais de autorizacao |
-| `AuthorizationGrantedEvent` | uma autorizacao foi concedida | trilha de acesso permitido quando necessario | pode ser habilitado conforme a estrategia de publicacao |
-| `AuthenticationSwitchUserEvent` | houve troca de usuario via switch user | auditoria administrativa | util em ambientes com impersonation controlada |
+| `AuthenticationSuccessEvent` | autenticação concluída com sucesso | auditoria de login, métricas de sucesso, registro de último acesso | representa sucesso de autenticação |
+| `AbstractAuthenticationFailureEvent` | autenticação falhou | tratamento centralizado de falhas | classe base para eventos de falha |
+| `AuthenticationFailureBadCredentialsEvent` | credenciais inválidas | contador de tentativas erradas, alertas, bloqueio progressivo | muito comum em login por usuário e senha |
+| `AuthenticationFailureDisabledEvent` | usuário desabilitado tentou autenticar | auditoria e suporte operacional | bom para monitorar contas desativadas ainda em uso |
+| `AuthenticationFailureLockedEvent` | autenticação falhou porque a conta está bloqueada | segurança e suporte | útil em fluxos de bloqueio por excesso de tentativas |
+| `AuthenticationFailureCredentialsExpiredEvent` | autenticação falhou porque a credencial expirou | forcar redefinição de senha | comum em politicas corporativas de senha |
+| `InteractiveAuthenticationSuccessEvent` | autenticação interativa foi bem-sucedida | auditoria de login web real | não estende `AuthenticationSuccessEvent` para evitar duplicidade |
+| `LogoutSuccessEvent` | logout realizado com sucesso | trilha de auditoria, encerramento de sessão | disponível desde Spring Security 5.2 |
+| `SessionFixationProtectionEvent` | o ID da sessão mudou por proteção contra session fixation | monitoramento de segurança de sessão | informa sessão antiga e nova |
+| `AuthorizationDeniedEvent` | uma autorização foi negada | auditoria de acesso negado, alertas, métricas | recomendado para negações em modelos atuais de autorização |
+| `AuthorizationGrantedEvent` | uma autorização foi concedida | trilha de acesso permitido quando necessário | pode ser habilitado conforme a estratégia de publicação |
+| `AuthenticationSwitchUserEvent` | houve troca de usuário via switch user | auditoria administrativa | útil em ambientes com impersonation controlada |
 
-Na maioria dos sistemas, os eventos mais valiosos no inicio sao:
+Na maioria dos sistemas, os eventos mais valiosos no inicio são:
 
 - `AuthenticationSuccessEvent`;
 - `AuthenticationFailureBadCredentialsEvent`;
 - `LogoutSuccessEvent`;
 - `AuthorizationDeniedEvent`.
 
-#### Exemplo de listener para autenticacao
+#### Exemplo de listener para autenticação
 
 ```java
 package br.com.exemplo.events.security;
@@ -2381,7 +2381,7 @@ public class SecurityAuthenticationEventsListener {
 }
 ```
 
-#### Exemplo de listener para autorizacao negada
+#### Exemplo de listener para autorização negada
 
 ```java
 package br.com.exemplo.events.security;
@@ -2400,7 +2400,7 @@ public class SecurityAuthorizationEventsListener {
 }
 ```
 
-#### Exemplo de listener para logout e protecao de sessao
+#### Exemplo de listener para logout e proteção de sessão
 
 ```java
 package br.com.exemplo.events.security;
@@ -2425,29 +2425,29 @@ public class SecuritySessionEventsListener {
 }
 ```
 
-#### Eventos legados e eventos atuais de autorizacao
+#### Eventos legados e eventos atuais de autorização
 
-Nas versoes atuais do Spring Security, os eventos legados do pacote `org.springframework.security.access.event` aparecem como descontinuados em varios casos. Para novos projetos, a recomendacao e preferir os eventos modernos:
+Nas versões atuais do Spring Security, os eventos legados do pacote `org.springframework.security.access.event` aparecem como descontinuados em vários casos. Para novos projetos, a recomendação e preferir os eventos modernos:
 
 - `AuthorizationDeniedEvent`;
 - `AuthorizationGrantedEvent`.
 
-Isso e especialmente importante para evitar exemplos baseados em APIs antigas de autorizacao.
+Isso é especialmente importante para evitar exemplos baseados em APIs antigas de autorização.
 
-#### Boas praticas com eventos do Spring Security
+#### Boas práticas com eventos do Spring Security
 
 - nunca registre senha ou token bruto em listeners;
-- trate listeners de auditoria como componentes tecnicos e enxutos;
-- use esses eventos para metricas, alertas e trilha de seguranca;
-- em cenarios criticos, persista a auditoria de forma assincrona ou desacoplada;
-- diferencie falha de autenticacao de negacao de autorizacao;
-- ao contar tentativas de login, considere IP, usuario, horario e contexto da aplicacao.
+- trate listeners de auditoria como componentes técnicos e enxutos;
+- use esses eventos para métricas, alertas e trilha de segurança;
+- em cenários críticos, persista a auditoria de forma assíncrona ou desacoplada;
+- diferencie falha de autenticação de negação de autorização;
+- ao contar tentativas de login, considere IP, usuário, horário e contexto da aplicação.
 
-## 5. Mecanismos de resiliencia
+## 5. Mecanismos de resiliência
 
-Aplicacoes corporativas normalmente dependem de APIs, bancos, brokers e servicos externos. Por isso, e importante aplicar mecanismos de resiliencia para evitar que falhas temporarias derrubem fluxos inteiros ou sobrecarreguem o sistema.
+Aplicações corporativas normalmente dependem de APIs, bancos, brokers e serviços externos. Por isso, é importante aplicar mecanismos de resiliência para evitar que falhas temporárias derrubem fluxos inteiros ou sobrecarreguem o sistema.
 
-Os mecanismos mais comuns sao:
+Os mecanismos mais comuns são:
 
 - timeout;
 - retry;
@@ -2456,31 +2456,31 @@ Os mecanismos mais comuns sao:
 - rate limiter;
 - fallback.
 
-Em Spring Boot, a combinacao mais comum para esses casos e:
+Em Spring Boot, a combinação mais comum para esses casos é:
 
-- `spring-retry` para repeticao de tentativas em cenarios simples;
+- `spring-retry` para repetição de tentativas em cenários simples;
 - Resilience4j para circuit breaker, bulkhead, rate limiter, retry e timeout;
-- observabilidade para acompanhar falhas, latencia e degradacao.
+- observabilidade para acompanhar falhas, latência e degradação.
 
-### 5.1. Quando aplicar resiliencia
+### 5.1. Quando aplicar resiliência
 
 Esses mecanismos costumam ser aplicados em chamadas para:
 
 - APIs REST externas;
-- filas, brokers e integracoes assincronas;
-- operacoes remotas via HTTP ou mensageria;
-- consultas a recursos mais lentos ou instaveis.
+- filas, brokers e integrações assíncronas;
+- operações remotas via HTTP ou mensageria;
+- consultas a recursos mais lentos ou instáveis.
 
-Nem toda operacao deve ter retry ou fallback. Em geral:
+Nem toda operação deve ter retry ou fallback. Em geral:
 
 - use retry para falhas transientes;
 - use timeout para evitar espera indefinida;
-- use circuit breaker quando um servico externo estiver instavel;
+- use circuit breaker quando um serviço externo estiver instável;
 - use bulkhead para isolar consumo de recursos;
-- use rate limiter quando for necessario controlar volume de chamadas;
-- use fallback apenas quando houver uma resposta degradada aceitavel.
+- use rate limiter quando for necessário controlar volume de chamadas;
+- use fallback apenas quando houver uma resposta degradada aceitável.
 
-### 5.2. Dependencias mais comuns
+### 5.2. Dependências mais comuns
 
 Exemplo com Resilience4j e Spring Retry:
 
@@ -2503,7 +2503,7 @@ Exemplo com Resilience4j e Spring Retry:
 </dependencies>
 ```
 
-O starter AOP e necessario porque boa parte dessas anotacoes funciona por proxy.
+O starter AOP e necessário porque boa parte dessas anotações funciona por proxy.
 
 ### 5.3. Timeout
 
@@ -2512,10 +2512,10 @@ O timeout impede que uma chamada fique presa por tempo indeterminado.
 Em clientes HTTP, o ideal e combinar:
 
 - timeout no cliente;
-- timeout de resiliencia;
-- monitoramento de latencia.
+- timeout de resiliência;
+- monitoramento de latência.
 
-Exemplo de configuracao com `RestClient`:
+Exemplo de configuração com `RestClient`:
 
 ```java
 package br.com.exemplo.resilience;
@@ -2572,7 +2572,7 @@ public class ConsultaExternaAsyncService {
 }
 ```
 
-Configuracao:
+Configuração:
 
 ```yaml
 resilience4j:
@@ -2585,10 +2585,10 @@ resilience4j:
 
 ### 5.4. Retry com Resilience4j
 
-O retry deve ser usado quando a falha e temporaria, por exemplo:
+O retry deve ser usado quando a falha é temporária, por exemplo:
 
 - timeout ocasional;
-- erro 503 de servico momentaneamente indisponivel;
+- erro 503 de serviço momentaneamente indisponível;
 - falha de rede intermitente.
 
 Exemplo:
@@ -2623,7 +2623,7 @@ public class ConsultaFornecedorService {
 }
 ```
 
-Configuracao:
+Configuração:
 
 ```yaml
 resilience4j:
@@ -2641,16 +2641,16 @@ resilience4j:
 
 Boas praticas:
 
-- evitar retry em erro funcional, como validacao;
+- evitar retry em erro funcional, como validação;
 - evitar retry infinito;
 - combinar retry com timeout;
-- observar o impacto de repeticao em operacoes nao idempotentes.
+- observar o impacto de repetição em operações não idempotentes.
 
 ### 5.5. Retry com Spring Retry
 
-Para casos mais simples, o Spring Retry ainda e uma opcao bastante pratica.
+Para casos mais simples, o Spring Retry ainda e uma opção bastante prática.
 
-Habilitacao:
+Habilitação:
 
 ```java
 package br.com.exemplo.resilience;
@@ -2683,27 +2683,27 @@ public class EstoqueIntegracaoService {
             backoff = @Backoff(delay = 1000, multiplier = 2)
     )
     public String atualizarSaldo(String sku) {
-        throw new IllegalStateException("Falha temporaria no servico de estoque");
+        throw new IllegalStateException("Falha temporaria no serviço de estoque");
     }
 
     @Recover
     public String recuperar(Exception ex, String sku) {
-        return "Nao foi possivel atualizar o saldo do SKU " + sku;
+        return "Não foi possível atualizar o saldo do SKU " + sku;
     }
 }
 ```
 
-Essa abordagem e boa quando o foco e apenas repeticao de tentativa em um service local.
+Essa abordagem e boa quando o foco é apenas repetição de tentativa em um service local.
 
 ### 5.6. Circuit breaker
 
-O circuit breaker evita que a aplicacao continue insistindo em um servico que esta falhando de forma recorrente.
+O circuit breaker evita que a aplicação continue insistindo em um serviço que está falhando de forma recorrente.
 
 Estados principais:
 
-- `CLOSED`: operacao normal;
+- `CLOSED`: operação normal;
 - `OPEN`: chamadas bloqueadas temporariamente;
-- `HALF_OPEN`: algumas chamadas de teste sao liberadas.
+- `HALF_OPEN`: algumas chamadas de teste são liberadas.
 
 Exemplo:
 
@@ -2738,7 +2738,7 @@ public class PagamentoGatewayService {
 }
 ```
 
-Configuracao:
+Configuração:
 
 ```yaml
 resilience4j:
@@ -2753,11 +2753,11 @@ resilience4j:
         permittedNumberOfCallsInHalfOpenState: 3
 ```
 
-Esse mecanismo protege a aplicacao e tambem reduz carga sobre o sistema externo problemático.
+Esse mecanismo protege a aplicação e também reduz carga sobre o sistema externo problemático.
 
 ### 5.7. Bulkhead
 
-O bulkhead isola recursos para que a falha ou lentidao de uma integracao nao consuma todas as threads da aplicacao.
+O bulkhead isola recursos para que a falha ou lentidão de uma integração não consuma todas as threads da aplicação.
 
 Exemplo com `SemaphoreBulkhead`:
 
@@ -2776,12 +2776,12 @@ public class ConsultaDocumentoService {
     }
 
     public String fallback(String documento, Throwable ex) {
-        return "servico temporariamente sobrecarregado";
+        return "Serviço temporariamente sobrecarregado";
     }
 }
 ```
 
-Configuracao:
+Configuração:
 
 ```yaml
 resilience4j:
@@ -2794,9 +2794,9 @@ resilience4j:
 
 Quando usar:
 
-- integracoes lentas;
-- operacoes que podem monopolizar threads;
-- isolamento entre fluxos criticos e secundarios.
+- integrações lentas;
+- operações que podem monopolizar threads;
+- isolamento entre fluxos críticos e secundários.
 
 ### 5.8. Rate limiter
 
@@ -2824,7 +2824,7 @@ public class ConsultaCepService {
 }
 ```
 
-Configuracao:
+Configuração:
 
 ```yaml
 resilience4j:
@@ -2836,26 +2836,26 @@ resilience4j:
         timeoutDuration: 0
 ```
 
-Esse mecanismo e util para:
+Esse mecanismo é útil para:
 
 - proteger APIs com quota;
 - evitar estouro de consumo em parceiros externos;
-- reduzir picos causados por rajadas de requisicoes.
+- reduzir picos causados por rajadas de requisições.
 
 ### 5.9. Rate limiter com Bucket4j
 
-Outra abordagem bastante popular em Spring Boot e usar Bucket4j, uma biblioteca baseada no algoritmo de token bucket. Ela e especialmente util quando o limite precisa ser aplicado diretamente sobre endpoints HTTP, usuarios, IPs ou chaves de negocio.
+Outra abordagem bastante popular em Spring Boot é usar Bucket4j, uma biblioteca baseada no algoritmo de token bucket. Ela é especialmente útil quando o limite precisa ser aplicado diretamente sobre endpoints HTTP, usuários, IPs ou chaves de negócio.
 
 Bucket4j funciona bem quando:
 
 - o controle de taxa precisa ser muito explicito;
-- o limite deve ser calculado por IP, usuario, token ou tenant;
-- o projeto quer uma politica de rate limit independente de um cliente HTTP especifico;
-- ha necessidade de evoluir depois para buckets distribuidos.
+- o limite deve ser calculado por IP, usuário, token ou tenant;
+- o projeto quer uma política de rate limit independente de um cliente HTTP específico;
+- há necessidade de evoluir depois para buckets distribuídos.
 
-Segundo a documentacao oficial do Bucket4j, a dependencia principal para Java 17+ e `com.bucket4j:bucket4j_jdk17-core`. O proprio projeto tambem destaca que, para casos genericos com Spring Boot, existe um starter dedicado baseado em configuracao, mas o uso direto da biblioteca e muito bom quando queremos controle fino em codigo.
+Segundo a documentação oficial do Bucket4j, a dependência principal para Java 17+ é `com.bucket4j:bucket4j_jdk17-core`. O próprio projeto também destaca que, para casos genéricos com Spring Boot, existe um starter dedicado baseado em configuração, mas o uso direto da biblioteca e muito bom quando queremos controle fino em código.
 
-#### Dependencia
+#### Dependência
 
 ```xml
 <dependency>
@@ -2865,9 +2865,9 @@ Segundo a documentacao oficial do Bucket4j, a dependencia principal para Java 17
 </dependency>
 ```
 
-#### Exemplo simples em memoria
+#### Exemplo simples em memória
 
-Configuracao de um bucket com capacidade de 20 requisicoes por minuto:
+Configuração de um bucket com capacidade de 20 requisições por minuto:
 
 ```java
 package br.com.exemplo.resilience;
@@ -2891,7 +2891,7 @@ public class Bucket4jConfig {
 }
 ```
 
-Servico para obter buckets por chave, por exemplo IP ou usuario:
+Serviço para obter buckets por chave, por exemplo IP ou usuário:
 
 ```java
 package br.com.exemplo.resilience;
@@ -2971,18 +2971,18 @@ public class Bucket4jRateLimitFilter extends OncePerRequestFilter {
 
 Esse modelo e bom para:
 
-- proteger endpoints publicos;
+- proteger endpoints públicos;
 - limitar chamadas por IP;
 - aplicar politicas simples sem depender de gateway externo.
 
-#### Rate limit por usuario, token ou tenant
+#### Rate limit por usuário, token ou tenant
 
 Em vez de usar IP, a chave pode ser:
 
-- login do usuario autenticado;
+- login do usuário autenticado;
 - API key;
 - identificador do tenant;
-- combinacao de usuario e endpoint.
+- combinação de usuario e endpoint.
 
 Exemplo conceitual:
 
@@ -2991,11 +2991,11 @@ String chave = tenantId + ":" + username + ":" + request.getRequestURI();
 Bucket bucket = rateLimitService.resolveBucket(chave);
 ```
 
-Isso permite politicas diferentes por perfil ou plano comercial.
+Isso permite políticas diferentes por perfil ou plano comercial.
 
 #### Exemplo de resposta HTTP 429 enriquecida
 
-Uma boa pratica e devolver cabecalhos que ajudem o cliente a entender o bloqueio:
+Uma boa prática é devolver cabeçalhos que ajudem o cliente a entender o bloqueio:
 
 - `X-Rate-Limit-Remaining`;
 - `X-Rate-Limit-Retry-After-Seconds`;
@@ -3007,48 +3007,48 @@ Exemplo:
 {
   "status": 429,
   "erro": "TOO_MANY_REQUESTS",
-  "mensagem": "Limite de requisicoes excedido para este cliente."
+  "mensagem": "Limite de requisições excedido para este cliente."
 }
 ```
 
-#### Buckets distribuidos
+#### Buckets distribuídos
 
-O exemplo anterior usa memoria local e funciona bem em:
+O exemplo anterior usa memória local e funciona bem em:
 
-- aplicacoes simples;
+- aplicações simples;
 - ambientes de desenvolvimento;
-- uma unica instancia.
+- uma única instancia.
 
-Em producao com varias instancias, o ideal e compartilhar o estado do bucket usando tecnologia distribuida, como cache ou armazenamento compativel com os modulos distribuidos suportados pelo Bucket4j. A documentacao oficial destaca suporte para cenarios distribuidos com integracoes como JCache, Hazelcast, Ignite, Infinispan e Coherence.
+Em produção com várias instancias, o ideal é compartilhar o estado do bucket usando tecnologia distribuída, como cache ou armazenamento compatível com os módulos distribuídos suportados pelo Bucket4j. A documentação oficial destaca suporte para cenários distribuídos com integrações como JCache, Hazelcast, Ignite, Infinispan e Coherence.
 
-Nesses casos, o objetivo e fazer todas as instancias enxergarem o mesmo consumo de tokens.
+Nesses casos, o objetivo é fazer todas as instancias enxergarem o mesmo consumo de tokens.
 
 #### Quando preferir Bucket4j em vez de `RateLimiter` do Resilience4j
 
 Bucket4j costuma ser uma escolha melhor quando:
 
-- o rate limit esta ligado a requisicoes HTTP de entrada;
+- o rate limit está ligado a requisições HTTP de entrada;
 - a chave do limite depende do cliente chamador;
-- o controle precisa ser por IP, usuario ou API key;
+- o controle precisa ser por IP, usuário ou API key;
 - o bloqueio deve ocorrer antes de chegar na regra de negocio.
 
 O `RateLimiter` do Resilience4j costuma ser mais natural quando:
 
-- queremos limitar chamadas de saida para um servico externo;
-- o controle esta acoplado a um metodo especifico;
-- a politica de resiliencia faz parte de uma chamada remota do service.
+- queremos limitar chamadas de saída para um serviço externo;
+- o controle está acoplado a um método específico;
+- a política de resiliência faz parte de uma chamada remota do service.
 
 ### 5.10. Fallback
 
 O fallback define o comportamento degradado quando a chamada principal falha.
 
-Exemplos de fallback aceitavel:
+Exemplos de fallback aceitável:
 
 - retornar cache;
 - retornar status simplificado;
 - marcar processamento como pendente;
 - enfileirar para tentativa posterior;
-- responder com informacao parcial.
+- responder com informação parcial.
 
 Exemplo:
 
@@ -3074,19 +3074,19 @@ public class FreteService {
 
 Cuidados:
 
-- fallback nao deve mascarar erro grave sem observabilidade;
-- a resposta degradada precisa ser coerente com o negocio;
-- em fluxos financeiros ou criticos, talvez o correto seja falhar explicitamente.
+- fallback não deve mascarar erro grave sem observabilidade;
+- a resposta degradada precisa ser coerente com o negócio;
+- em fluxos financeiros ou críticos, talvez o correto seja falhar explicitamente.
 
 ### 5.11. Combinando mecanismos
 
-Em muitos cenarios, os mecanismos sao usados juntos. Um arranjo comum para chamadas HTTP externas e:
+Em muitos cenários, os mecanismos são usados juntos. Um arranjo comum para chamadas HTTP externas é:
 
 1. timeout curto;
 2. retry controlado;
 3. circuit breaker;
 4. fallback;
-5. monitoramento por metricas e logs.
+5. monitoramento por métricas e logs.
 
 Exemplo conceitual:
 
@@ -3115,16 +3115,16 @@ public class ClienteScoreService {
 }
 ```
 
-Ao combinar mecanismos, evite exagero. Muitas camadas de resiliencia mal calibradas podem aumentar latencia, mascarar problemas ou gerar tempestade de tentativas.
+Ao combinar mecanismos, evite exagero. Muitas camadas de resiliência mal calibradas podem aumentar latência, mascarar problemas ou gerar tempestade de tentativas.
 
 ### 5.12. Resiliencia em consumidores JMS e jobs
 
 Os mesmos conceitos valem para jobs e mensageria:
 
 - listeners JMS podem usar retry controlado no processamento;
-- jobs Quartz podem aplicar circuit breaker ao chamar servicos externos;
+- jobs Quartz podem aplicar circuit breaker ao chamar serviços externos;
 - falhas recorrentes podem redirecionar para dead letter queue ou reprocessamento posterior;
-- operacoes demoradas devem ter timeout e isolamento de recursos.
+- operações demoradas devem ter timeout e isolamento de recursos.
 
 Exemplo em listener JMS:
 
@@ -3149,7 +3149,7 @@ public class PedidoResilienteConsumer {
 
 ### 5.13. Observabilidade e monitoramento
 
-Nao existe resiliencia boa sem visibilidade operacional. O ideal e acompanhar:
+Não existe resiliencia boa sem visibilidade operacional. O ideal é acompanhar:
 
 - quantidade de retries;
 - circuit breakers abertos;
@@ -3159,35 +3159,36 @@ Nao existe resiliencia boa sem visibilidade operacional. O ideal e acompanhar:
 
 Isso ajuda a responder perguntas como:
 
-- o servico externo esta instavel ou apenas lento?
-- o retry esta ajudando ou piorando?
-- o fallback esta sendo usado demais?
-- o gargalo esta no provedor externo ou na propria aplicacao?
+- o serviço externo está instável ou apenas lento?
+- o retry está ajudando ou piorando?
+- o fallback está sendo usado demais?
+- o gargalo está no provedor externo ou na própria aplicação?
 
-### 5.14. Boas praticas
+### 5.14. Boas práticas
 
-- aplique resiliencia apenas onde existe dependencia instavel ou remota;
+- aplique resiliência apenas onde existe dependência instável ou remota;
 - diferencie erro transiente de erro funcional;
-- prefira operacoes idempotentes quando houver retry;
-- use timeout curto o suficiente para proteger a aplicacao;
-- nao use fallback enganoso em fluxos criticos;
+- prefira operações idempotentes quando houver retry;
+- use timeout curto o suficiente para proteger a aplicação;
+- não use fallback enganoso em fluxos críticos;
 - monitore tudo o que puder degradar silenciosamente;
-- revise periodicamente os parametros de retry, timeout e circuit breaker.
+- revise periodicamente os parâmetros de retry, timeout e circuit breaker.
+
 
 ## 6. Cache e Spring Session
 
-Cache e gerenciamento de sessao sao dois temas muito relevantes em aplicacoes Spring Boot tradicionais. Embora resolvam problemas diferentes, eles frequentemente usam tecnologias parecidas, como Redis:
+Cache e gerenciamento de sessão são dois temas muito relevantes em aplicações Spring Boot tradicionais. Embora resolvam problemas diferentes, eles frequentemente usam tecnologias parecidas, como Redis:
 
 - cache melhora desempenho e reduz chamadas repetidas;
-- sessao distribuida permite que o estado do usuario sobreviva entre instancias da aplicacao.
+- sessão distribuída permite que o estado do usuário sobreviva entre instancias da aplicação.
 
 Em geral:
 
-- use cache para dados repetidos e relativamente estaveis;
-- use Spring Session para estado de usuario em aplicacoes web stateful;
+- use cache para dados repetidos e relativamente estáveis;
+- use Spring Session para estado de usuário em aplicações web stateful;
 - evite misturar os dois conceitos no desenho de chaves e TTLs.
 
-### 8.1. Dependencias
+### 8.1. Dependências
 
 Para suporte geral a cache:
 
@@ -3207,7 +3208,7 @@ Para Caffeine:
 </dependency>
 ```
 
-Para cache com Redis e sessao distribuida:
+Para cache com Redis e sessão distribuída:
 
 ```xml
 <dependency>
@@ -3235,15 +3236,15 @@ public class CacheConfig {
 }
 ```
 
-Com `@EnableCaching`, o Spring passa a interceptar os metodos anotados com `@Cacheable`, `@CachePut` e `@CacheEvict`.
+Com `@EnableCaching`, o Spring passa a interceptar os métodos anotados com `@Cacheable`, `@CachePut` e `@CacheEvict`.
 
 ### 6.3. Uso de `@Cacheable`
 
 `@Cacheable` e usado quando queremos:
 
 - consultar primeiro no cache;
-- executar o metodo apenas se a chave ainda nao existir;
-- armazenar o retorno para reutilizacao posterior.
+- executar o método apenas se a chave ainda não existir;
+- armazenar o retorno para reutilização posterior.
 
 Exemplo:
 
@@ -3265,18 +3266,18 @@ public class ProdutoConsultaService {
     @Cacheable(cacheNames = "produtos", key = "#id")
     public ProdutoDto buscarPorId(Long id) {
         return produtoRepository.findDtoById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Produto nao encontrado"));
+                .orElseThrow(() -> new IllegalArgumentException("Produto não encontrado"));
     }
 }
 ```
 
-Observacoes importantes:
+Observações importantes:
 
 - a primeira chamada consulta a fonte original;
 - chamadas seguintes com a mesma chave usam o cache;
-- o metodo precisa ser chamado via proxy Spring para a anotacao funcionar.
+- o método precisa ser chamado via proxy Spring para a anotação funcionar.
 
-Tambem e possivel usar `unless` e `condition`:
+Também e possível usar `unless` e `condition`:
 
 ```java
 @Cacheable(cacheNames = "produtos", key = "#id", unless = "#result == null")
@@ -3287,13 +3288,13 @@ public ProdutoDto buscarPorId(Long id) {
 
 ### 6.4. Uso de `@CachePut`
 
-`@CachePut` sempre executa o metodo e atualiza o cache com o retorno mais recente.
+`@CachePut` sempre executa o método e atualiza o cache com o retorno mais recente.
 
-Ele e util quando:
+Ele é útil quando:
 
 - o dado acabou de ser alterado;
 - queremos manter o cache sincronizado sem depender de nova leitura;
-- o retorno do metodo ja representa o estado final salvo.
+- o retorno do método já representa o estado final salvo.
 
 Exemplo:
 
@@ -3315,7 +3316,7 @@ public class ProdutoCadastroService {
     @CachePut(cacheNames = "produtos", key = "#result.id")
     public ProdutoDto atualizar(Long id, AtualizarProdutoRequest request) {
         Produto produto = produtoRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Produto nao encontrado"));
+                .orElseThrow(() -> new IllegalArgumentException("Produto não encontrado"));
 
         produto.setNome(request.nome());
         produto.setPreco(request.preco());
@@ -3328,7 +3329,7 @@ public class ProdutoCadastroService {
 
 ### 6.5. Uso de `@CacheEvict`
 
-`@CacheEvict` remove entradas do cache, o que e importante quando o dado original mudou ou foi excluido.
+`@CacheEvict` remove entradas do cache, o que é importante quando o dado original mudou ou foi excluído.
 
 Exemplo removendo um item:
 
@@ -3362,16 +3363,16 @@ public void limparCacheProdutos() {
 }
 ```
 
-### 6.6. Configuracao com Caffeine
+### 6.6. Configuração com Caffeine
 
-Caffeine e uma excelente opcao para cache local em memoria:
+Caffeine é uma excelente opção para cache local em memória:
 
-- muito rapido;
+- muito rápido;
 - simples de operar;
-- ideal para uma unica instancia ou para caches que podem divergir brevemente entre instancias;
-- nao serve como cache compartilhado entre nos.
+- ideal para uma única instancia ou para caches que podem divergir brevemente entre instancias;
+- não serve como cache compartilhado entre nós.
 
-Configuracao simples:
+Configuração simples:
 
 ```yaml
 spring:
@@ -3382,7 +3383,7 @@ spring:
       spec: maximumSize=10000,expireAfterWrite=10m,recordStats
 ```
 
-Tambem e possivel customizar via `CaffeineCacheManager`:
+Também e possivel customizar via `CaffeineCacheManager`:
 
 ```java
 package br.com.exemplo.cache;
@@ -3411,21 +3412,21 @@ public class CaffeineCacheConfiguration {
 
 Quando preferir Caffeine:
 
-- aplicacao monolitica em uma instancia;
+- aplicação monolítica em uma instancia;
 - dados muito consultados e pouco alterados;
-- necessidade de latencia minima;
+- necessidade de latência mínima;
 - cache local como camada complementar.
 
-### 6.7. Configuracao com Redis para cache
+### 6.7. Configuração com Redis para cache
 
-Redis e uma boa opcao quando:
+Redis é uma boa opção quando:
 
-- ha varias instancias da aplicacao;
+- há várias instancias da aplicação;
 - o cache precisa ser compartilhado;
 - o TTL precisa ser centralizado;
-- a invalidação precisa refletir entre varios nos.
+- a invalidação precisa refletir entre vários nós.
 
-Configuracao base:
+Configuração base:
 
 ```yaml
 spring:
@@ -3442,7 +3443,7 @@ spring:
       use-key-prefix: true
 ```
 
-Customizacao mais detalhada:
+Customização mais detalhada:
 
 ```java
 package br.com.exemplo.cache;
@@ -3474,21 +3475,21 @@ public class RedisCacheConfigurationCustom {
 
 Pontos importantes:
 
-- manter `use-key-prefix` ajuda a evitar colisao entre caches;
+- manter `use-key-prefix` ajuda a evitar colisão entre caches;
 - diferentes caches podem ter TTLs diferentes;
-- serializacao JSON costuma ser mais amigavel para manutencao e diagnostico.
+- serialização JSON costuma ser mais amigável para manutenção e diagnostico.
 
-### 6.8. Estrategias de invalidação
+### 6.8. Estratégias de invalidação
 
-Cache sem estrategia de invalidacao costuma gerar inconsistencias.
+Cache sem estratégia de invalidação costuma gerar inconsistências.
 
-Estrategias comuns:
+Estratégias comuns:
 
-- TTL curto para dados mais volateis;
+- TTL curto para dados mais voláteis;
 - `@CacheEvict` ao atualizar ou excluir dados;
 - `@CachePut` para refresh imediato;
-- `allEntries = true` para invalidacoes amplas;
-- invalidacao por evento de negocio;
+- `allEntries = true` para invalidações amplas;
+- invalidação por evento de negócio;
 - aquecimento de cache apos subida ou refresh.
 
 Exemplo com evento:
@@ -3526,45 +3527,45 @@ public class ProdutoCacheInvalidationListener {
 }
 ```
 
-Boas praticas:
+Boas práticas:
 
-- nao cachear tudo indiscriminadamente;
+- não cachear tudo indiscriminadamente;
 - separar cache de leitura de cache derivado;
-- documentar TTL e estrategia de remocao;
+- documentar TTL e estratégia de remoção;
 - medir hit ratio antes de expandir uso de cache.
 
-### 6.9. Cache em aplicacoes Spring Boot tradicionais
+### 6.9. Cache em aplicações Spring Boot tradicionais
 
-Em aplicacoes web tradicionais, o cache costuma ser aplicado em:
+Em aplicações web tradicionais, o cache costuma ser aplicado em:
 
-- consultas de catalogo;
-- configuracoes de negocio;
-- parametros e tabelas auxiliares;
+- consultas de catálogo;
+- configurações de negócio;
+- parâmetros e tabelas auxiliares;
 - resultados de chamadas externas;
 - dados frequentemente acessados por controllers e services.
 
-Uma combinacao pratica e:
+Uma combinação prática é:
 
-- Caffeine para cache local de baixa latencia;
+- Caffeine para cache local de baixa latência;
 - Redis para cache compartilhado entre instancias;
-- invalidacao orientada a evento ou alteracao de dados.
+- invalidação orientada a evento ou alteração de dados.
 
-### 6.10. Spring Session e sessao distribuida
+### 6.10. Spring Session e sessão distribuída
 
-Spring Session abstrai o armazenamento da sessao HTTP e permite mover esse estado para um backend compartilhado, como Redis ou JDBC.
+Spring Session abstrai o armazenamento da sessão HTTP e permite mover esse estado para um backend compartilhado, como Redis ou JDBC.
 
-Isso e especialmente util quando:
+Isso é especialmente útil quando:
 
-- ha mais de uma instancia da aplicacao;
-- o load balancer nao usa sticky session;
-- o usuario precisa manter a sessao ao trocar de instancia;
-- o estado da autenticacao precisa sobreviver em ambiente distribuido.
+- há mais de uma instancia da aplicação;
+- o load balancer não usa sticky session;
+- o usuário precisa manter a sessão ao trocar de instancia;
+- o estado da autenticação precisa sobreviver em ambiente distribuído.
 
-Segundo a documentacao oficial do Spring Boot, em aplicacoes servlet o store de sessao pode ser auto-configurado com Redis ou JDBC, sem necessidade de `@Enable*HttpSession` quando ha um unico modulo Spring Session no classpath.
+Segundo a documentação oficial do Spring Boot, em aplicações servlet o store de sessão pode ser autoconfigurado com Redis ou JDBC, sem necessidade de `@Enable*HttpSession` quando há um único modulo Spring Session no classpath.
 
 ### 6.11. Configurando Spring Session com Redis
 
-Exemplo para aplicacao web tradicional:
+Exemplo para aplicação web tradicional:
 
 ```yaml
 server:
@@ -3584,7 +3585,7 @@ spring:
       flush-mode: on_save
 ```
 
-Em muitos cenarios, apenas adicionar a dependencia `spring-session-data-redis` ja faz o Spring Boot configurar automaticamente a substituicao do `HttpSession`.
+Em muitos cenários, apenas adicionar a dependência `spring-session-data-redis` já faz o Spring Boot configurar automaticamente a substituição do `HttpSession`.
 
 Exemplo de uso em controller:
 
@@ -3619,40 +3620,40 @@ Nesse modelo:
 
 - o container continua oferecendo `HttpSession`;
 - por baixo, os dados passam a ser persistidos no backend configurado;
-- a aplicacao segue com a mesma API de sessao.
+- a aplicação segue com a mesma API de sessão.
 
-### 6.12. Persistencia em Redis e integracao com Spring Security
+### 6.12. Persistência em Redis e integração com Spring Security
 
-Em aplicacoes web com login tradicional, o Spring Session integra-se muito bem com Spring Security. Quando o `SecurityContext` e salvo na sessao, ele tambem passa a ser persistido no Redis.
+Em aplicações web com login tradicional, o Spring Session integra-se muito bem com Spring Security. Quando o `SecurityContext` e salvo na sessão, ele também passa a ser persistido no Redis.
 
 Isso permite:
 
-- manter autenticacao entre instancias;
-- invalidar sessoes de forma centralizada;
-- acompanhar sessoes ativas de forma mais controlada.
+- manter autenticação entre instancias;
+- invalidar sessões de forma centralizada;
+- acompanhar sessões ativas de forma mais controlada.
 
-Segundo a documentacao do Spring Session, um cookie `SESSION` e usado para apontar para a sessao persistida. O backend Redis armazena os atributos da sessao e cuida da expiracao conforme a configuracao.
+Segundo a documentação do Spring Session, um cookie `SESSION` e usado para apontar para a sessão persistida. O backend Redis armazena os atributos da sessão e cuida da expiração conforme a configuração.
 
-### 6.13. Estrategias para aplicacoes web tradicionais
+### 6.13. Estratégias para aplicações web tradicionais
 
-Em aplicacoes web stateful, algumas estrategias sao bastante comuns:
+Em aplicações web stateful, algumas estratégias são bastante comuns:
 
-- sessao local do servlet container para ambientes simples e uma unica instancia;
-- sticky session no balanceador para reduzir troca de sessao entre nos;
+- sessão local do servlet container para ambientes simples e uma única instancia;
+- sticky session no balanceador para reduzir troca de sessão entre nós;
 - Spring Session com Redis para alta disponibilidade e escalabilidade horizontal;
-- reducao do tamanho da sessao para evitar excesso de serializacao.
+- redução do tamanho da sessão para evitar excesso de serialização.
 
-Recomendacoes praticas:
+Recomendações práticas:
 
-- manter na sessao apenas o necessario;
-- nao guardar objetos grandes ou grafo pesado;
+- manter na sessão apenas o necessário;
+- não guardar objetos grandes ou grafo pesado;
 - preferir IDs e dados essenciais em vez de entidades completas;
 - configurar timeout coerente com a experiencia esperada;
-- invalidar sessao explicitamente no logout.
+- invalidar sessão explicitamente no logout.
 
-### 6.14. Encontrando e invalidando sessoes por usuario
+### 6.14. Encontrando e invalidando sessões por usuário
 
-Quando a aplicacao precisa listar sessoes ativas de um usuario ou derrubar sessoes remotamente, o Spring Session com repositorio indexado ajuda bastante.
+Quando a aplicação precisa listar sessões ativas de um usuário ou derrubar sessões remotamente, o Spring Session com repositório indexada ajuda bastante.
 
 Exemplo conceitual:
 
@@ -3685,16 +3686,16 @@ public class SessaoAdministrativaService {
 }
 ```
 
-Esse tipo de recurso e especialmente util em:
+Esse tipo de recurso é especialmente útil em:
 
-- painis administrativos;
-- forca de logout;
-- controle de sessoes simultaneas;
+- painéis administrativos;
+- forcar logout;
+- controle de sessões simultâneas;
 - auditoria de acesso.
 
-### 6.15. Eventos de sessao
+### 6.15. Eventos de sessão
 
-Quando o repositorio indexado esta configurado, o Spring Session tambem pode publicar eventos como:
+Quando o repositório indexado está configurado, o Spring Session também pode publicar eventos como:
 
 - `SessionCreatedEvent`;
 - `SessionDeletedEvent`;
@@ -3726,20 +3727,20 @@ public class SessionEventsListener {
 }
 ```
 
-### 6.16. Boas praticas com cache e Spring Session
+### 6.16. Boas práticas com cache e Spring Session
 
-- escolha Caffeine para cache local e Redis para cache ou sessao compartilhada;
-- nao use cache como substituto de consistencia de negocio;
-- defina TTL e estrategia de invalidacao antes de ativar o cache;
-- monitore hit ratio, latencia e volume de chaves;
-- mantenha sessoes pequenas e controladas;
-- em aplicacoes distribuidas, prefira Spring Session com backend compartilhado;
-- teste invalidacao de cache e expiracao de sessao em cenarios reais;
-- evite salvar objetos nao serializaveis ou muito grandes na sessao.
+- escolha Caffeine para cache local e Redis para cache ou sessão compartilhada;
+- não use cache como substituto de consistência de negócio;
+- defina TTL e estratégia de invalidação antes de ativar o cache;
+- monitore hit ratio, latência e volume de chaves;
+- mantenha sessões pequenas e controladas;
+- em aplicações distribuídas, prefira Spring Session com backend compartilhado;
+- teste invalidação de cache e expiração de sessão em cenários reais;
+- evite salvar objetos não serializáveis ou muito grandes na sessão.
 
 ## 7. Spring Batch
 
-Spring Batch e o modulo do ecossistema Spring voltado para processamento em lote. Ele e muito util quando a aplicacao precisa processar grande volume de dados de forma controlada, reexecutavel e auditavel.
+Spring Batch e o modulo do ecossistema Spring voltado para processamento em lote. Ele e muito útil quando a aplicação precisa processar grande volume de dados de forma controlada, reexecutavel e auditavel.
 
 Casos comuns:
 
@@ -3750,15 +3751,15 @@ Casos comuns:
 - carga ou migracao de dados;
 - reprocessamento de registros com falha.
 
-Segundo a documentacao oficial, alguns dos componentes centrais sao:
+Segundo a documentação oficial, alguns dos componentes centrais são:
 
-- `JobRepository`, responsavel por persistir metadados de execucao;
+- `JobRepository`, responsavel por persistir metadados de execução;
 - `JobLauncher`, usado para disparar jobs com `JobParameters`;
 - `ItemReader`, para ler itens;
 - `ItemProcessor`, para transformar ou validar itens;
 - `ItemWriter`, para gravar itens.
 
-### 7.1. Dependencias
+### 7.1. Dependências
 
 ```xml
 <dependency>
@@ -3767,7 +3768,7 @@ Segundo a documentacao oficial, alguns dos componentes centrais sao:
 </dependency>
 ```
 
-Se o projeto vai usar persistencia real dos metadados do Batch, normalmente tambem havera um banco com `spring-boot-starter-data-jdbc` ou `spring-boot-starter-data-jpa`, dependendo da arquitetura adotada.
+Se o projeto vai usar persistencia real dos metadados do Batch, normalmente também havera um banco com `spring-boot-starter-data-jdbc` ou `spring-boot-starter-data-jpa`, dependendo da arquitetura adotada.
 
 ### 7.2. Conceitos principais
 
@@ -3801,7 +3802,7 @@ E o modelo mais comum no Spring Batch. Nele:
 
 Esse modelo e muito bom para alto volume com commit controlado.
 
-### 7.3. Configuracao basica de Job e Step
+### 7.3. Configuração basica de Job e Step
 
 ```java
 package br.com.exemplo.batch;
@@ -3868,7 +3869,7 @@ public record PedidoProcessado(Long id, String cliente, BigDecimal valorComTaxa)
 }
 ```
 
-Reader simples em memoria:
+Reader simples em memória:
 
 ```java
 package br.com.exemplo.batch;
@@ -3918,7 +3919,7 @@ public class PedidoItemProcessor implements ItemProcessor<PedidoEntrada, PedidoP
 }
 ```
 
-Quando o `ItemProcessor` retorna `null`, o item e filtrado e nao segue para o writer.
+Quando o `ItemProcessor` retorna `null`, o item é filtrado e não segue para o writer.
 
 Writer:
 
@@ -3943,7 +3944,7 @@ public class PedidoItemWriter implements ItemWriter<PedidoProcessado> {
 
 ### 7.5. Leitura de arquivo CSV com Spring Batch
 
-Um dos cenarios mais comuns e importar dados de CSV com `FlatFileItemReader`.
+Um dos cenarios mais comuns é importar dados de CSV com `FlatFileItemReader`.
 
 ```java
 package br.com.exemplo.batch;
@@ -3971,7 +3972,7 @@ public class BatchCsvReaderConfig {
 }
 ```
 
-Esse tipo de reader e bastante usado em importacoes administrativas ou integracoes legadas.
+Esse tipo de reader e bastante usado em importacoes administrativas ou integrações legadas.
 
 ### 7.6. Writer para banco de dados
 
@@ -4005,20 +4006,20 @@ public class BatchWriterConfig {
 
 ### 7.7. Restart e reprocessamento
 
-Um dos grandes diferenciais do Spring Batch e a persistencia dos metadados de execucao no `JobRepository`. Isso permite:
+Um dos grandes diferenciais do Spring Batch é a persistencia dos metadados de execução no `JobRepository`. Isso permite:
 
 - saber o que ja rodou;
 - identificar falhas por job e step;
-- retomar execucao quando o job e reiniciavel;
+- retomar execução quando o job e reiniciavel;
 - evitar reprocessamento indevido do mesmo `JobInstance`.
 
 Na pratica:
 
 - um `JobInstance` e identificado pelo nome do job e seus `JobParameters`;
-- mudar os parametros cria uma nova instancia;
-- relancar com os mesmos parametros pode resultar em restart, se o job permitir.
+- mudar os parâmetros cria uma nova instancia;
+- relancar com os mesmos parâmetros pode resultar em restart, se o job permitir.
 
-Exemplo de disparo com parametro:
+Exemplo de disparo com parâmetro:
 
 ```java
 package br.com.exemplo.batch;
@@ -4050,7 +4051,7 @@ public class BatchJobService {
 }
 ```
 
-Se o objetivo for sempre criar uma nova execucao, adicionar um `timestamp` ou identificador unico nos parametros e uma abordagem comum.
+Se o objetivo for sempre criar uma nova execução, adicionar um `timestamp` ou identificador unico nos parâmetros e uma abordagem comum.
 
 ### 7.8. Skip e retry
 
@@ -4140,8 +4141,8 @@ public class BatchTaskletConfig {
 Use `Tasklet` quando:
 
 - a etapa for simples;
-- nao houver processamento item a item;
-- a logica for unica, como mover arquivo, limpar diretorio ou gerar marcador de execucao.
+- não houver processamento item a item;
+- a logica for unica, como mover arquivo, limpar diretorio ou gerar marcador de execução.
 
 ### 7.10. Boas praticas com Spring Batch
 
@@ -4152,26 +4153,26 @@ Use `Tasklet` quando:
 - trate skip e retry com regras de negocio claras;
 - registre metricas e auditoria das execucoes;
 - para jobs pesados, considere disparo por scheduler ou operacao administrativa;
-- para arquivos grandes, combine Spring Batch com leitores apropriados, como CSV ou leitura streaming de XLSX.
+- para arquivos grandes, combine Spring Batch com leitores aprópriados, como CSV ou leitura streaming de XLSX.
 
 ### 7.11. Quando Spring Batch faz mais sentido
 
 Spring Batch costuma ser uma excelente escolha quando:
 
-- ha volume relevante de dados;
+- há volume relevante de dados;
 - o processamento precisa de restart controlado;
-- existe necessidade de trilha de execucao;
+- existe necessidade de trilha de execução;
 - o fluxo precisa de chunk, skip, retry e gerenciamento de falha.
 
 Em contrapartida, talvez ele seja excessivo quando:
 
-- a tarefa e muito simples e eventual;
+- a tarefa é muito simples e eventual;
 - um service comum ou job Quartz resolve com menos complexidade;
-- nao ha estado de execucao, checkpoint ou necessidade de restart.
+- não há estado de execução, checkpoint ou necessidade de restart.
 
-## 8. Exportacao de dados em CSV e Excel
+## 8. Exportação de dados em CSV e Excel
 
-Exportacao de dados e uma necessidade muito comum em sistemas corporativos, especialmente para:
+Exportação de dados é uma necessidade muito comum em sistemas corporativos, especialmente para:
 
 - relatorios administrativos;
 - extracao de dados para analise;
@@ -4179,14 +4180,14 @@ Exportacao de dados e uma necessidade muito comum em sistemas corporativos, espe
 - conferencias operacionais;
 - disponibilizacao de dados para usuarios de negocio.
 
-Em Spring Boot, duas bibliotecas muito comuns para esse cenario sao:
+Em Spring Boot, duas bibliotecas muito comuns para esse cenario são:
 
 - Apache Commons CSV para geracao de arquivos CSV;
 - Apache POI para geracao de arquivos Excel, principalmente `.xlsx`.
 
-Conforme a documentacao oficial do Apache Commons CSV, a biblioteca e voltada para leitura e escrita de variacoes do formato CSV. Ja o Apache POI informa oficialmente que `poi` cobre o ecossistema OLE2 e `poi-ooxml` cobre os formatos OOXML, incluindo Excel `.xlsx`.
+Conforme a documentação oficial do Apache Commons CSV, a biblioteca é voltada para leitura e escrita de variacoes do formato CSV. Ja o Apache POI informa oficialmente que `poi` cobre o ecossistema OLE2 e `poi-ooxml` cobre os formatos OOXML, incluindo Excel `.xlsx`.
 
-### 6.1. Dependencias
+### 6.1. Dependências
 
 ```xml
 <dependencies>
@@ -4214,7 +4215,7 @@ Observacoes:
 
 - para CSV, normalmente basta `commons-csv`;
 - para Excel `.xlsx`, normalmente basta `poi-ooxml`, que ja puxa o necessario para OOXML;
-- manter `poi` explicito pode ser util para deixar claro o suporte ao ecossistema base do POI.
+- manter `poi` explicito pode ser útil para deixar claro o suporte ao ecossistema base do POI.
 
 ### 8.2. Quando usar CSV e quando usar Excel
 
@@ -4222,7 +4223,7 @@ Use CSV quando:
 
 - o objetivo for simplicidade;
 - o arquivo for consumido por varios sistemas;
-- nao houver necessidade de formatacao visual;
+- não houver necessidade de formatacao visual;
 - o volume de dados for grande e o arquivo precisar ser leve.
 
 Use Excel quando:
@@ -4232,7 +4233,7 @@ Use Excel quando:
 - usuarios de negocio esperarem uma planilha mais amigavel;
 - houver necessidade de formulas, filtros ou organizacao visual.
 
-### 8.3. Exemplo de DTO para exportacao
+### 8.3. Exemplo de DTO para exportação
 
 ```java
 package br.com.exemplo.exportacao;
@@ -4296,14 +4297,14 @@ public class PedidoCsvExporter {
 
 Pontos importantes:
 
-- o delimitador pode ser `,` ou `;`, dependendo do padrao esperado;
+- o delimitador pode ser `,` ou `;`, dependendo do padrão esperado;
 - em cenarios brasileiros, `;` e comum por compatibilidade com Excel em algumas configuracoes regionais;
 - usar UTF-8 evita problemas com acentos;
 - `CSVPrinter` ajuda a lidar corretamente com escape e aspas.
 
 ### 8.5. Lendo arquivos CSV com Apache Commons CSV
 
-Para importacao de dados, o Apache Commons CSV tambem oferece uma API simples e segura para parsing de arquivos CSV.
+Para importacao de dados, o Apache Commons CSV também oferece uma API simples e segura para parsing de arquivos CSV.
 
 Exemplo de leitura a partir de upload:
 
@@ -4422,7 +4423,7 @@ public class ExportacaoController {
 }
 ```
 
-Esse controller mostra os dois formatos no mesmo endpoint de exportacao.
+Esse controller mostra os dois formatos no mesmo endpoint de exportação.
 
 ### 8.7. Exportando Excel com Apache POI
 
@@ -4507,7 +4508,7 @@ Esse exemplo cobre:
 
 ### 8.8. Lendo arquivos XLSX com Apache POI
 
-Quando o arquivo Excel nao e muito grande, `XSSFWorkbook` ou `WorkbookFactory` costumam ser suficientes para leitura.
+Quando o arquivo Excel não é muito grande, `XSSFWorkbook` ou `WorkbookFactory` costumam ser suficientes para leitura.
 
 Exemplo com `WorkbookFactory`:
 
@@ -4570,18 +4571,18 @@ public class PedidoExcelReader {
 Esse modelo funciona bem quando:
 
 - o arquivo tem tamanho pequeno ou medio;
-- e necessario aproveitar melhor a API completa do POI;
+- é necessario aproveitar melhor a API completa do POI;
 - o processamento exige mais liberdade de navegacao pela planilha.
 
-Para leitura, `DataFormatter` e util porque ajuda a obter o valor textual exibido na celula sem precisar tratar todos os tipos manualmente em cada caso.
+Para leitura, `DataFormatter` é útil porque ajuda a obter o valor textual exibido na celula sem precisar tratar todos os tipos manualmente em cada caso.
 
 ### 8.9. Diferencas entre `XSSFWorkbook` e `SXSSFWorkbook`
 
-Na pratica, os dois servem para gerar arquivos `.xlsx`, mas o comportamento e o custo de memoria sao diferentes.
+Na prática, os dois servem para gerar arquivos `.xlsx`, mas o comportamento é o custo de memória são diferentes.
 
 #### Quando usar `XSSFWorkbook`
 
-`XSSFWorkbook` e a implementacao tradicional do Apache POI para arquivos `.xlsx`. Ela carrega e manipula a planilha em memoria, o que a torna mais simples e mais flexivel.
+`XSSFWorkbook` e a implementacao tradicional do Apache POI para arquivos `.xlsx`. Ela carrega e manipula a planilha em memória, o que a torna mais simples e mais flexivel.
 
 Use `XSSFWorkbook` quando:
 
@@ -4589,7 +4590,7 @@ Use `XSSFWorkbook` quando:
 - houver necessidade de leitura e escrita com acesso aleatorio;
 - o relatorio usar muitos recursos do Excel;
 - for importante aplicar estilos, formulas, comentarios, merges e outras operacoes mais ricas;
-- a simplicidade do codigo for mais importante que a economia maxima de memoria.
+- a simplicidade do código for mais importante que a economia maxima de memória.
 
 Vantagens:
 
@@ -4598,58 +4599,58 @@ Vantagens:
 - melhor para planilhas pequenas e medias;
 - mais confortavel para cenarios com bastante formatacao.
 
-Limites praticos:
+Limites práticos:
 
-- consome mais memoria;
+- consome mais memória;
 - pode ficar pesado em exportacoes muito grandes;
 - para arquivos extensos, o risco de lentidao e `OutOfMemoryError` aumenta.
 
 #### Quando usar `SXSSFWorkbook`
 
-`SXSSFWorkbook` e a versao streaming do `XSSFWorkbook`. Segundo a documentacao oficial do Apache POI, ele permite gravar arquivos muito grandes sem esgotar memoria, mantendo em memoria apenas uma janela configuravel de linhas.
+`SXSSFWorkbook` é a versao streaming do `XSSFWorkbook`. Segundo a documentação oficial do Apache POI, ele permite gravar arquivos muito grandes sem esgotar memória, mantendo em memória apenas uma janela configuravel de linhas.
 
 Use `SXSSFWorkbook` quando:
 
-- a exportacao tiver muitas linhas;
+- a exportação tiver muitas linhas;
 - o objetivo principal for escrita sequencial;
-- a aplicacao precisar reduzir consumo de memoria;
+- a aplicação precisar reduzir consumo de memória;
 - o relatorio for grande, mas relativamente simples do ponto de vista visual.
 
 Vantagens:
 
 - muito mais adequado para grandes volumes;
-- mantem apenas parte das linhas em memoria;
-- reduz risco de estouro de memoria em exportacoes extensas.
+- mantém apenas parte das linhas em memória;
+- reduz risco de estouro de memória em exportacoes extensas.
 
 Cuidados importantes:
 
-- depois que linhas antigas sao descarregadas, elas nao ficam mais disponiveis para acesso aleatorio;
+- depois que linhas antigas são descarregadas, elas não ficam mais disponiveis para acesso aleatorio;
 - o POI usa arquivos temporarios em disco durante a geracao;
-- recursos como comentarios e regioes mescladas ainda podem consumir memoria significativa;
-- ao final, e importante limpar os arquivos temporarios com `dispose()`.
+- recursos como comentarios e regiões mescladas ainda podem consumir memória significativa;
+- ao final, é importante limpar os arquivos temporarios com `dispose()`.
 
 #### Resumo pratico
 
 `XSSFWorkbook`:
 
-- melhor para arquivos pequenos e medios;
-- melhor quando ha muita formatacao e manipulacao posterior;
+- melhor para arquivos pequenos e médios;
+- melhor quando há muita formatacao e manipulacao posterior;
 - mais simples para relatorios ricos.
 
 `SXSSFWorkbook`:
 
-- melhor para exportacao massiva;
+- melhor para exportação massiva;
 - melhor para escrita sequencial de grandes volumes;
-- melhor quando memoria e um fator critico.
+- melhor quando memória e um fator critico.
 
 Uma regra pratica bastante usada:
 
 - ate algumas milhares de linhas, `XSSFWorkbook` costuma ser suficiente;
 - para dezenas ou centenas de milhares de linhas, vale avaliar `SXSSFWorkbook`.
 
-Essa regra e apenas uma referencia. O ponto real de troca depende da memoria disponivel, da quantidade de colunas e da complexidade da planilha.
+Essa regra e apenas uma referencia. O ponto real de troca depende da memória disponivel, da quantidade de colunas e da complexidade da planilha.
 
-### 8.10. Exemplo de exportacao com `SXSSFWorkbook`
+### 8.10. Exemplo de exportação com `SXSSFWorkbook`
 
 ```java
 package br.com.exemplo.exportacao;
@@ -4703,7 +4704,7 @@ public class PedidoExcelStreamingExporter {
 
 Nesse exemplo:
 
-- `new SXSSFWorkbook(100)` mantem apenas uma janela de 100 linhas em memoria;
+- `new SXSSFWorkbook(100)` mantem apenas uma janela de 100 linhas em memória;
 - `setCompressTempFiles(true)` reduz o impacto dos arquivos temporarios em disco;
 - `dispose()` remove os arquivos temporarios criados pelo streaming workbook.
 
@@ -4711,29 +4712,29 @@ Para exportacoes muito grandes, esse modelo costuma ser mais seguro que `XSSFWor
 
 ### 8.11. Leitura de arquivos grandes com `excel-streaming-reader`
 
-Quando o problema nao e exportar, mas sim importar ou ler planilhas `.xlsx` muito grandes, uma opcao bastante recomendada e o fork mantido por `pjfanning` da biblioteca `excel-streaming-reader`.
+Quando o problema não e exportar, mas sim importar ou ler planilhas `.xlsx` muito grandes, uma opcao bastante recomendada e o fork mantido por `pjfanning` da biblioteca `excel-streaming-reader`.
 
 Esse fork e a evolucao mais atual da implementacao original e, conforme o README oficial, suporta Apache POI 5.x e Java 8+, alem de trazer correcoes e recursos adicionais.
 
-Ela funciona como um wrapper sobre a leitura streaming do Apache POI e preserva uma API parecida com `Workbook`, `Sheet`, `Row` e `Cell`, mas com foco em baixo consumo de memoria.
+Ela funciona como um wrapper sobre a leitura streaming do Apache POI e preserva uma API parecida com `Workbook`, `Sheet`, `Row` e `Cell`, mas com foco em baixo consumo de memória.
 
-Ela costuma ser util quando:
+Ela costuma ser útil quando:
 
 - o arquivo Excel recebido tem muitas linhas;
-- a aplicacao precisa importar planilhas grandes;
-- nao e viavel carregar o workbook inteiro em memoria;
+- a aplicação precisa importar planilhas grandes;
+- não e viavel carregar o workbook inteiro em memória;
 - o fluxo de leitura pode ser sequencial.
 
 Segundo o README oficial:
 
 - a biblioteca suporta apenas arquivos `.xlsx`;
-- ela foi feita para leitura streaming, nao para escrita;
-- o acesso aleatorio a linhas nao esta disponivel como em um workbook tradicional;
-- nem todos os metodos do POI sao suportados;
+- ela foi feita para leitura streaming, não para escrita;
+- o acesso aleatorio a linhas não esta disponivel como em um workbook tradicional;
+- nem todos os metodos do POI são suportados;
 - o pacote Java mudou em relacao ao projeto original;
 - o fork atual oferece opcoes extras para shared strings, comments e suporte melhorado a formatos OOXML Strict.
 
-#### Dependencia
+#### Dependência
 
 ```xml
 <dependency>
@@ -4743,7 +4744,7 @@ Segundo o README oficial:
 </dependency>
 ```
 
-Se o projeto usar algumas implementacoes avancadas de shared strings, o README oficial informa que pode ser necessario adicionar tambem a dependencia `poi-shared-strings`.
+Se o projeto usar algumas implementacoes avancadas de shared strings, o README oficial informa que pode ser necessario adicionar também a dependência `poi-shared-strings`.
 
 #### Exemplo de leitura streaming
 
@@ -4804,7 +4805,7 @@ public class PedidoExcelStreamingReaderService {
 
 Nesse exemplo:
 
-- `rowCacheSize(100)` define quantas linhas ficam em memoria;
+- `rowCacheSize(100)` define quantas linhas ficam em memória;
 - `bufferSize(4096)` define o buffer usado ao copiar o fluxo para arquivo temporario;
 - o workbook deve ser fechado corretamente para liberar os recursos temporarios.
 
@@ -4836,8 +4837,8 @@ public class ExcelStreamingAdvancedExample {
 Esse modelo pode ser interessante quando:
 
 - o arquivo possui muitas strings repetidas;
-- o consumo de memoria com shared strings comeca a crescer;
-- a aplicacao aceita usar arquivos temporarios para aliviar RAM.
+- o consumo de memória com shared strings comeca a crescer;
+- a aplicação aceita usar arquivos temporarios para aliviar RAM.
 
 #### Comparando com `XSSFWorkbook`
 
@@ -4845,47 +4846,47 @@ Use `excel-streaming-reader` quando:
 
 - o objetivo principal for leitura de arquivos `.xlsx` grandes;
 - a leitura puder ser sequencial;
-- o baixo consumo de memoria for prioridade.
+- o baixo consumo de memória for prioridade.
 
 Use `XSSFWorkbook` quando:
 
 - o arquivo for pequeno ou medio;
 - houver necessidade de recursos mais completos do POI;
-- o codigo precisar de acesso mais livre ao workbook;
+- o código precisar de acesso mais livre ao workbook;
 - o fluxo envolver leitura e manipulacao rica da planilha.
 
 #### Limitacoes importantes
 
 - funciona apenas com `.xlsx`;
-- nao serve para gerar planilhas;
-- alguns recursos avancados do POI nao estao disponiveis;
-- como a leitura e streaming, linhas antigas nao ficam livremente acessiveis;
+- não serve para gerar planilhas;
+- alguns recursos avancados do POI não estao disponiveis;
+- como a leitura e streaming, linhas antigas não ficam livremente acessiveis;
 - a biblioteca usa arquivo temporario ao trabalhar com `InputStream`;
-- para arquivos muito grandes, o proprio README recomenda favorecer o uso de arquivos temporarios.
+- para arquivos muito grandes, o próprio README recomenda favorecer o uso de arquivos temporarios.
 
-Na pratica:
+Na prática:
 
-- `XSSFWorkbook` e melhor para leitura rica e planilhas menores;
-- `SXSSFWorkbook` e melhor para escrita streaming de grandes arquivos;
+- `XSSFWorkbook` é melhor para leitura rica e planilhas menores;
+- `SXSSFWorkbook` é melhor para escrita streaming de grandes arquivos;
 - `excel-streaming-reader` e melhor para leitura streaming de `.xlsx` grandes.
 
 ### 8.12. Comparando abordagens de leitura para XLSX
 
-Resumo pratico:
+Resumo prática:
 
 - `WorkbookFactory` ou `XSSFWorkbook`: melhor para arquivos pequenos e medios, com API completa;
-- `excel-streaming-reader`: melhor para leitura de arquivos grandes com menor consumo de memoria;
-- `SXSSFWorkbook`: nao e biblioteca de leitura; ele e voltado para escrita streaming.
+- `excel-streaming-reader`: melhor para leitura de arquivos grandes com menor consumo de memória;
+- `SXSSFWorkbook`: não e biblioteca de leitura; ele e voltado para escrita streaming.
 
-Escolha rapida:
+Escolha rápida:
 
-- importar planilha pequena ou media: `XSSFWorkbook` ou `WorkbookFactory`;
+- importar planilha pequena ou média: `XSSFWorkbook` ou `WorkbookFactory`;
 - importar planilha muito grande: `excel-streaming-reader`;
 - gerar planilha muito grande: `SXSSFWorkbook`.
 
-### 8.13. Exportacao com mais de uma aba
+### 8.13. Exportação com mais de uma aba
 
-Quando o relatorio e mais complexo, uma planilha Excel pode conter varias abas.
+Quando o relatório é mais complexo, uma planilha Excel pode conter varias abas.
 
 Exemplo conceitual:
 
@@ -4895,73 +4896,73 @@ Sheet pedidosSheet = workbook.createSheet("Pedidos");
 Sheet auditoriaSheet = workbook.createSheet("Auditoria");
 ```
 
-Isso e util quando:
+Isso é útil quando:
 
-- o arquivo precisa separar visoes do mesmo relatorio;
+- o arquivo precisa separar visões do mesmo relatorio;
 - existem dados analiticos e resumo executivo;
-- o usuario precisa navegar por categorias ou periodos.
+- o usuário precisa navegar por categorias ou períodos.
 
-### 8.14. Cuidados com memoria e volume
+### 8.14. Cuidados com memória e volume
 
-Arquivos CSV geralmente sao leves, mas planilhas Excel podem consumir bastante memoria, principalmente com muitas linhas e estilos.
+Arquivos CSV geralmente são leves, mas planilhas Excel podem consumir bastante memória, principalmente com muitas linhas e estilos.
 
 Boas praticas:
 
-- para grandes volumes, preferir CSV quando possivel;
+- para grandes volumes, preferir CSV quando possível;
 - limitar quantidade de estilos diferentes no Excel;
-- evitar manter muitos arquivos grandes em memoria ao mesmo tempo;
-- considerar exportacao assincrona para arquivos muito grandes;
+- evitar manter muitos arquivos grandes em memória ao mesmo tempo;
+- considerar exportação assíncrona para arquivos muito grandes;
 - para escrita massiva em `.xlsx`, avaliar `SXSSFWorkbook`;
-- lembrar que `SXSSFWorkbook` cria arquivos temporarios e exige limpeza adequada.
+- lembrar que `SXSSFWorkbook` cria arquivos temporários e exige limpeza adequada.
 
-### 8.15. Diferencas praticas entre CSV e Excel
+### 8.15. Diferencas práticas entre CSV e Excel
 
 CSV:
 
 - mais simples;
 - mais leve;
-- mais facil para integracao entre sistemas;
-- sem estilos, abas ou formulas.
+- mais fácil para integração entre sistemas;
+- sem estilos, abas ou fórmulas.
 
 Excel:
 
-- mais amigavel para usuarios finais;
-- suporta formatacao, formulas e varias abas;
+- mais amigável para usuários finais;
+- suporta formatação, fórmulas e várias abas;
 - normalmente mais pesado;
-- mais apropriado para relatorios gerenciais.
+- mais apropriado para relatórios gerenciais.
 
-### 8.16. Boas praticas para exportacao
+### 8.16. Boas práticas para exportação
 
 - usar nomes de arquivo claros, por exemplo `pedidos-2026-03-19.xlsx`;
 - aplicar `Content-Disposition: attachment`;
 - definir o `Content-Type` correto;
-- evitar expor colunas sensiveis sem necessidade;
-- considerar paginacao, filtros e exportacao assicrona para grandes volumes;
-- registrar auditoria quando a exportacao envolver dados sensiveis.
+- evitar expor colunas sensíveis sem necessidade;
+- considerar paginação, filtros e exportação assíncrona para grandes volumes;
+- registrar auditoria quando a exportação envolver dados sensíveis.
 
 ## 9. Upload e download de arquivos
 
-Upload e download de arquivos sao requisitos muito comuns em aplicacoes Spring Boot tradicionais, especialmente em cenarios como:
+Upload e download de arquivos são requisitos muito comuns em aplicações Spring Boot tradicionais, especialmente em cenários como:
 
 - envio de documentos;
 - anexos de processos;
-- importacao manual de arquivos;
-- download de comprovantes, relatorios e templates;
-- armazenamento local ou em servicos externos.
+- importação manual de arquivos;
+- download de comprovantes, relatórios e templates;
+- armazenamento local ou em serviços externos.
 
 Os cuidados principais normalmente envolvem:
 
-- validacao de tipo e tamanho;
-- seguranca do nome do arquivo;
-- streaming para nao sobrecarregar memoria;
-- estrategia de armazenamento;
-- autorizacao de acesso ao arquivo.
+- validação de tipo e tamanho;
+- segurança do nome do arquivo;
+- streaming para não sobrecarregar memória;
+- estratégia de armazenamento;
+- autorização de acesso ao arquivo.
 
-### 9.1. Suporte basico a multipart no Spring Boot
+### 9.1. Suporte básico a multipart no Spring Boot
 
-Em aplicacoes servlet, o Spring Boot configura automaticamente o suporte a upload multipart quando o suporte multipart esta habilitado e as classes necessarias estao no classpath.
+Em aplicações servlet, o Spring Boot configura automaticamente o suporte a upload multipart quando o suporte multipart está habilitado e as classes necessárias estão no classpath.
 
-Configuracao comum:
+Configuração comum:
 
 ```yaml
 spring:
@@ -4977,9 +4978,9 @@ spring:
 Na pratica:
 
 - `max-file-size` limita cada arquivo;
-- `max-request-size` limita o total da requisicao multipart;
-- `file-size-threshold` define quando o upload vai para disco temporario;
-- `location` define onde os temporarios podem ser gravados.
+- `max-request-size` limita o total da requisição multipart;
+- `file-size-threshold` define quando o upload vai para disco temporário;
+- `location` define onde os temporários podem ser gravados.
 
 ### 9.2. Upload simples com `MultipartFile`
 
@@ -5030,7 +5031,7 @@ public record ArquivoSalvo(String nomeOriginal, String caminho) {
 
 ### 9.3. Armazenamento local de arquivos
 
-Servico de armazenamento local:
+Serviço de armazenamento local:
 
 ```java
 package br.com.exemplo.arquivos;
@@ -5042,7 +5043,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
+import org.springframework.útil.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
@@ -5088,21 +5089,21 @@ public class FileStorageService {
 }
 ```
 
-Esse modelo e util quando:
+Esse modelo é útil quando:
 
 - o volume de arquivos e moderado;
-- a aplicacao roda em um ambiente com disco acessivel;
-- nao ha necessidade imediata de armazenamento externo.
+- a aplicação roda em um ambiente com disco acessível;
+- não há necessidade imediata de armazenamento externo.
 
-### 9.4. Validacao de tipo e tamanho
+### 9.4. Validação de tipo e tamanho
 
-Validacoes importantes no upload:
+Validações importantes no upload:
 
-- tamanho maximo;
+- tamanho máximo;
 - content type esperado;
-- extensao permitida;
+- extensão permitida;
 - nome seguro;
-- conteudo realmente compativel com o tipo declarado.
+- conteúdo realmente compatível com o tipo declarado.
 
 Exemplo simples:
 
@@ -5132,17 +5133,238 @@ public class FileValidationService {
         }
 
         if (!TIPOS_PERMITIDOS.contains(file.getContentType())) {
-            throw new IllegalArgumentException("Tipo de arquivo nao permitido");
+            throw new IllegalArgumentException("Tipo de arquivo não permitido");
         }
     }
 }
 ```
 
-Em cenarios sensiveis, o ideal e validar tambem a assinatura binaria do arquivo e nao apenas a extensao ou o content type informado pelo cliente.
+Em cenários sensíveis, o ideal é validar também a assinatura binária do arquivo e não apenas a extensão ou o content type informado pelo cliente. A biblioteca Apache Tika resolve exatamente isso.
 
-### 9.5. Upload com metadados
+### 9.5. Validação de conteúdo com Apache Tika
 
-Muitas vezes o upload vem junto com outros campos do formulario.
+O `Content-Type` enviado pelo cliente em um upload é definido pelo próprio cliente e pode ser facilmente falsificado — um arquivo `.exe` renomeado para `.pdf` passaria sem problemas por qualquer verificação baseada somente em extensão ou cabeçalho HTTP. O **Apache Tika** detecta o tipo real do arquivo inspecionando seus **magic bytes** (sequência de bytes no início do arquivo que identifica o formato), independentemente do nome ou do `Content-Type` declarado.
+
+#### Dependências
+
+Para detecção de tipo apenas (uso mais comum em APIs):
+
+```xml
+<!-- Detecção de tipo MIME por magic bytes — leve, sem dependências externas -->
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-core</artifactId>
+    <version>2.9.2</version>
+</dependency>
+```
+
+Para extração de metadados e texto (opcional — aumenta significativamente o tamanho):
+
+```xml
+<!-- Parsers completos: extração de metadados, texto e suporte a 1500+ formatos -->
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-parsers-standard-package</artifactId>
+    <version>2.9.2</version>
+</dependency>
+```
+
+| Funcionalidade | tika-core | tika-parsers |
+|---|:---:|:---:|
+| Detectar tipo MIME por magic bytes | Sim | Sim |
+| Extrair metadados (autor, data) | Não | Sim |
+| Extrair texto de documentos | Não | Sim |
+| Suporte completo a 1500+ formatos | Parcial | Completo |
+| Tamanho aproximado | ~600 KB | ~50 MB |
+
+#### Detecção de tipo real
+
+A classe `Tika` é thread-safe e pode ser reutilizada como bean ou constante estática.
+
+```java
+package br.com.exemplo.arquivos;
+
+import org.apache.tika.Tika;
+import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Set;
+
+@Component
+public class TikaFileValidator {
+
+    private static final Tika TIKA = new Tika();
+
+    private static final Set<String> TIPOS_PERMITIDOS = Set.of(
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/gif"
+    );
+
+    /**
+     * Detecta o tipo MIME real do arquivo inspecionando os bytes,
+     * independentemente do Content-Type declarado pelo cliente.
+     */
+    public String detectarTipo(MultipartFile file) throws IOException {
+        try (InputStream is = file.getInputStream()) {
+            return TIKA.detect(is, file.getOriginalFilename());
+        }
+    }
+
+    public void validar(MultipartFile file) throws IOException {
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("Arquivo vazio");
+        }
+
+        if (file.getSize() > 10 * 1024 * 1024) {
+            throw new IllegalArgumentException("Arquivo acima do tamanho permitido (10 MB)");
+        }
+
+        String tipoReal = detectarTipo(file);
+
+        if (!TIPOS_PERMITIDOS.contains(tipoReal)) {
+            throw new IllegalArgumentException("Tipo de arquivo não permitido: " + tipoReal);
+        }
+    }
+}
+```
+
+#### Detectando discrepância entre tipo declarado e tipo real
+
+Em cenários de segurança mais rigorosos, é útil rejeitar (ou ao menos registrar) quando o tipo real difere do `Content-Type` enviado pelo cliente:
+
+```java
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+@Component
+public class TikaFileValidator {
+
+    private static final Logger log = LoggerFactory.getLogger(TikaFileValidator.class);
+    private static final Tika TIKA = new Tika();
+
+    private static final Set<String> TIPOS_PERMITIDOS = Set.of(
+            "application/pdf",
+            "image/png",
+            "image/jpeg"
+    );
+
+    public void validarComVerificacaoDeTipo(MultipartFile file) throws IOException {
+        String tipoDeclarado = file.getContentType();
+        String tipoReal = detectarTipo(file);
+
+        if (!tipoReal.equals(tipoDeclarado)) {
+            log.warn("Tipo declarado '{}' diverge do tipo real '{}' para o arquivo '{}'",
+                    tipoDeclarado, tipoReal, file.getOriginalFilename());
+            throw new IllegalArgumentException(
+                    "Tipo do arquivo diverge do Content-Type declarado");
+        }
+
+        if (!TIPOS_PERMITIDOS.contains(tipoReal)) {
+            throw new IllegalArgumentException("Tipo não permitido: " + tipoReal);
+        }
+    }
+
+    public String detectarTipo(MultipartFile file) throws IOException {
+        try (InputStream is = file.getInputStream()) {
+            return TIKA.detect(is, file.getOriginalFilename());
+        }
+    }
+}
+```
+
+#### Extração de metadados com tika-parsers
+
+Quando `tika-parsers-standard-package` estiver disponível, é possível extrair metadados de documentos como PDFs e arquivos Office:
+
+```java
+package br.com.exemplo.arquivos;
+
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.metadata.TikaCoreProperties;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.sax.BodyContentHandler;
+import org.springframework.stereotype.Component;
+import org.springframework.web.multipart.MultipartFile;
+import org.xml.sax.ContentHandler;
+
+import java.io.InputStream;
+
+@Component
+public class TikaMetadataExtractor {
+
+    public Metadata extrairMetadados(MultipartFile file) throws Exception {
+        AutoDetectParser parser = new AutoDetectParser();
+        Metadata metadata = new Metadata();
+        ContentHandler handler = new BodyContentHandler(-1); // -1 = sem limite de conteúdo
+
+        try (InputStream is = file.getInputStream()) {
+            parser.parse(is, handler, metadata, new ParseContext());
+        }
+
+        return metadata;
+    }
+}
+```
+
+Exemplo de uso dos metadados extraídos:
+
+```java
+Metadata meta = extractor.extrairMetadados(file);
+
+String autor  = meta.get(TikaCoreProperties.CREATOR);
+String criado = meta.get(TikaCoreProperties.CREATED);
+String titulo = meta.get(TikaCoreProperties.TITLE);
+
+log.info("Autor: {}, Criado: {}, Título: {}", autor, criado, titulo);
+```
+
+> Atenção: o parsing completo com `tika-parsers-standard-package` abre o conteúdo do documento. Em arquivos maliciosos (zip bombs, PDFs com macros), isso pode consumir muita memória. Configure limites de tempo e tamanho em `ParseContext` em ambientes de produção, ou use um processo separado (sidecar) para o parsing.
+
+#### Integração no controller de upload
+
+```java
+package br.com.exemplo.arquivos;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+
+@RestController
+@RequestMapping("/api/arquivos")
+public class ArquivoUploadController {
+
+    private final TikaFileValidator tikaValidator;
+    private final ArquivoStorageService storageService;
+
+    public ArquivoUploadController(TikaFileValidator tikaValidator,
+                                   ArquivoStorageService storageService) {
+        this.tikaValidator = tikaValidator;
+        this.storageService = storageService;
+    }
+
+    @PostMapping
+    public ResponseEntity<String> upload(@RequestParam("file") MultipartFile file)
+            throws IOException {
+        tikaValidator.validar(file);
+        String caminho = storageService.salvar(file);
+        return ResponseEntity.ok("Arquivo salvo em: " + caminho);
+    }
+}
+```
+
+### 9.6. Upload com metadados
+
+Muitas vezes o upload vem junto com outros campos do formulário.
 
 Exemplo:
 
@@ -5169,12 +5391,12 @@ public class DocumentoUploadController {
 }
 ```
 
-### 9.6. Upload de JSON e arquivo com `@RequestPart`
+### 9.7. Upload de JSON e arquivo com `@RequestPart`
 
 Para APIs REST, essa costuma ser a abordagem mais recomendada quando a requisicao envia:
 
 - uma part JSON estruturada;
-- uma part com o arquivo binario.
+- uma part com o arquivo binário.
 
 Nesse modelo, o Spring usa os `HttpMessageConverters` e o Jackson para desserializar a part JSON de forma natural.
 
@@ -5215,11 +5437,11 @@ Pontos importantes:
 
 - a part `data` deve ser enviada como JSON;
 - a part `binaryFile` deve ter o mesmo nome esperado no backend;
-- essa abordagem e mais explicita e previsivel para APIs REST.
+- essa abordagem é mais explicita e previsível para APIs REST.
 
-### 9.7. Fetch API para `/upload/v1` com `@RequestPart`
+### 9.8. Fetch API para `/upload/v1` com `@RequestPart`
 
-Quando o endpoint usa `@RequestPart("data")` para receber JSON e `@RequestPart("binaryFile")` para receber o arquivo, um ponto importante no frontend e que o JSON deve ser enviado como `Blob` com `type: "application/json"`.
+Quando o endpoint usa `@RequestPart("data")` para receber JSON e `@RequestPart("binaryFile")` para receber o arquivo, um ponto importante no frontend é que o JSON deve ser enviado como `Blob` com `type: "application/json"`.
 
 Exemplo:
 
@@ -5259,24 +5481,24 @@ Exemplo:
 <button type="button" onclick="enviarUploadV1()">Enviar v1</button>
 ```
 
-Pontos de atencao:
+Pontos de atenção:
 
 - o campo `data` precisa ser enviado como `Blob` com `Content-Type` `application/json`;
-- se o JSON for enviado apenas como texto puro no `FormData`, o binding com `@RequestPart` pode nao ocorrer como esperado;
+- se o JSON for enviado apenas como texto puro no `FormData`, o binding com `@RequestPart` pode não ocorrer como esperado;
 - o campo `binaryFile` deve ter exatamente o mesmo nome esperado no backend;
-- nao se deve definir manualmente o header `Content-Type` da requisicao, pois o navegador monta automaticamente o `multipart/form-data` com boundary.
+- não se deve definir manualmente o header `Content-Type` da requisição, pois o navegador monta automaticamente o `multipart/form-data` com boundary.
 
-Esse detalhe do `Blob` e especialmente importante em integracoes com Spring MVC quando a API recebe JSON estruturado e arquivo na mesma requisicao.
+Esse detalhe do `Blob` e especialmente importante em integrações com Spring MVC quando a API recebe JSON estruturado e arquivo na mesma requisição.
 
-### 9.8. Upload de JSON e arquivo com `@ModelAttribute`
+### 9.9. Upload de JSON e arquivo com `@ModelAttribute`
 
-Em alguns cenarios, a aplicacao recebe um `multipart/form-data` com:
+Em alguns cenários, a aplicação recebe um `multipart/form-data` com:
 
 - um campo textual contendo JSON;
-- um arquivo binario;
+- um arquivo binário;
 - binding via `@ModelAttribute`.
 
-Essa abordagem pode funcionar, mas exige mais cuidado do que `@RequestPart`, porque o Spring nao vai desserializar automaticamente a string JSON para um objeto complexo apenas com base no `Content-Type` da part. Para isso, normalmente e preciso usar um binder ou conversor customizado.
+Essa abordagem pode funcionar, mas exige mais cuidado do que `@RequestPart`, porque o Spring não vai desserializar automaticamente a string JSON para um objeto complexo apenas com base no `Content-Type` da part. Para isso, normalmente e preciso usar um binder ou conversor customizado.
 
 Exemplo ajustado:
 
@@ -5313,7 +5535,7 @@ public class ExemploUploadController {
 
     @InitBinder
     public void initBinder(WebDataBinder binder) {
-        // Necessario porque, com @ModelAttribute, o campo "data" chega como texto no multipart
+        // Necessário porque, com @ModelAttribute, o campo "data" chega como texto no multipart
         // e precisa ser convertido manualmente de JSON para SomeData.
         binder.registerCustomEditor(SomeData.class, "data", new PropertyEditorSupport() {
             @Override
@@ -5350,9 +5572,9 @@ Pontos importantes nessa abordagem:
 - `binaryFile` continua sendo recebido como `MultipartFile`;
 - o binding depende do nome do campo `data` coincidir com o nome do atributo do record ou DTO.
 
-### 9.9. Fetch API para `/upload/v2` com `@ModelAttribute`
+### 9.10. Fetch API para `/upload/v2` com `@ModelAttribute`
 
-Quando o backend usa `@ModelAttribute`, o JSON normalmente deve ser enviado como texto simples no `FormData`, e nao como `Blob` `application/json`.
+Quando o backend usa `@ModelAttribute`, o JSON normalmente deve ser enviado como texto simples no `FormData`, e não como `Blob` `application/json`.
 
 Exemplo:
 
@@ -5389,78 +5611,78 @@ Exemplo:
 <button type="button" onclick="enviarUploadV2()">Enviar v2</button>
 ```
 
-Pontos de atencao:
+Pontos de atenção:
 
 - o campo `data` vai como texto comum;
-- a conversao depende do `@InitBinder` ou mecanismo equivalente;
-- se o nome do campo nao for exatamente `data`, o binding falha;
-- essa abordagem e menos explicita para APIs REST.
+- a conversão depende do `@InitBinder` ou mecanismo equivalente;
+- se o nome do campo não for exatamente `data`, o binding falha;
+- essa abordagem é menos explicita para APIs REST.
 
-### 9.10. Comparando `@ModelAttribute` e `@RequestPart`
+### 9.11. Comparando `@ModelAttribute` e `@RequestPart`
 
 `@ModelAttribute`:
 
-- melhor para formularios multipart mais tradicionais;
-- funciona bem quando os campos sao simples ou achatados;
-- para JSON estruturado, exige binder ou conversao customizada;
+- melhor para formulários multipart mais tradicionais;
+- funciona bem quando os campos são simples ou achatados;
+- para JSON estruturado, exige binder ou conversão customizada;
 - tende a ser mais verboso e menos explicito em APIs REST.
 
 `@RequestPart`:
 
 - melhor para APIs que recebem uma part JSON e outra part de arquivo;
 - usa os `HttpMessageConverters` do Spring e o Jackson de forma natural;
-- e mais previsivel para integracoes SPA, mobile e clientes externos;
+- é mais previsível para integrações SPA, mobile e clientes externos;
 - costuma ser a abordagem mais recomendada para `JSON + arquivo`.
 
-Na pratica:
+Na prática:
 
-- se o caso for formulario classico, `@ModelAttribute` pode ser suficiente;
+- se o caso for formulário clássico, `@ModelAttribute` pode ser suficiente;
 - se o caso for API REST com JSON estruturado, prefira `@RequestPart`.
 
-### 9.11. Upload resumivel com TUS
+### 9.12. Upload resumível com TUS
 
-TUS e um protocolo HTTP aberto para uploads resumiveis. Ele e especialmente util quando:
+TUS e um protocolo HTTP aberto para uploads resumíveis. Ele e especialmente útil quando:
 
 - os arquivos podem ser grandes;
-- a conexao do usuario pode oscilar;
+- a conexão do usuário pode oscilar;
 - o upload precisa ser pausado e retomado;
-- o cliente pode trocar de rede ou recarregar a pagina;
-- a aplicacao precisa reduzir o risco de reiniciar upload do zero.
+- o cliente pode trocar de rede ou recarregar a página;
+- a aplicação precisa reduzir o risco de reiniciar upload do zero.
 
-Segundo a especificacao oficial do protocolo:
+Segundo a especificação oficial do protocolo:
 
 - o cliente cria ou conhece um recurso de upload;
 - usa `HEAD` para descobrir o `Upload-Offset`;
 - usa `PATCH` para continuar enviando a partir do ponto correto;
-- o header `Tus-Resumable` identifica a versao do protocolo;
-- extensoes como `creation`, `termination` e `checksum` podem ser negociadas.
+- o header `Tus-Resumable` identifica a versão do protocolo;
+- extensões como `creation`, `termination` e `checksum` podem ser negociadas.
 
-Fluxo basico:
+Fluxo básico:
 
 1. o cliente cria o upload com `POST`;
 2. o servidor devolve a URL do upload;
 3. o cliente envia partes com `PATCH`;
-4. se houver interrupcao, o cliente consulta o offset com `HEAD`;
+4. se houver interrupção, o cliente consulta o offset com `HEAD`;
 5. o upload continua do ponto em que parou.
 
 #### Quando preferir TUS em vez de multipart comum
 
 `MultipartFile` tradicional costuma ser suficiente quando:
 
-- os arquivos sao pequenos ou medios;
-- o upload e rapido;
-- nao ha grande risco de interrupcao.
+- os arquivos são pequenos ou médios;
+- o upload é rápido;
+- não há grande risco de interrupção.
 
 TUS costuma ser melhor quando:
 
-- os arquivos sao grandes;
-- ha upload via browser em rede instavel;
+- os arquivos são grandes;
+- há upload via browser em rede instável;
 - a experiencia de retomada e importante;
-- o upload pode durar varios minutos.
+- o upload pode durar vários minutos.
 
 #### Exemplo de headers do protocolo
 
-Criacao do upload:
+Criação do upload:
 
 ```http
 POST /api/tus/files HTTP/1.1
@@ -5492,7 +5714,7 @@ Tus-Resumable: 1.0.0
 Upload-Offset: 73400320
 ```
 
-Continuacao do envio:
+Continuação do envio:
 
 ```http
 PATCH /api/tus/files/24e533e02ec3bc40c387f1a0e460e216 HTTP/1.1
@@ -5501,9 +5723,9 @@ Content-Type: application/offset+octet-stream
 Upload-Offset: 73400320
 ```
 
-#### Exemplo de integracao com Spring Boot
+#### Exemplo de integração com Spring Boot
 
-Uma abordagem pratica em Java e usar uma implementacao pronta de servidor TUS, como a biblioteca `tus-java-server`, e expor um endpoint Spring MVC que delega o protocolo para ela.
+Uma abordagem pratica em Java é usar uma implementação pronta de servidor TUS, como a biblioteca `tus-java-server` e expor um endpoint Spring MVC que delega o protocolo para ela.
 
 Exemplo conceitual de controller:
 
@@ -5532,7 +5754,7 @@ public class TusUploadController {
 }
 ```
 
-Configuracao conceitual do servico:
+Configuração conceitual do serviço:
 
 ```java
 package br.com.exemplo.arquivos.tus;
@@ -5557,38 +5779,38 @@ public class TusConfig {
 }
 ```
 
-Esse exemplo e ilustrativo. Dependendo da biblioteca e da versao usadas, a API exata pode variar. A ideia principal e:
+Esse exemplo é ilustrativo. Dependendo da biblioteca e da versão usadas, a API exata pode variar. A ideia principal é:
 
-- o endpoint Spring recebe as requisicoes do protocolo;
-- o servico TUS cuida de `POST`, `HEAD`, `PATCH` e possivelmente `DELETE`;
-- os arquivos temporarios ou finais ficam em um storage configurado.
+- o endpoint Spring recebe as requisições do protocolo;
+- o serviço TUS cuida de `POST`, `HEAD`, `PATCH` e possivelmente `DELETE`;
+- os arquivos temporários ou finais ficam em um storage configurado.
 
 #### Cliente web
 
-No frontend, o uso de TUS normalmente aparece com bibliotecas JavaScript compativeis, como Uppy ou `tus-js-client`. O navegador passa a:
+No frontend, o uso de TUS normalmente aparece com bibliotecas JavaScript compatíveis, como Uppy ou `tus-js-client`. O navegador passa a:
 
 - iniciar o upload;
 - acompanhar progresso;
-- retomar automaticamente apos interrupcao;
+- retomar automaticamente após interrupção;
 - persistir estado local para continuidade.
 
 #### Cuidados de arquitetura
 
-- validar autenticacao e autorizacao antes de aceitar o upload;
-- definir limite maximo de arquivo;
-- controlar expiracao de uploads incompletos;
-- persistir metadados do upload separadamente quando necessario;
-- decidir quando o arquivo deixa de ser temporario e passa a ser definitivo;
-- integrar com antivirus ou validacao posterior em fluxos sensiveis.
+- validar autenticação e autorização antes de aceitar o upload;
+- definir limite máximo de arquivo;
+- controlar expiração de uploads incompletos;
+- persistir metadados do upload separadamente quando necessário;
+- decidir quando o arquivo deixa de ser temporário e passa a ser definitivo;
+- integrar com antivírus ou validação posterior em fluxos sensíveis.
 
 #### TUS com storage externo
 
-O TUS resolve o protocolo de upload resumivel, mas o backend de armazenamento ainda precisa ser definido. Em sistemas maiores, uma combinacao comum e:
+O TUS resolve o protocolo de upload resumível, mas o backend de armazenamento ainda precisa ser definido. Em sistemas maiores, uma combinação comum e:
 
-- TUS para transporte resumivel;
-- storage em disco temporario ou objeto;
+- TUS para transporte resumível;
+- storage em disco temporário ou objeto;
 - processo posterior para consolidar metadados e mover o arquivo ao destino final.
-### 9.12. Download simples com `Resource`
+### 9.13. Download simples com `Resource`
 
 Uma forma comum de download e retornar um `Resource` com `Content-Disposition`.
 
@@ -5629,9 +5851,9 @@ public class FileDownloadController {
 }
 ```
 
-### 9.13. Download em streaming
+### 9.14. Download em streaming
 
-Quando o arquivo pode ser grande, o ideal e evitar carregar tudo em memoria.
+Quando o arquivo pode ser grande, o ideal e evitar carregar tudo em memória.
 
 Exemplo com `StreamingResponseBody`:
 
@@ -5682,49 +5904,49 @@ Esse formato costuma ser melhor para:
 
 - arquivos grandes;
 - downloads frequentes;
-- menor pressao sobre heap da aplicacao.
+- menor pressão sobre heap da aplicação.
 
-### 9.14. Armazenamento em banco ou armazenamento externo
+### 9.15. Armazenamento em banco ou armazenamento externo
 
-Em geral, existem tres estrategias comuns:
+Em geral, existem três estratégias comuns:
 
 - disco local;
 - banco de dados;
 - storage externo, como S3, MinIO ou equivalente.
 
-Regra pratica:
+Regra prática:
 
-- disco local: simples, mas ruim para multiplas instancias sem volume compartilhado;
-- banco: pode funcionar para arquivos pequenos, mas costuma nao ser ideal para volume alto;
+- disco local: simples, mas ruim para múltiplas instancias sem volume compartilhado;
+- banco: pode funcionar para arquivos pequenos, mas costuma não ser ideal para volume alto;
 - storage externo: melhor para escalabilidade, CDN, compartilhamento e alta disponibilidade.
 
-Uma estrategia muito comum e:
+Uma estratégia muito comum e:
 
-- salvar o binario em storage externo;
+- salvar o binário em storage externo;
 - persistir no banco apenas os metadados e o identificador do arquivo.
 
-### 9.15. Cuidados de seguranca
+### 9.16. Cuidados de segurança
 
-Em upload e download, alguns cuidados sao essenciais:
+Em upload e download, alguns cuidados são essenciais:
 
-- validar tipo, extensao e tamanho;
-- evitar usar diretamente o nome enviado pelo usuario como nome fisico;
+- validar tipo, extensão e tamanho;
+- evitar usar diretamente o nome enviado pelo usuário como nome físico;
 - impedir path traversal;
 - restringir quem pode baixar ou subir arquivos;
-- escanear arquivos em cenarios sensiveis;
+- escanear arquivos em cenários sensíveis;
 - nunca confiar apenas no `contentType` informado pelo cliente;
-- para downloads privados, validar autorizacao antes de servir o arquivo.
+- para downloads privados, validar autorização antes de servir o arquivo.
 
-Se a aplicacao usa Spring Security, o endpoint de download deve validar se o usuario tem acesso ao recurso solicitado.
+Se a aplicação usa Spring Security, o endpoint de download deve validar se o usuário tem acesso ao recurso solicitado.
 
-### 9.16. Tratamento de erros
+### 9.17. Tratamento de erros
 
 Erros comuns:
 
 - arquivo acima do limite;
 - multipart malformado;
 - arquivo inexistente no download;
-- permissao insuficiente;
+- permissão insuficiente;
 - falha de armazenamento.
 
 Exemplo de tratamento global:
@@ -5754,18 +5976,18 @@ public class FileExceptionHandler {
 }
 ```
 
-### 9.17. Boas praticas
+### 9.18. Boas práticas
 
 - defina limites de upload no `application.yml`;
-- valide tamanho, extensao e conteudo;
+- valide tamanho, extensão e conteúdo;
 - prefira nomes gerados internamente;
 - use streaming para downloads grandes;
-- mantenha metadados e binario separados quando fizer sentido;
-- nao salve arquivos sensiveis sem controle de autorizacao;
-- monitore uso de disco, temporarios e falhas de upload;
-- em aplicacoes distribuidas, prefira storage compartilhado ou externo.
+- mantenha metadados e binário separados quando fizer sentido;
+- não salve arquivos sensíveis sem controle de autorização;
+- monitore uso de disco, temporários e falhas de upload;
+- em aplicações distribuídas, prefira storage compartilhado ou externo.
 
-## 10. Sugestao de organizacao do projeto
+## 10. Sugestão de organização do projeto
 
 ```text
 src/main/java/br/com/exemplo/
@@ -5792,18 +6014,18 @@ src/main/java/br/com/exemplo/
 
 ## 11. Resumo
 
-Os topicos avancados deste documento seguem a mesma ideia de arquitetura:
+Os tópicos avançados deste documento seguem a mesma ideia de arquitetura:
 
-- usar a configuracao padrao do Spring Boot quando o caso for simples;
+- usar a configuração padrão do Spring Boot quando o caso for simples;
 - adicionar uma camada administrativa quando for preciso parametrizar comportamento em banco;
-- manter a regra de negocio desacoplada da infraestrutura;
-- expor operacoes manuais apenas quando houver necessidade operacional clara.
+- manter a regra de negócio desacoplada da infraestrutura;
+- expor operações manuais apenas quando houver necessidade operacional clara.
 
-Esse desenho deixa a aplicacao mais flexivel em producao, reduz a necessidade de deploy para ajustes operacionais e facilita a evolucao para cenarios multi-tenant, clusterizados ou orientados a eventos.
+Esse desenho deixa a aplicação mais flexível em produção, reduz a necessidade de deploy para ajustes operacionais e facilita a evolução para cenários multi-tenant, clusterizados ou orientados a eventos.
 
 ## 12. Referencias
 
-As referencias abaixo foram usadas como base oficial ou complementar relevante para a elaboracao deste documento:
+As referências abaixo foram usadas como base oficial ou complementar relevante para a elaboração deste documento:
 
 ### Spring Boot e Spring Framework
 
@@ -5839,13 +6061,13 @@ As referencias abaixo foram usadas como base oficial ou complementar relevante p
 - ActiveMQ Artemis Address Model: https://artemis.apache.org/components/artemis/documentation/latest/address-model.html
 - ActiveMQ Artemis Using JMS: https://activemq.apache.org/components/artemis/documentation/2.31.1/using-jms.html
 
-### Upload resumivel
+### Upload resumível
 
 - TUS Protocol: https://tus.io/protocols/resumable-upload
 - `tus-java-server`: https://github.com/tomdesair/tus-java-server
 - `tusd`: https://github.com/tus/tusd
 
-### Resiliencia e rate limiting
+### Resiliência e rate limiting
 
 - Bucket4j: https://bucket4j.com/
 - Resilience4j: https://resilience4j.readme.io/
@@ -5854,6 +6076,13 @@ As referencias abaixo foram usadas como base oficial ou complementar relevante p
 ### Cache
 
 - Caffeine: https://github.com/ben-manes/caffeine
+
+### Apache Tika
+
+- Apache Tika — Getting Started: https://tika.apache.org/2.9.2/gettingstarted.html
+- Apache Tika — Supported Formats: https://tika.apache.org/2.9.2/formats.html
+- Apache Tika — API Javadoc: https://tika.apache.org/2.9.2/api/
+- Apache Tika no Maven Central: https://mvnrepository.com/artifact/org.apache.tika/tika-core
 
 ### CSV e Excel
 

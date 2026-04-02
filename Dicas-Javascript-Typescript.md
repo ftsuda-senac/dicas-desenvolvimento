@@ -4056,6 +4056,564 @@ Arquivo JSON que descreve o aplicativo para o navegador.
 
 ---
 
+### Web Crypto API
+
+> MDN: [Web Crypto API](https://developer.mozilla.org/pt-BR/docs/Web/API/Web_Crypto_API)
+
+A **Web Crypto API** é uma interface nativa do navegador (e do Node.js a partir da v19) que oferece operações criptográficas de baixo nível: hashing, geração de números aleatórios seguros, assinatura digital, cifragem e geração de chaves — tudo sem bibliotecas externas.
+
+O ponto de entrada é `crypto.subtle` (`SubtleCrypto`), que expõe métodos assíncronos (retornam `Promise`). Os dados são trafegados como `ArrayBuffer` ou `TypedArray`.
+
+> Funciona apenas em **HTTPS** (ou `localhost`).
+
+#### Geração de números aleatórios seguros
+
+```js
+// Preenche um TypedArray com bytes aleatórios criptograficamente seguros
+const bytes = new Uint8Array(16);
+crypto.getRandomValues(bytes);
+// Uint8Array(16) [203, 14, 87, ...]
+
+// Gerar um UUID v4 (nativo, sem biblioteca)
+const uuid = crypto.randomUUID();
+// 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+```
+
+#### Hashing (digest)
+
+Algoritmos disponíveis: `SHA-1` (não recomendado), `SHA-256`, `SHA-384`, `SHA-512`.
+
+```js
+async function hash(texto, algoritmo = 'SHA-256') {
+  const encoder = new TextEncoder();
+  const dados = encoder.encode(texto);                        // string → Uint8Array
+  const hashBuffer = await crypto.subtle.digest(algoritmo, dados);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join(''); // → hex
+}
+
+await hash('senha123');
+// 'ef92b778bafe771e89245b89ecbc08a44a4e166c06659911881f383d4473e94f'
+
+await hash('hello', 'SHA-512');
+// '9b71d224bd62f3785d96d46ad3ea3d...' (128 caracteres hex)
+```
+
+#### Geração de chaves simétricas (AES)
+
+```js
+// Gerar chave AES-GCM de 256 bits
+const chave = await crypto.subtle.generateKey(
+  { name: 'AES-GCM', length: 256 },
+  true,          // extractable: permite exportar a chave
+  ['encrypt', 'decrypt']
+);
+
+// Exportar a chave (para armazenar ou transmitir)
+const chaveExportada = await crypto.subtle.exportKey('raw', chave);
+// ArrayBuffer com 32 bytes (256 bits)
+
+// Importar a chave a partir de bytes
+const chaveImportada = await crypto.subtle.importKey(
+  'raw',
+  chaveExportada,
+  { name: 'AES-GCM' },
+  true,
+  ['encrypt', 'decrypt']
+);
+```
+
+#### Cifragem e decifragem — AES-GCM
+
+AES-GCM é o modo recomendado: fornece **confidencialidade + autenticidade** (AEAD).
+
+```js
+// Cifrar
+async function cifrar(chave, texto) {
+  const encoder = new TextEncoder();
+  const iv = crypto.getRandomValues(new Uint8Array(12)); // 96 bits — obrigatório e único por operação
+
+  const cifrado = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    chave,
+    encoder.encode(texto)
+  );
+
+  return { iv, cifrado }; // iv deve ser armazenado junto com o cifrado
+}
+
+// Decifrar
+async function decifrar(chave, iv, cifrado) {
+  const decifrado = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    chave,
+    cifrado
+  );
+  return new TextDecoder().decode(decifrado);
+}
+
+// Uso
+const chave = await crypto.subtle.generateKey(
+  { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']
+);
+
+const { iv, cifrado } = await cifrar(chave, 'Mensagem secreta');
+const original = await decifrar(chave, iv, cifrado);
+console.log(original); // 'Mensagem secreta'
+```
+
+**Converter ArrayBuffer ↔ Base64** (para armazenar ou transmitir):
+
+```js
+function bufferParaBase64(buffer) {
+  return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+}
+
+function base64ParaBuffer(base64) {
+  return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+}
+
+// Exemplo: serializar o resultado cifrado
+const cifradoBase64 = bufferParaBase64(cifrado);
+const ivBase64      = bufferParaBase64(iv);
+```
+
+#### Par de chaves assimétricas — ECDSA (assinatura digital)
+
+```js
+// Gerar par de chaves ECDSA (curva P-256)
+const { privateKey, publicKey } = await crypto.subtle.generateKey(
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  true,
+  ['sign', 'verify']
+);
+
+// Assinar dados
+async function assinar(privateKey, dados) {
+  const encoder = new TextEncoder();
+  return crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    privateKey,
+    encoder.encode(dados)
+  );
+}
+
+// Verificar assinatura
+async function verificar(publicKey, assinatura, dados) {
+  const encoder = new TextEncoder();
+  return crypto.subtle.verify(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    publicKey,
+    assinatura,
+    encoder.encode(dados)
+  );
+}
+
+// Uso
+const mensagem = 'Documento importante';
+const assinatura = await assinar(privateKey, mensagem);
+const valida = await verificar(publicKey, assinatura, mensagem);
+console.log(valida); // true
+```
+
+#### Derivação de chave a partir de senha — PBKDF2
+
+Nunca use uma senha diretamente como chave criptográfica. Use PBKDF2 (ou HKDF) para derivar uma chave forte a partir da senha.
+
+```js
+async function derivarChave(senha, salt) {
+  const encoder = new TextEncoder();
+
+  // Importar a senha como material base
+  const material = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(senha),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+
+  // Derivar chave AES-GCM
+  return crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: encoder.encode(salt),
+      iterations: 310_000,   // OWASP recomenda ≥ 310.000 para SHA-256
+      hash: 'SHA-256',
+    },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,           // não exportável
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Uso: cifrar dados protegidos por senha
+const salt = crypto.randomUUID(); // gerar e armazenar junto com o cifrado
+const chave = await derivarChave('minha-senha-forte', salt);
+const { iv, cifrado } = await cifrar(chave, 'Dados sensíveis');
+```
+
+#### Exportar e importar chaves no formato JWK
+
+JWK (JSON Web Key) é o formato padrão para interoperabilidade de chaves entre sistemas.
+
+```js
+// Exportar chave pública ECDSA como JWK
+const jwkPublica = await crypto.subtle.exportKey('jwk', publicKey);
+// { kty: 'EC', crv: 'P-256', x: '...', y: '...', key_ops: ['verify'] }
+
+// Exportar chave privada ECDSA como JWK
+const jwkPrivada = await crypto.subtle.exportKey('jwk', privateKey);
+
+// Importar de volta a partir do JWK
+const chavePublicaImportada = await crypto.subtle.importKey(
+  'jwk',
+  jwkPublica,
+  { name: 'ECDSA', namedCurve: 'P-256' },
+  true,
+  ['verify']
+);
+```
+
+#### Resumo dos algoritmos suportados
+
+| Algoritmo | Uso | Operações |
+|---|---|---|
+| `SHA-256` / `SHA-512` | Hash de dados | `digest` |
+| `AES-GCM` | Cifragem simétrica autenticada | `encrypt`, `decrypt` |
+| `AES-CBC` | Cifragem simétrica (sem autenticação) | `encrypt`, `decrypt` |
+| `RSA-OAEP` | Cifragem assimétrica | `encrypt`, `decrypt` |
+| `ECDSA` | Assinatura digital | `sign`, `verify` |
+| `RSASSA-PKCS1-v1_5` | Assinatura digital (RSA) | `sign`, `verify` |
+| `ECDH` | Acordo de chaves (Diffie-Hellman) | `deriveKey`, `deriveBits` |
+| `PBKDF2` | Derivação de chave a partir de senha | `deriveKey`, `deriveBits` |
+| `HKDF` | Derivação de chave a partir de material | `deriveKey`, `deriveBits` |
+
+> **Boas práticas:**
+> - Prefira **AES-GCM** a AES-CBC — GCM autentica os dados além de cifrá-los.
+> - Use um **IV único** a cada operação de cifragem (nunca reutilize o mesmo IV com a mesma chave).
+> - Use **PBKDF2** ou **Argon2** (via biblioteca) para derivar chaves de senhas.
+> - Armazene chaves exportadas de forma segura — nunca em `localStorage` sem cifragem adicional.
+
+---
+
+### Intersection Observer API
+
+> MDN: [Intersection Observer API](https://developer.mozilla.org/pt-BR/docs/Web/API/Intersection_Observer_API)
+
+A **Intersection Observer API** observa de forma assíncrona se um elemento entra ou sai da área visível do viewport (ou de outro elemento ancestral). É a alternativa moderna e eficiente ao uso de `scroll` + `getBoundingClientRect()`, pois não bloqueia a thread principal.
+
+**Casos de uso comuns:**
+- Lazy loading de imagens
+- Infinite scroll (carregar mais itens ao chegar ao fim da lista)
+- Animações disparadas quando o elemento aparece na tela
+- Contabilização de impressões (analytics)
+
+#### Uso básico
+
+```js
+const observer = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      if (entry.isIntersecting) {
+        console.log('Elemento visível:', entry.target);
+      } else {
+        console.log('Elemento saiu da tela:', entry.target);
+      }
+    });
+  },
+  {
+    root: null,           // null = viewport do navegador
+    rootMargin: '0px',    // margem ao redor do root (CSS shorthand)
+    threshold: 0.5,       // 0 = qualquer pixel visível; 1 = 100% visível
+  }
+);
+
+// Observar um elemento
+const elemento = document.getElementById('meu-elemento');
+observer.observe(elemento);
+
+// Parar de observar
+observer.unobserve(elemento);
+
+// Desconectar todos os alvos
+observer.disconnect();
+```
+
+**Propriedades de `IntersectionObserverEntry`:**
+
+| Propriedade | Tipo | Descrição |
+|---|---|---|
+| `isIntersecting` | `boolean` | `true` se o elemento está (parcialmente) visível |
+| `intersectionRatio` | `number` (0–1) | Fração do elemento que está visível |
+| `target` | `Element` | O elemento observado |
+| `boundingClientRect` | `DOMRect` | Dimensões/posição do elemento |
+| `intersectionRect` | `DOMRect` | Área de interseção visível |
+| `time` | `number` | Timestamp da mudança (ms desde a navegação) |
+
+#### Lazy loading de imagens
+
+```html
+<img data-src="foto.jpg" alt="Foto" class="lazy" src="placeholder.svg">
+```
+
+```js
+const observer = new IntersectionObserver(
+  (entries, obs) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+
+      const img = entry.target;
+      img.src = img.dataset.src;       // substitui pelo src real
+      img.classList.remove('lazy');
+      obs.unobserve(img);              // para de observar após carregar
+    });
+  },
+  { rootMargin: '200px' }             // carrega 200px antes de entrar na tela
+);
+
+document.querySelectorAll('img.lazy').forEach(img => observer.observe(img));
+```
+
+#### Animação ao entrar na tela
+
+```css
+.revelar {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.revelar.visivel {
+  opacity: 1;
+  transform: none;
+}
+```
+
+```js
+const observer = new IntersectionObserver(
+  (entries) => {
+    entries.forEach((entry) => {
+      entry.target.classList.toggle('visivel', entry.isIntersecting);
+    });
+  },
+  { threshold: 0.15 }  // dispara quando 15% do elemento fica visível
+);
+
+document.querySelectorAll('.revelar').forEach(el => observer.observe(el));
+```
+
+#### Infinite scroll
+
+```js
+// Observa um elemento sentinela no final da lista
+const sentinela = document.getElementById('sentinela');
+
+const observer = new IntersectionObserver(async (entries) => {
+  const [entry] = entries;
+  if (!entry.isIntersecting || carregando) return;
+
+  carregando = true;
+  const novosItens = await buscarMaisItens();
+  renderizarItens(novosItens);
+  carregando = false;
+});
+
+observer.observe(sentinela);
+```
+
+#### Múltiplos thresholds
+
+```js
+// Dispara callbacks em 0%, 25%, 50%, 75% e 100% de visibilidade
+const observer = new IntersectionObserver(
+  (entries) => {
+    entries.forEach(({ target, intersectionRatio }) => {
+      target.style.opacity = intersectionRatio;  // fade proporcional à visibilidade
+    });
+  },
+  { threshold: [0, 0.25, 0.5, 0.75, 1] }
+);
+```
+
+> **Vantagem sobre `scroll`:** o Intersection Observer é executado fora da thread principal, não causa reflow e não precisa de throttle/debounce manual.
+
+---
+
+### Drag and Drop API
+
+> MDN: [Drag and Drop API](https://developer.mozilla.org/pt-BR/docs/Web/API/HTML_Drag_and_Drop_API)
+
+A **Drag and Drop API** permite que elementos HTML sejam arrastados e soltos em alvos designados. O fluxo envolve dois participantes: o **elemento arrastável** (draggable) e a **zona de drop** (drop target).
+
+#### Eventos principais
+
+| Evento | Dispara em | Momento |
+|---|---|---|
+| `dragstart` | Elemento arrastável | Início do arraste |
+| `drag` | Elemento arrastável | Durante o arraste (repetido) |
+| `dragend` | Elemento arrastável | Fim do arraste (solto ou cancelado) |
+| `dragenter` | Zona de drop | Elemento entra na zona |
+| `dragover` | Zona de drop | Elemento está sobre a zona (repetido) |
+| `dragleave` | Zona de drop | Elemento sai da zona |
+| `drop` | Zona de drop | Elemento é solto na zona |
+
+#### Configuração básica
+
+```html
+<!-- Elemento arrastável: atributo draggable="true" -->
+<div draggable="true" id="item-1" class="item">Item 1</div>
+
+<!-- Zona de drop -->
+<div id="zona-drop" class="zona">Solte aqui</div>
+```
+
+```js
+const item  = document.getElementById('item-1');
+const zona  = document.getElementById('zona-drop');
+
+// 1. dragstart — armazenar dados no DataTransfer
+item.addEventListener('dragstart', (e) => {
+  e.dataTransfer.setData('text/plain', e.target.id);  // passa o id do elemento
+  e.dataTransfer.effectAllowed = 'move';              // cursor indica "mover"
+  e.target.classList.add('arrastando');
+});
+
+item.addEventListener('dragend', (e) => {
+  e.target.classList.remove('arrastando');
+});
+
+// 2. dragover — deve chamar preventDefault() para permitir o drop
+zona.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  zona.classList.add('sobre');
+});
+
+zona.addEventListener('dragleave', () => {
+  zona.classList.remove('sobre');
+});
+
+// 3. drop — recuperar os dados e executar a ação
+zona.addEventListener('drop', (e) => {
+  e.preventDefault();
+  zona.classList.remove('sobre');
+
+  const id = e.dataTransfer.getData('text/plain');
+  const elementoArrastado = document.getElementById(id);
+  zona.appendChild(elementoArrastado);  // move o elemento para a zona
+});
+```
+
+#### DataTransfer — transferindo dados
+
+```js
+// Armazenar múltiplos tipos de dado
+e.dataTransfer.setData('text/plain', 'texto simples');
+e.dataTransfer.setData('text/html',  '<b>texto HTML</b>');
+e.dataTransfer.setData('application/json', JSON.stringify({ id: 42, nome: 'Item' }));
+
+// Recuperar no drop
+const texto = e.dataTransfer.getData('text/plain');
+const obj   = JSON.parse(e.dataTransfer.getData('application/json'));
+
+// Imagem personalizada de arraste
+const img = new Image();
+img.src = '/icons/drag-handle.png';
+e.dataTransfer.setDragImage(img, 10, 10); // (imagem, offsetX, offsetY)
+```
+
+#### Exemplo: lista reordenável com drag and drop
+
+```js
+const lista = document.getElementById('lista');
+let itemArrastado = null;
+
+lista.addEventListener('dragstart', (e) => {
+  itemArrastado = e.target;
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => itemArrastado.classList.add('oculto'), 0); // oculta durante o arraste
+});
+
+lista.addEventListener('dragend', () => {
+  itemArrastado?.classList.remove('oculto');
+  itemArrastado = null;
+  lista.querySelectorAll('.sobre').forEach(el => el.classList.remove('sobre'));
+});
+
+lista.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  const alvo = e.target.closest('[draggable]');
+  if (alvo && alvo !== itemArrastado) {
+    alvo.classList.add('sobre');
+  }
+});
+
+lista.addEventListener('dragleave', (e) => {
+  e.target.closest?.('[draggable]')?.classList.remove('sobre');
+});
+
+lista.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const alvo = e.target.closest('[draggable]');
+  if (alvo && alvo !== itemArrastado) {
+    alvo.classList.remove('sobre');
+    // Insere antes ou depois do alvo conforme a posição do mouse
+    const rect = alvo.getBoundingClientRect();
+    const depoisDoMeio = e.clientY > rect.top + rect.height / 2;
+    lista.insertBefore(itemArrastado, depoisDoMeio ? alvo.nextSibling : alvo);
+  }
+});
+```
+
+#### Arrastar arquivos do sistema de arquivos para a página
+
+```js
+const zona = document.getElementById('zona-drop');
+
+zona.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+zona.addEventListener('drop', (e) => {
+  e.preventDefault();
+  const arquivos = Array.from(e.dataTransfer.files);
+
+  arquivos.forEach((arquivo) => {
+    console.log('Arquivo:', arquivo.name, arquivo.type, arquivo.size);
+  });
+
+  // Ler o conteúdo (ex: imagem como URL temporária)
+  arquivos
+    .filter(f => f.type.startsWith('image/'))
+    .forEach((arquivo) => {
+      const url = URL.createObjectURL(arquivo);
+      const img = document.createElement('img');
+      img.src = url;
+      zona.appendChild(img);
+    });
+});
+```
+
+#### effectAllowed vs dropEffect
+
+| `effectAllowed` (dragstart) | `dropEffect` (dragover/drop) | Resultado |
+|---|---|---|
+| `'copy'` | `'copy'` | Cursor de cópia |
+| `'move'` | `'move'` | Cursor de mover |
+| `'link'` | `'link'` | Cursor de link |
+| `'copyMove'` | `'copy'` ou `'move'` | Permite ambos |
+| `'all'` | Qualquer | Sem restrição |
+| `'none'` | — | Drop bloqueado |
+
+> **Dicas:**
+> - `dragover` **deve** chamar `e.preventDefault()` para que o `drop` seja disparado.
+> - Evite `drag` (dispara muitas vezes por segundo) para operações custosas — prefira `dragenter`/`dragleave`.
+> - Para interfaces de arrastar mais complexas (Kanban, editores), considere bibliotecas como **SortableJS** ou **dnd kit** (React).
+
+---
+
 ## Comparativo de Frameworks Frontend — Angular, React e Vue
 
 Referências detalhadas de cada framework:

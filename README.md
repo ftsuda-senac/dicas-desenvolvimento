@@ -13,10 +13,8 @@ Ordem recomendada para os documentos de referência do ecossistema Spring:
 3. [Dicas-JPA-Hibernate-Modelagem-Entities.md](Dicas-JPA-Hibernate-Modelagem-Entities.md) — Modelagem de entidades JPA/Hibernate
 4. [Dicas-JPA-Hibernate-Queries.md](Dicas-JPA-Hibernate-Queries.md) — Consultas JPQL, Criteria API e Spring Data
 5. [Dicas-Spring-Security.md](Dicas-Spring-Security.md) — Autenticação e autorização com Spring Security
-6. [Spring-Boot-Avancado.md](Spring-Boot-Avancado.md) — Tópicos avançados do Spring Boot
-7. [Dicas-Logs-Observabilidade.md](Dicas-Logs-Observabilidade.md) — Logs estruturados, MDC, rastreamento distribuído e infraestrutura de observabilidade
----
 
+---
 
 ## Referências para desenvolvimento Frontend Web
 
@@ -31,11 +29,25 @@ Documentação consolidada com apoio de agentes de IA (Claude Code).
 
 ---
 
+## Outros assuntos avançados
 
+* [Spring-Boot-Avancado.md](Spring-Boot-Avancado.md) — Tópicos avançados do Spring Boot
+* [Dicas-Logs-Observabilidade.md](Dicas-Logs-Observabilidade.md) — Logs estruturados, MDC, rastreamento distribuído e infraestrutura de observabilidade
+* [GraalVM-Native-Image-Spring-Boot.md](GraalVM-Native-Image-Spring-Boot.md) — Compilação nativa com GraalVM: AOT, reflexão, proxies, JPA/Hibernate, Jackson, AOP e bibliotecas de terceiros
+
+---
 
 ## Segurança de Software
 
 * [Analise-Seguranca.md](Analise-Seguranca.md) — DevSecOps, SAST, SCA, DAST, secrets, segurança no frontend/backend/banco de dados, pipeline CI/CD seguro, monitoramento e resposta a incidentes
+
+---
+
+## Arquitetura e System Design
+
+* [Boas-Praticas-Arquitetura.md](Boas-Praticas-Arquitetura.md) — 12 Factor App, SOLID, Arquitetura Hexagonal/Onion, TDD e Requirement Driven Development com IA — com exemplos em Java e Spring Boot
+* [System-design.md](System-design.md) — Escalabilidade, Load Balancing, Caching, Banco de Dados, Replicação, Sharding, Mensageria, Design de APIs, Microsserviços, Circuit Breaker, CQRS, Event Sourcing, Service Discovery, API Gateway, Teorema CAP, Rate Limiting, Segurança e Observabilidade em sistemas distribuídos — com exemplos em Java e Spring Boot
+
 ---
 
 # Dicas e boas práticas de desenvolvimento (legado)

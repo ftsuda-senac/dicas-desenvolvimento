@@ -34,7 +34,8 @@
     - [4.2 Atributos de Mapeamento — `consumes`, `produces`, `params` e `headers`](#42-atributos-de-mapeamento--consumes-produces-params-e-headers)
     - [4.3 DTOs com Records (Java 16+)](#43-dtos-com-records-java-16)
     - [4.4 Mapeamento de Método HTTP com Exemplos Práticos](#44-mapeamento-de-método-http-com-exemplos-práticos)
-    - [4.5 PATCH — Boas Práticas e JSON Merge Patch](#45-patch--boas-práticas-e-json-merge-patch)
+    - [4.5 POST e Construção Dinâmica do Header `Location`](#45-post-e-construção-dinâmica-do-header-location)
+    - [4.6 PATCH — Boas Práticas e JSON Merge Patch](#46-patch--boas-práticas-e-json-merge-patch)
 5. [Bean Validation — @Valid vs @Validated](#5-bean-validation--valid-vs-validated)
     - [5.1 Diferença Conceitual](#51-diferença-conceitual)
     - [5.2 Exemplo Prático de Grupos de Validação](#52-exemplo-prático-de-grupos-de-validação)
@@ -1690,7 +1691,246 @@ graph LR
     DELETE --> s204
 ```
 
-### 4.5 PATCH — Boas Práticas e JSON Merge Patch
+### 4.5 POST e Construção Dinâmica do Header `Location`
+
+Quando um POST cria um novo recurso, a boa prática REST (e o padrão HTTP 201 Created) exige retornar o header `Location` apontando para a URI do recurso recém-criado. O Spring MVC oferece duas classes auxiliares para construir essa URI dinamicamente: `ServletUriComponentsBuilder` e `MvcUriComponentsBuilder`.
+
+#### Por que construir a URI dinamicamente?
+
+Hardcodar a URL (`"http://api.exemplo.com/v1/produtos/" + id`) é frágil: quebra quando o servidor muda de host, porta ou context path, e em ambientes com proxy reverso ou múltiplos perfis. As classes abaixo capturam a URI da requisição atual e a estendem de forma segura.
+
+---
+
+#### `ServletUriComponentsBuilder`
+
+Captura componentes da `HttpServletRequest` em andamento e oferece uma API fluente para montar a URI de resposta.
+
+**O que é capturado de cada método fábrica:**
+
+| Método fábrica | Captura da requisição atual |
+|---|---|
+| `fromCurrentRequest()` | Scheme + host + porta + context path + servlet path + path info + query string |
+| `fromCurrentRequestUri()` | Scheme + host + porta + context path + servlet path + path info (sem query string) |
+| `fromCurrentServletMapping()` | Scheme + host + porta + context path + servlet path (sem path info) |
+| `fromContextPath(request)` | Scheme + host + porta + context path apenas |
+| `fromRequest(request)` | Equivalente a `fromCurrentRequest()`, mas recebe o `HttpServletRequest` explicitamente |
+
+> **Nota prática:** `fromCurrentRequest()` é o mais usado porque já aponta para o endpoint que está sendo executado — basta acrescentar `/{id}`.
+
+**Principais métodos de transformação:**
+
+| Método | Descrição |
+|---|---|
+| `.path(String)` | Acrescenta um segmento ao final do path atual |
+| `.pathSegment(String...)` | Acrescenta segmentos codificados (URL-safe) individualmente |
+| `.replacePath(String)` | **Substitui** todo o path pelo valor informado — útil quando a URI de criação difere da URI de leitura |
+| `.replaceQueryParam(String, Object...)` | Substitui um query param |
+| `.buildAndExpand(Object...)` | Expande variáveis `{var}` por posição e retorna `UriComponents` |
+| `.buildAndExpand(Map<String,?>)` | Expande variáveis por nome |
+| `.toUri()` | Converte diretamente para `java.net.URI` sem expansão |
+
+**Exemplo 1 — uso mais comum: POST retorna 201 com Location**
+
+```java
+// POST /api/v1/produtos → cria produto → Location: /api/v1/produtos/42
+@PostMapping
+public ResponseEntity<Void> criar(@RequestBody @Valid ProdutoRequest dto) {
+    Produto salvo = produtoService.criar(dto);
+
+    URI location = ServletUriComponentsBuilder
+            .fromCurrentRequest()          // captura: http://host/api/v1/produtos
+            .path("/{id}")                 // acrescenta: /{id}
+            .buildAndExpand(salvo.getId()) // expande: /42
+            .toUri();
+
+    return ResponseEntity.created(location).build(); // 201 Created + Location
+}
+```
+
+**Exemplo 2 — POST aninhado: recurso filho com URI diferente do endpoint de criação**
+
+```java
+// POST /api/v1/pedidos/{pedidoId}/itens → Location aponta para /api/v1/itens/{itemId}
+@PostMapping("/{pedidoId}/itens")
+public ResponseEntity<Void> adicionarItem(
+        @PathVariable Long pedidoId,
+        @RequestBody @Valid ItemRequest dto) {
+
+    Item item = pedidoService.adicionarItem(pedidoId, dto);
+
+    // A URI de criação é /pedidos/{id}/itens, mas o recurso canônico fica em /itens/{id}
+    URI location = ServletUriComponentsBuilder
+            .fromCurrentRequest()
+            .replacePath("/api/v1/itens/{id}") // substitui o path inteiro
+            .buildAndExpand(item.getId())
+            .toUri();
+
+    return ResponseEntity.created(location).build();
+}
+```
+
+> **`replacePath` vs `path`:** use `replacePath` quando a URI onde o recurso é *criado* difere da URI onde ele é *consultado*. Use `path` quando quer apenas estender o endpoint atual com o ID do novo recurso.
+
+**Exemplo 3 — com context path e múltiplas variáveis**
+
+```java
+// Ambiente com context path /app; POST /app/api/v1/usuarios/{userId}/enderecos
+// Location desejado: /app/api/v1/enderecos/{enderecoId}
+URI location = ServletUriComponentsBuilder
+        .fromCurrentContextPath()          // captura só o context path: /app
+        .path("/api/v1/enderecos/{id}")
+        .buildAndExpand(endereco.getId())
+        .toUri();
+```
+
+---
+
+#### `MvcUriComponentsBuilder`
+
+Constrói URIs com base nos **métodos dos controllers** — elimina strings literais de path e mantém a URI sincronizada com o mapeamento real do controller.
+
+**Abordagem 1 — `fromMethodName` (por nome de método)**
+
+```java
+import org.springframework.web.servlet.mvc.method.annotation.MvcUriComponentsBuilder;
+
+@PostMapping
+public ResponseEntity<Void> criar(@RequestBody @Valid ProdutoRequest dto) {
+    Produto salvo = produtoService.criar(dto);
+
+    URI location = MvcUriComponentsBuilder
+            .fromMethodName(
+                ProdutoController.class, // classe do controller
+                "buscarPorId",           // nome do método mapeado como GET /{id}
+                salvo.getId()            // argumentos do método (expansão das variáveis)
+            )
+            .build()
+            .toUri();
+
+    return ResponseEntity.created(location).build();
+}
+
+@GetMapping("/{id}")
+public ResponseEntity<ProdutoResponse> buscarPorId(@PathVariable Long id) {
+    return ResponseEntity.ok(produtoService.buscarPorId(id));
+}
+```
+
+**Abordagem 2 — `fromMethodCall` com proxy (type-safe)**
+
+`MvcUriComponentsBuilder.on(Class)` cria um proxy do controller. Chamar um método nesse proxy **não executa** o método — apenas registra o mapeamento para a construção da URI.
+
+```java
+@PostMapping
+public ResponseEntity<Void> criar(@RequestBody @Valid ProdutoRequest dto) {
+    Produto salvo = produtoService.criar(dto);
+
+    // O proxy captura "buscarPorId(id)" como referência de mapeamento
+    ProdutoController proxy = MvcUriComponentsBuilder.on(ProdutoController.class);
+    proxy.buscarPorId(salvo.getId()); // não executa — apenas registra
+
+    URI location = MvcUriComponentsBuilder
+            .fromMethodCall(proxy)
+            .build()
+            .toUri();
+
+    return ResponseEntity.created(location).build();
+}
+```
+
+> O proxy gerado por `on(Class)` é um objeto especial do Spring — **não é uma instância real do controller**. Chamadas a métodos nele são interceptadas para capturar os parâmetros de mapeamento, não para executar lógica de negócio.
+
+**Quando usar cada abordagem:**
+
+| Abordagem | Vantagem | Desvantagem |
+|---|---|---|
+| `ServletUriComponentsBuilder.fromCurrentRequest()` | Simples, zero dependência do controller | Usa strings para montar o path |
+| `MvcUriComponentsBuilder.fromMethodName` | Vincula à anotação do controller | Nome do método é string — quebra silenciosamente com rename |
+| `MvcUriComponentsBuilder.fromMethodCall` (proxy) | Type-safe — refactor do método atualiza a URI | Requer que o controller seja instanciável como proxy Spring (CGLib) |
+
+**Resumo — escolha pelo cenário:**
+
+| Cenário | Abordagem recomendada |
+|---|---|
+| POST cria recurso no mesmo path (ex: `POST /produtos` → `GET /produtos/{id}`) | `ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}")` |
+| POST em sub-recurso, Location aponta para outro path | `fromCurrentRequest().replacePath("/recursos/{id}")` |
+| Deseja vincular a URI ao método do controller com segurança de tipo | `MvcUriComponentsBuilder.fromMethodCall` (proxy) |
+| Controller simples, sem necessidade de refatoração futura | `MvcUriComponentsBuilder.fromMethodName` |
+
+---
+
+#### Proxy Reverso e Load Balancer — `server.forward-headers-strategy`
+
+Ambas as classes (`ServletUriComponentsBuilder` e `MvcUriComponentsBuilder`) constroem a URI a partir dos dados da requisição HTTP que chega à JVM. Em arquiteturas com **proxy reverso** (Nginx, Apache) ou **load balancer** (AWS ALB, Kubernetes Ingress), a requisição que o Spring recebe já foi transformada: o scheme pode ter mudado de `https` para `http`, o host pode ser o IP interno do container em vez do domínio público, e a porta pode ser diferente da exposta externamente.
+
+**Exemplo do problema:**
+
+```
+Cliente → https://api.exemplo.com/v1/produtos   (requisição original)
+              ↓ proxy repassa internamente
+Tomcat  → http://10.0.0.5:8080/v1/produtos      (o que o Spring enxerga)
+
+Location gerado (errado): http://10.0.0.5:8080/v1/produtos/42
+Location esperado:        https://api.exemplo.com/v1/produtos/42
+```
+
+O proxy normalmente preserva os dados originais nos headers `X-Forwarded-*` (ou no padrão moderno `Forwarded`, RFC 7239):
+
+| Header | Valor preservado |
+|---|---|
+| `X-Forwarded-Proto` | Scheme original (`https`) |
+| `X-Forwarded-Host` | Host original (`api.exemplo.com`) |
+| `X-Forwarded-Port` | Porta original (`443`) |
+| `X-Forwarded-Prefix` | Prefixo de path removido pelo proxy |
+| `Forwarded` | Todos os dados acima em formato padronizado (RFC 7239) |
+
+**Solução — `server.forward-headers-strategy`**
+
+O Spring Boot expõe a property `server.forward-headers-strategy` para controlar como esses headers são processados:
+
+| Valor | Comportamento |
+|---|---|
+| `none` (padrão) | Headers `X-Forwarded-*` são ignorados — URI gerada usa os dados internos |
+| `native` | Delega ao servidor embutido (Tomcat/Jetty/Undertow) o processamento — comportamento varia por servidor |
+| `framework` | **O próprio Spring Framework** processa os headers via `ForwardedHeaderFilter` — comportamento consistente independentemente do servidor embutido |
+
+**Configuração recomendada:**
+
+```yaml
+# application.yml
+server:
+  forward-headers-strategy: framework
+```
+
+Com `framework`, o Spring instancia e registra automaticamente o `ForwardedHeaderFilter`, que reescreve os componentes da requisição (`scheme`, `host`, `port`, `contextPath`) com os valores dos headers `Forwarded` / `X-Forwarded-*` antes que qualquer código da aplicação seja executado. O `ServletUriComponentsBuilder` então captura os valores corretos (os do cliente original), e a URI do `Location` ficará correta.
+
+> **Segurança:** aceitar headers `X-Forwarded-*` de fontes não confiáveis permite que um cliente malicioso forje o `Location` gerado. Configure o proxy para **remover ou sobrescrever** esses headers nas requisições de entrada, garantindo que apenas o próprio proxy os defina. O `ForwardedHeaderFilter` oferece o modo `removeOnly = true` (via bean manual) para ambientes onde você quer remover os headers sem reescrever a URI, como camada adicional de defesa.
+
+**Configuração manual do `ForwardedHeaderFilter` (quando necessário controle extra):**
+
+```java
+@Configuration
+public class WebConfig {
+
+    // Necessário apenas se server.forward-headers-strategy=framework não for suficiente
+    // ou se precisar do modo removeOnly
+    @Bean
+    public FilterRegistrationBean<ForwardedHeaderFilter> forwardedHeaderFilter() {
+        ForwardedHeaderFilter filter = new ForwardedHeaderFilter();
+        // filter.setRemoveOnly(true); // apenas remove os headers, sem reescrever a URI
+        FilterRegistrationBean<ForwardedHeaderFilter> bean = new FilterRegistrationBean<>(filter);
+        bean.setOrder(Ordered.HIGHEST_PRECEDENCE);
+        return bean;
+    }
+}
+```
+
+> Quando `server.forward-headers-strategy=framework` está ativo, o Spring Boot já registra o `ForwardedHeaderFilter` automaticamente — **não declare o bean manualmente** nesse caso, pois resultará em duplo processamento dos headers.
+
+
+---
+
+### 4.6 PATCH — Boas Práticas e JSON Merge Patch
 
 #### O problema: `null` vs campo ausente
 

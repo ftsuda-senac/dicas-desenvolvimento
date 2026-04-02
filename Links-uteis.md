@@ -41,6 +41,8 @@
 * Guia CSS Grid: https://css-tricks.com/snippets/css/complete-guide-grid/
 * AdminLTE 3 (Boostrap 4.x): https://adminlte.io/ e https://github.com/ColorlibHQ/AdminLTE
 * Guia de estilos do Github: https://primer.style/
+* DaisyUI (componentes Boostrap com lib Tailwind 4): https://daisyui.com/
+* TW Elements (componentes Bootstratp com lib Tailwind 3): https://tw-elements.com/
 
 ## Icons
 

@@ -2,6 +2,175 @@
 
 Este arquivo reúne exemplos simples e práticos de recursos muito usados no Java moderno, com foco em APIs atuais da JDK e algumas boas práticas comuns no dia a dia.
 
+## Fundamentos Conceituais
+
+### Programação Orientada a Objetos (POO)
+
+A Programação Orientada a Objetos organiza o código em torno de **objetos**, que encapsulam estado (atributos) e comportamento (métodos). Os três pilares fundamentais são:
+
+#### 1. Encapsulamento
+
+Ocultar os detalhes internos de um objeto, expondo apenas o necessário por meio de uma interface pública. Em Java, isso se concretiza com modificadores de acesso (`private`, `protected`, `public`) e com o uso de getters/setters ou, preferencialmente, métodos que expressam intenção de negócio.
+
+```java
+public class ContaBancaria {
+    private double saldo; // estado interno protegido
+
+    public void depositar(double valor) {
+        if (valor > 0) saldo += valor;
+    }
+
+    public double getSaldo() {
+        return saldo;
+    }
+}
+```
+
+#### 2. Herança
+
+Permite que uma classe derive de outra, reaproveitando e especializando comportamento. Apesar de poderosa, a herança cria acoplamento forte entre classes e deve ser usada com moderação — preferindo-se **composição** quando o objetivo é apenas reutilizar código.
+
+```java
+public class Animal {
+    public void emitirSom() { System.out.println("..."); }
+}
+
+public class Cachorro extends Animal {
+    @Override
+    public void emitirSom() { System.out.println("Au!"); }
+}
+
+public class Gato extends Animal {
+    @Override
+    public void emitirSom() { System.out.println("Miau!"); }
+}
+```
+
+#### 3. Polimorfismo
+
+Capacidade de tratar objetos de tipos diferentes de forma uniforme por meio de uma interface comum (classe abstrata ou interface). Permite escrever código genérico que funciona com qualquer implementação futura sem precisar ser alterado.
+
+```java
+List<Animal> animais = List.of(new Cachorro(), new Gato());
+animais.forEach(Animal::emitirSom); // cada um responde ao seu modo
+```
+
+---
+
+#### Boas práticas em POO
+
+**Composição sobre herança**
+
+Prefira compor objetos em vez de herdar implementação. Composição é mais flexível: troca-se o comportamento em tempo de execução e evita-se a fragilidade da hierarquia de classes.
+
+```java
+// Herança: Pato "é um" Ave, mas nem todo Pato voa da mesma forma
+// Composição: Pato "tem um" comportamento de voo
+public interface ComportamentoVoo {
+    void voar();
+}
+
+public class Pato {
+    private final ComportamentoVoo voo; // injetado por construtor
+
+    public Pato(ComportamentoVoo voo) { this.voo = voo; }
+
+    public void voar() { voo.voar(); }
+}
+```
+
+**Agregação vs. Composição**
+
+Ambas representam relacionamentos "tem um", mas diferem no ciclo de vida dos objetos envolvidos:
+
+| Conceito | Ciclo de vida | Exemplo |
+|---|---|---|
+| **Agregação** | O objeto "parte" existe independentemente do "todo" | `Departamento` tem `Funcionarios` — funcionários existem sem o departamento |
+| **Composição** | A "parte" pertence exclusivamente ao "todo" e é destruída com ele | `Pedido` tem `ItensDoPedido` — itens não fazem sentido sem o pedido |
+
+```java
+// Agregação: Turma referencia Alunos que existem de forma independente
+public class Turma {
+    private List<Aluno> alunos; // Aluno pode existir sem Turma
+}
+
+// Composição: Pedido cria e controla seus próprios itens
+public class Pedido {
+    private final List<ItemPedido> itens = new ArrayList<>(); // criados dentro do Pedido
+
+    public void adicionarItem(Produto produto, int quantidade) {
+        itens.add(new ItemPedido(produto, quantidade));
+    }
+}
+```
+
+---
+
+### Programação Funcional em Java
+
+A programação funcional trata funções como valores de primeira classe: funções podem ser passadas como argumentos, retornadas de outras funções e armazenadas em variáveis. O foco está em **o que** computar, não em **como** iterar ou mutar estado.
+
+O Java incorporou suporte funcional a partir do **Java 8** com três pilares:
+
+#### Interfaces funcionais
+
+Uma interface com um único método abstrato (`@FunctionalInterface`) pode ser implementada como uma **expressão lambda** ou **method reference**, eliminando classes anônimas verbosas.
+
+```java
+// Interface funcional da JDK
+@FunctionalInterface
+public interface Predicate<T> {
+    boolean test(T t);
+}
+
+// Uso com lambda
+Predicate<String> naoVazio = s -> !s.isBlank();
+
+// Uso com method reference
+Predicate<String> naoNulo = Objects::nonNull;
+```
+
+As principais interfaces funcionais da JDK estão em `java.util.function`:
+
+| Interface | Assinatura | Uso típico |
+|---|---|---|
+| `Predicate<T>` | `T → boolean` | Filtros |
+| `Function<T, R>` | `T → R` | Transformações |
+| `Consumer<T>` | `T → void` | Efeitos colaterais (ex.: log) |
+| `Supplier<T>` | `() → T` | Produção de valores |
+| `UnaryOperator<T>` | `T → T` | Transformação no mesmo tipo |
+| `BinaryOperator<T>` | `(T, T) → T` | Combinação (ex.: soma) |
+
+#### Expressões lambda e method references
+
+```java
+// Lambda equivalente a uma classe anônima
+Comparator<String> porTamanho = (a, b) -> Integer.compare(a.length(), b.length());
+
+// Method reference — mais legível quando o lambda apenas delega
+List<String> nomes = List.of("Ana", "Beto", "Carlos");
+nomes.forEach(System.out::println);         // instance method reference
+nomes.stream().map(String::toUpperCase);    // unbound method reference
+nomes.stream().map(String::new);            // constructor reference
+```
+
+#### Funções puras e imutabilidade
+
+Uma **função pura** sempre retorna o mesmo resultado para os mesmos argumentos e não produz efeitos colaterais (não altera estado externo). Esse estilo facilita testes, paralelismo e raciocínio sobre o código.
+
+```java
+// Impuro: depende e modifica estado externo
+int total = 0;
+for (int x : lista) total += x; // muta variável externa
+
+// Puro: sem efeitos colaterais, resultado previsível
+int total = lista.stream().reduce(0, Integer::sum);
+```
+
+> A `Stream API` e o `Optional` — abordados nas seções seguintes — são as principais APIs do Java construídas sobre esses conceitos funcionais.
+
+---
+
 ## Sumário
 
 - [1. Verificar se uma `String` é blank](#1-verificar-se-uma-string-é-blank)
@@ -16,7 +185,8 @@ Este arquivo reúne exemplos simples e práticos de recursos muito usados no Jav
 - [10. Uso do `Stream API` e `Collectors`](#10-uso-do-stream-api-e-collectors)
 - [11. Uso do `CompletableFuture`](#11-uso-do-completablefuture)
 - [12. Exceções em Java](#12-exceções-em-java)
-- [13. Resumo rápido](#13-resumo-rápido)
+- [13. Design Patterns: Gang of Four](#13-design-patterns-gang-of-four)
+- [14. Resumo rápido](#14-resumo-rápido)
 
 ---
 
@@ -2659,7 +2829,627 @@ Observações:
 
 ---
 
-## 13. Resumo rápido
+## 13. Design Patterns: Gang of Four
+
+Os **Design Patterns** (padrões de projeto) são soluções reutilizáveis para problemas recorrentes no design de software orientado a objetos. O livro *Design Patterns: Elements of Reusable Object-Oriented Software* (1994), escrito pelos autores conhecidos como **Gang of Four** (GoF) — Erich Gamma, Richard Helm, Ralph Johnson e John Vlissides —, catalogou 23 padrões divididos em três categorias.
+
+| Categoria | Foco | Exemplos |
+|---|---|---|
+| **Criacional** | Como objetos são criados | Singleton, Factory Method, Abstract Factory, Builder, Prototype |
+| **Estrutural** | Como classes e objetos se compõem | Adapter, Bridge, Composite, Decorator, Facade, Flyweight, Proxy |
+| **Comportamental** | Como objetos se comunicam e interagem | Strategy, Observer, Command, Template Method, Iterator, State, Chain of Responsibility, Mediator, Memento, Visitor, Interpreter |
+
+---
+
+### 13.1 Padrões Criacionais
+
+Padrões criacionais tratam da **criação de objetos**, desacoplando o código que usa o objeto do código que o instancia.
+
+#### Singleton
+
+Garante que uma classe tenha **apenas uma instância** e fornece um ponto global de acesso a ela. Muito usado para recursos compartilhados como configurações ou pools de conexão.
+
+```java
+public class Configuracao {
+
+    private static Configuracao instancia;
+    private String ambiente;
+
+    private Configuracao() {
+        this.ambiente = "producao";
+    }
+
+    public static Configuracao getInstancia() {
+        if (instancia == null) {
+            instancia = new Configuracao();
+        }
+        return instancia;
+    }
+
+    public String getAmbiente() {
+        return ambiente;
+    }
+}
+
+// uso
+Configuracao config1 = Configuracao.getInstancia();
+Configuracao config2 = Configuracao.getInstancia();
+
+System.out.println(config1 == config2); // true — mesma instância
+System.out.println(config1.getAmbiente()); // producao
+```
+
+> Em ambientes multithreaded, use `synchronized` ou inicialização estática para garantir a unicidade com segurança.
+
+```java
+// versão thread-safe com inicialização estática
+public class Configuracao {
+
+    private static final Configuracao INSTANCIA = new Configuracao();
+
+    private Configuracao() {}
+
+    public static Configuracao getInstancia() {
+        return INSTANCIA;
+    }
+}
+```
+
+#### Factory Method
+
+Define uma interface para criar um objeto, mas **deixa as subclasses decidirem qual classe instanciar**. Útil quando o tipo exato do objeto só é conhecido em tempo de execução.
+
+```java
+// produto
+public interface Notificacao {
+    void enviar(String mensagem);
+}
+
+// implementações concretas
+public class NotificacaoEmail implements Notificacao {
+    @Override
+    public void enviar(String mensagem) {
+        System.out.println("E-mail: " + mensagem);
+    }
+}
+
+public class NotificacaoSms implements Notificacao {
+    @Override
+    public void enviar(String mensagem) {
+        System.out.println("SMS: " + mensagem);
+    }
+}
+
+// factory
+public class NotificacaoFactory {
+    public static Notificacao criar(String tipo) {
+        return switch (tipo) {
+            case "email" -> new NotificacaoEmail();
+            case "sms"   -> new NotificacaoSms();
+            default -> throw new IllegalArgumentException("Tipo desconhecido: " + tipo);
+        };
+    }
+}
+
+// uso
+Notificacao n = NotificacaoFactory.criar("email");
+n.enviar("Seu pedido foi confirmado"); // E-mail: Seu pedido foi confirmado
+```
+
+#### Builder
+
+Separa a **construção de um objeto complexo** da sua representação, permitindo criar diferentes variações usando o mesmo processo de construção. Evita construtores com muitos parâmetros.
+
+```java
+public class Pedido {
+
+    private final String produto;
+    private final int quantidade;
+    private final String enderecoEntrega;
+    private final boolean frete;
+
+    private Pedido(Builder builder) {
+        this.produto = builder.produto;
+        this.quantidade = builder.quantidade;
+        this.enderecoEntrega = builder.enderecoEntrega;
+        this.frete = builder.frete;
+    }
+
+    @Override
+    public String toString() {
+        return produto + " x" + quantidade + " → " + enderecoEntrega + (frete ? " (com frete)" : "");
+    }
+
+    public static class Builder {
+        private final String produto;
+        private int quantidade = 1;
+        private String enderecoEntrega = "";
+        private boolean frete = false;
+
+        public Builder(String produto) {
+            this.produto = produto;
+        }
+
+        public Builder quantidade(int quantidade) {
+            this.quantidade = quantidade;
+            return this;
+        }
+
+        public Builder enderecoEntrega(String endereco) {
+            this.enderecoEntrega = endereco;
+            return this;
+        }
+
+        public Builder comFrete() {
+            this.frete = true;
+            return this;
+        }
+
+        public Pedido build() {
+            return new Pedido(this);
+        }
+    }
+}
+
+// uso
+Pedido pedido = new Pedido.Builder("Teclado Mecânico")
+    .quantidade(2)
+    .enderecoEntrega("Rua das Flores, 100")
+    .comFrete()
+    .build();
+
+System.out.println(pedido); // Teclado Mecânico x2 → Rua das Flores, 100 (com frete)
+```
+
+---
+
+### 13.2 Padrões Estruturais
+
+Padrões estruturais tratam de **como classes e objetos se compõem** para formar estruturas maiores, facilitando a flexibilidade e a reutilização.
+
+#### Adapter
+
+Converte a interface de uma classe em outra interface esperada pelo cliente. Permite que classes com interfaces incompatíveis trabalhem juntas.
+
+```java
+// interface esperada pelo sistema
+public interface LeitorDados {
+    String[] lerLinhas();
+}
+
+// classe externa (legada ou de terceiros) com interface incompatível
+public class ArquivoLegado {
+    public String obterConteudo() {
+        return "linha1\nlinha2\nlinha3";
+    }
+}
+
+// adapter que adapta ArquivoLegado para LeitorDados
+public class ArquivoLegadoAdapter implements LeitorDados {
+
+    private final ArquivoLegado arquivo;
+
+    public ArquivoLegadoAdapter(ArquivoLegado arquivo) {
+        this.arquivo = arquivo;
+    }
+
+    @Override
+    public String[] lerLinhas() {
+        return arquivo.obterConteudo().split("\n");
+    }
+}
+
+// uso
+LeitorDados leitor = new ArquivoLegadoAdapter(new ArquivoLegado());
+
+for (String linha : leitor.lerLinhas()) {
+    System.out.println(linha);
+}
+// linha1
+// linha2
+// linha3
+```
+
+#### Decorator
+
+Adiciona responsabilidades a um objeto de forma dinâmica, **sem modificar sua classe**. Funciona como uma alternativa flexível à herança.
+
+```java
+// componente base
+public interface TextoFormatado {
+    String formatar(String texto);
+}
+
+// implementação concreta
+public class TextoSimples implements TextoFormatado {
+    @Override
+    public String formatar(String texto) {
+        return texto;
+    }
+}
+
+// decorator base
+public abstract class TextoDecorator implements TextoFormatado {
+    protected final TextoFormatado decorado;
+
+    public TextoDecorator(TextoFormatado decorado) {
+        this.decorado = decorado;
+    }
+}
+
+// decorators concretos
+public class NegritoDecorator extends TextoDecorator {
+    public NegritoDecorator(TextoFormatado decorado) {
+        super(decorado);
+    }
+
+    @Override
+    public String formatar(String texto) {
+        return "**" + decorado.formatar(texto) + "**";
+    }
+}
+
+public class MaiusculoDecorator extends TextoDecorator {
+    public MaiusculoDecorator(TextoFormatado decorado) {
+        super(decorado);
+    }
+
+    @Override
+    public String formatar(String texto) {
+        return decorado.formatar(texto).toUpperCase();
+    }
+}
+
+// uso — composição de decorators
+TextoFormatado texto = new NegritoDecorator(
+    new MaiusculoDecorator(
+        new TextoSimples()
+    )
+);
+
+System.out.println(texto.formatar("java")); // **JAVA**
+```
+
+#### Facade
+
+Fornece uma **interface simplificada** para um conjunto de interfaces de um subsistema complexo. Reduz o acoplamento entre o cliente e os detalhes internos.
+
+```java
+// subsistemas internos
+public class ValidadorPedido {
+    public void validar(String produto) {
+        System.out.println("Validando pedido de: " + produto);
+    }
+}
+
+public class EstoqueServico {
+    public void reservar(String produto) {
+        System.out.println("Reservando estoque de: " + produto);
+    }
+}
+
+public class PagamentoServico {
+    public void processar(double valor) {
+        System.out.println("Processando pagamento de R$ " + valor);
+    }
+}
+
+public class NotificacaoServico {
+    public void notificarCliente(String produto) {
+        System.out.println("Notificando cliente sobre: " + produto);
+    }
+}
+
+// facade
+public class PedidoFacade {
+
+    private final ValidadorPedido validador = new ValidadorPedido();
+    private final EstoqueServico estoque = new EstoqueServico();
+    private final PagamentoServico pagamento = new PagamentoServico();
+    private final NotificacaoServico notificacao = new NotificacaoServico();
+
+    public void realizarPedido(String produto, double valor) {
+        validador.validar(produto);
+        estoque.reservar(produto);
+        pagamento.processar(valor);
+        notificacao.notificarCliente(produto);
+        System.out.println("Pedido concluído!");
+    }
+}
+
+// uso — o cliente não precisa conhecer os subsistemas
+PedidoFacade facade = new PedidoFacade();
+facade.realizarPedido("Monitor 4K", 2499.90);
+```
+
+---
+
+### 13.3 Padrões Comportamentais
+
+Padrões comportamentais tratam de **como objetos se comunicam e distribuem responsabilidades** entre si.
+
+#### Strategy
+
+Define uma família de algoritmos, encapsula cada um deles e os torna intercambiáveis. Permite variar o algoritmo independentemente dos clientes que o utilizam.
+
+```java
+// estratégia
+public interface CalculoFrete {
+    double calcular(double pesoKg);
+}
+
+// estratégias concretas
+public class FreteCorreios implements CalculoFrete {
+    @Override
+    public double calcular(double pesoKg) {
+        return pesoKg * 5.0;
+    }
+}
+
+public class FreteTransportadora implements CalculoFrete {
+    @Override
+    public double calcular(double pesoKg) {
+        return pesoKg * 3.5 + 10.0;
+    }
+}
+
+// contexto
+public class Carrinho {
+
+    private CalculoFrete estrategia;
+
+    public Carrinho(CalculoFrete estrategia) {
+        this.estrategia = estrategia;
+    }
+
+    public void setEstrategia(CalculoFrete estrategia) {
+        this.estrategia = estrategia;
+    }
+
+    public double calcularFrete(double pesoKg) {
+        return estrategia.calcular(pesoKg);
+    }
+}
+
+// uso
+Carrinho carrinho = new Carrinho(new FreteCorreios());
+System.out.println(carrinho.calcularFrete(2.0)); // 10.0
+
+carrinho.setEstrategia(new FreteTransportadora());
+System.out.println(carrinho.calcularFrete(2.0)); // 17.0
+```
+
+#### Observer
+
+Define uma dependência um-para-muitos entre objetos: quando um objeto muda de estado, todos os seus dependentes são notificados automaticamente. Muito usado em sistemas de eventos.
+
+```java
+import java.util.ArrayList;
+import java.util.List;
+
+// observer
+public interface EventoListener {
+    void aoOcorrer(String evento, Object dados);
+}
+
+// subject (observável)
+public class EventoPublicador {
+
+    private final List<EventoListener> listeners = new ArrayList<>();
+
+    public void assinar(EventoListener listener) {
+        listeners.add(listener);
+    }
+
+    public void cancelarAssinatura(EventoListener listener) {
+        listeners.remove(listener);
+    }
+
+    public void publicar(String evento, Object dados) {
+        for (EventoListener listener : listeners) {
+            listener.aoOcorrer(evento, dados);
+        }
+    }
+}
+
+// listeners concretos
+public class LogListener implements EventoListener {
+    @Override
+    public void aoOcorrer(String evento, Object dados) {
+        System.out.println("[LOG] " + evento + ": " + dados);
+    }
+}
+
+public class EmailListener implements EventoListener {
+    @Override
+    public void aoOcorrer(String evento, Object dados) {
+        System.out.println("[EMAIL] Enviando e-mail sobre " + evento + ": " + dados);
+    }
+}
+
+// uso
+EventoPublicador publicador = new EventoPublicador();
+publicador.assinar(new LogListener());
+publicador.assinar(new EmailListener());
+
+publicador.publicar("pedido_criado", "Pedido #42");
+// [LOG] pedido_criado: Pedido #42
+// [EMAIL] Enviando e-mail sobre pedido_criado: Pedido #42
+```
+
+#### Command
+
+Encapsula uma **requisição como objeto**, permitindo parametrizar clientes com operações, enfileirar requisições e suportar operações desfazíveis (undo).
+
+```java
+// comando
+public interface Comando {
+    void executar();
+    void desfazer();
+}
+
+// receptor
+public class EditorTexto {
+    private StringBuilder texto = new StringBuilder();
+
+    public void inserir(String conteudo) {
+        texto.append(conteudo);
+        System.out.println("Texto atual: " + texto);
+    }
+
+    public void remover(int quantidade) {
+        int inicio = texto.length() - quantidade;
+        if (inicio >= 0) {
+            texto.delete(inicio, texto.length());
+        }
+        System.out.println("Texto atual: " + texto);
+    }
+}
+
+// comando concreto
+public class InserirTextoComando implements Comando {
+
+    private final EditorTexto editor;
+    private final String conteudo;
+
+    public InserirTextoComando(EditorTexto editor, String conteudo) {
+        this.editor = editor;
+        this.conteudo = conteudo;
+    }
+
+    @Override
+    public void executar() {
+        editor.inserir(conteudo);
+    }
+
+    @Override
+    public void desfazer() {
+        editor.remover(conteudo.length());
+    }
+}
+
+// invocador com histórico para undo
+import java.util.ArrayDeque;
+import java.util.Deque;
+
+public class HistoricoComandos {
+
+    private final Deque<Comando> historico = new ArrayDeque<>();
+
+    public void executar(Comando comando) {
+        comando.executar();
+        historico.push(comando);
+    }
+
+    public void desfazer() {
+        if (!historico.isEmpty()) {
+            historico.pop().desfazer();
+        }
+    }
+}
+
+// uso
+EditorTexto editor = new EditorTexto();
+HistoricoComandos historico = new HistoricoComandos();
+
+historico.executar(new InserirTextoComando(editor, "Olá"));
+// Texto atual: Olá
+
+historico.executar(new InserirTextoComando(editor, ", mundo!"));
+// Texto atual: Olá, mundo!
+
+historico.desfazer();
+// Texto atual: Olá
+
+historico.desfazer();
+// Texto atual:
+```
+
+#### Template Method
+
+Define o **esqueleto de um algoritmo** em uma classe base, delegando alguns passos para subclasses. Permite que subclasses redefinam partes do algoritmo sem alterar sua estrutura.
+
+```java
+// classe abstrata com o template method
+public abstract class ProcessadorRelatorio {
+
+    // template method — define a sequência
+    public final void processar() {
+        coletarDados();
+        processarDados();
+        gerarRelatorio();
+    }
+
+    protected abstract void coletarDados();
+    protected abstract void processarDados();
+
+    // passo com implementação padrão — pode ser sobrescrito
+    protected void gerarRelatorio() {
+        System.out.println("Gerando relatório padrão em texto...");
+    }
+}
+
+// subclasses especializam os passos
+public class RelatorioVendas extends ProcessadorRelatorio {
+    @Override
+    protected void coletarDados() {
+        System.out.println("Coletando dados de vendas do banco...");
+    }
+
+    @Override
+    protected void processarDados() {
+        System.out.println("Calculando totais e agrupando por produto...");
+    }
+
+    @Override
+    protected void gerarRelatorio() {
+        System.out.println("Gerando relatório de vendas em PDF...");
+    }
+}
+
+public class RelatorioEstoque extends ProcessadorRelatorio {
+    @Override
+    protected void coletarDados() {
+        System.out.println("Coletando dados de estoque...");
+    }
+
+    @Override
+    protected void processarDados() {
+        System.out.println("Identificando itens críticos...");
+    }
+}
+
+// uso
+new RelatorioVendas().processar();
+// Coletando dados de vendas do banco...
+// Calculando totais e agrupando por produto...
+// Gerando relatório de vendas em PDF...
+
+new RelatorioEstoque().processar();
+// Coletando dados de estoque...
+// Identificando itens críticos...
+// Gerando relatório padrão em texto...
+```
+
+---
+
+### 13.4 Quando usar cada categoria
+
+| Situação | Categoria | Padrões sugeridos |
+|---|---|---|
+| Controlar como objetos são criados | Criacional | Singleton, Factory Method, Builder |
+| Reduzir acoplamento na instanciação | Criacional | Abstract Factory, Prototype |
+| Compor objetos para novas funcionalidades | Estrutural | Decorator, Composite, Proxy |
+| Simplificar acesso a subsistemas | Estrutural | Facade, Adapter |
+| Variar algoritmos em tempo de execução | Comportamental | Strategy |
+| Notificar múltiplos objetos sobre mudanças | Comportamental | Observer |
+| Encapsular e desfazer ações | Comportamental | Command |
+| Reaproveitar estrutura com variações pontuais | Comportamental | Template Method |
+| Gerenciar estado e transições | Comportamental | State |
+
+---
+
+## 14. Resumo rápido
 
 ### Strings
 - `isBlank()` verifica se a string está vazia ou só com espaços
@@ -2725,7 +3515,7 @@ Observações:
 - unchecked exceptions normalmente indicam erro de programação ou uso incorreto
 - `try/catch`, `throw` e `throws` são mecanismos centrais do tratamento de erros
 
-### 13.1 Sugestão de estudo complementar
+### 14.1 Sugestão de estudo complementar
 
 Depois destes tópicos, vale estudar também:
 - `record`

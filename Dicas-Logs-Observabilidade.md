@@ -1,27 +1,27 @@
 # Logs e Observabilidade com Spring Boot
 
-Este documento reune informacoes e exemplos praticos sobre logging e observabilidade em aplicacoes Spring Boot 3.x:
+Este documento reune informações e exemplos práticos sobre logging e observabilidade em aplicações Spring Boot 3.x:
 
-- uso do SLF4J como fachada de logging e boas praticas de uso;
-- integracao com Log4j2 substituindo o Logback padrao;
-- configuracoes recomendadas para ambientes de desenvolvimento e producao;
+- uso do SLF4J como fachada de logging e boas práticas de uso;
+- integração com Log4j2 substituindo o Logback padrão;
+- configurações recomendadas para ambientes de desenvolvimento e produção;
 - uso do MDC (Mapped Diagnostic Context) para enriquecer logs com contexto;
-- logs estruturados em JSON para ingestao em sistemas de observabilidade;
-- rastreamento distribuido com `@WithSpan` do OpenTelemetry e `@Observed` do Micrometer;
+- logs estruturados em JSON para ingestão em sistemas de observabilidade;
+- rastreamento distribuído com `@WithSpan` do OpenTelemetry e `@Observed` do Micrometer;
 - infraestrutura de observabilidade com Prometheus, OpenTelemetry Collector, Loki, Tempo e Grafana.
 
-Os exemplos seguem um estilo compativel com Spring Boot 3.x e Jakarta EE.
+Os exemplos seguem um estilo compatível com Spring Boot 3.x e Jakarta EE.
 
 ---
 
 ## 1. SLF4J — A fachada de logging
 
-### 1.1. O que e o SLF4J
+### 1.1. O que é o SLF4J
 
-O SLF4J (Simple Logging Facade for Java) e uma **fachada** (API), nao uma implementacao. O codigo da aplicacao programa contra a API do SLF4J, e em tempo de execucao a implementacao concreta (Logback, Log4j2, JUL) e escolhida pelo classpath.
+O SLF4J (Simple Logging Facade for Java) é uma **fachada** (API), não uma implementação. O código da aplicação programa contra a API do SLF4J, e em tempo de execução a implementação concreta (Logback, Log4j2, JUL) e escolhida pelo classpath.
 
 ```
-Codigo da aplicacao
+Código da aplicação
        |
      SLF4J API
        |
@@ -30,15 +30,15 @@ Codigo da aplicacao
 Logback    Log4j2       JUL
 ```
 
-No Spring Boot 3.x o Logback e a implementacao padrao. Para trocar por Log4j2 veja a secao 2.
+No Spring Boot 3.x o Logback e a implementação padrão. Para trocar por Log4j2 veja a seção 2.
 
-### 1.2. Dependencia
+### 1.2. Dependência
 
-O `spring-boot-starter` ja inclui o SLF4J transitivamente via `spring-boot-starter-logging`. Nao e necessario adicionar dependencia extra.
+O `spring-boot-starter` já inclui o SLF4J transitivamente via `spring-boot-starter-logging`. não é necessário adicionar dependência extra.
 
-### 1.3. Uso basico
+### 1.3. Uso básico
 
-Sempre declare o logger como `private static final` e use a classe atual como parametro.
+Sempre declare o logger como `private static final` e use a classe atual como parâmetro.
 
 ```java
 import org.slf4j.Logger;
@@ -50,7 +50,7 @@ public class PedidoService {
     private static final Logger log = LoggerFactory.getLogger(PedidoService.class);
 
     public Pedido criar(CriarPedidoRequest request) {
-        log.debug("Iniciando criacao de pedido para cliente {}", request.clienteId());
+        log.debug("Iniciando criação de pedido para cliente {}", request.clienteId());
 
         Pedido pedido = pedidoRepository.save(new Pedido(request));
 
@@ -62,25 +62,25 @@ public class PedidoService {
 }
 ```
 
-**Regras de nivel:**
+**Regras de nível:**
 
-| Nivel   | Quando usar                                                        |
+| Nível   | Quando usar                                                        |
 |---------|--------------------------------------------------------------------|
-| `TRACE` | Detalhes muito finos, fluxo linha a linha. Nunca em producao.      |
-| `DEBUG` | Informacoes de diagnostico. Habilitado em desenvolvimento.         |
-| `INFO`  | Eventos de negocio relevantes: pedido criado, usuario autenticado. |
-| `WARN`  | Situacoes suspeitas que nao causam falha imediata.                 |
-| `ERROR` | Falhas que exigem atencao: excecoes nao tratadas, dados invalidos. |
+| `TRACE` | Detalhes muito finos, fluxo linha a linha. Nunca em produção.      |
+| `DEBUG` | informações de diagnostico. Habilitado em desenvolvimento.         |
+| `INFO`  | Eventos de negócio relevantes: pedido criado, usuário autenticado. |
+| `WARN`  | Situações suspeitas que não causam falha imediata.                 |
+| `ERROR` | Falhas que exigem atenção: exceções não tratadas, dados inválidos. |
 
-### 1.4. Evitar concatenacao de strings
+### 1.4. Evitar concatenação de strings
 
-O SLF4J usa parametrizacao lazy — a mensagem so e montada se o nivel estiver habilitado.
+O SLF4J usa parametrização lazy — a mensagem só e montada se o nível estiver habilitado.
 
 ```java
 // Ruim: monta a string mesmo que DEBUG esteja desabilitado
 log.debug("Processando item: " + item.toString());
 
-// Correto: parametrizacao lazy
+// Correto: parametrização lazy
 log.debug("Processando item: {}", item);
 
 // Para objetos custosos, use isDebugEnabled()
@@ -89,22 +89,22 @@ if (log.isDebugEnabled()) {
 }
 ```
 
-### 1.5. Logging de excecoes
+### 1.5. Logging de exceções
 
-Passe o `Throwable` sempre como ultimo argumento — o SLF4J imprime o stack trace automaticamente.
+Passe o `Throwable` sempre como último argumento — o SLF4J imprime o stack trace automaticamente.
 
 ```java
 try {
     integracaoExterna.enviar(payload);
 } catch (IntegracaoException e) {
-    log.error("Falha ao enviar payload para integracao externa: pedidoId={}", pedidoId, e);
-    throw new ProcessamentoException("Falha na integracao", e);
+    log.error("Falha ao enviar payload para integração externa: pedidoId={}", pedidoId, e);
+    throw new ProcessamentoException("Falha na integração", e);
 }
 ```
 
 ### 1.6. Lombok @Slf4j
 
-Com Lombok, elimine o boilerplate da declaracao do logger:
+Com Lombok, elimine o boilerplate da declaração do logger:
 
 ```java
 import lombok.extern.slf4j.Slf4j;
@@ -121,19 +121,19 @@ public class PedidoService {
 
 ---
 
-## 2. Integracao com Log4j2
+## 2. integração com Log4j2
 
 ### 2.1. Por que usar Log4j2
 
 O Log4j2 oferece:
 
-- **Melhor desempenho**: uso de buffers assincronos e menor contencao.
-- **Configuracao mais rica**: suporte nativo a JSON, YAML, XML e properties.
+- **Melhor desempenho**: uso de buffers assíncronos e menor contenção.
+- **configuração mais rica**: suporte nativo a JSON, YAML, XML e properties.
 - **Appenders modernos**: RollingFile, Kafka, JDBC, Syslog, SMTP.
-- **Lookup plugins**: resolucao de variaveis em tempo de execucao.
-- **Async loggers**: descarga de I/O para threads de background sem latencia.
+- **Lookup plugins**: resolução de variáveis em tempo de execução.
+- **Async loggers**: descarga de I/O para threads de background sem latência.
 
-### 2.2. Dependencias
+### 2.2. Dependências
 
 Exclua o Logback e inclua o Log4j2:
 
@@ -164,7 +164,7 @@ Exclua o Logback e inclua o Log4j2:
 </dependencies>
 ```
 
-### 2.3. Configuracao log4j2.xml — Desenvolvimento
+### 2.3. Configuração log4j2.xml — Desenvolvimento
 
 Crie o arquivo em `src/main/resources/log4j2.xml`:
 
@@ -205,7 +205,7 @@ Crie o arquivo em `src/main/resources/log4j2.xml`:
 </Configuration>
 ```
 
-### 2.4. Configuracao log4j2.xml — Producao com JSON e arquivo rotativo
+### 2.4. Configuração log4j2.xml — produção com JSON e arquivo rotativo
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -217,7 +217,7 @@ Crie o arquivo em `src/main/resources/log4j2.xml`:
     </Properties>
 
     <Appenders>
-        <!-- Saida em JSON para coleta pelo agente de logs -->
+        <!-- Saída em JSON para coleta pelo agente de logs -->
         <Console name="JsonConsole" target="SYSTEM_OUT">
             <JsonTemplateLayout eventTemplateUri="classpath:log4j2-json-template.json"/>
         </Console>
@@ -293,7 +293,7 @@ Crie `src/main/resources/log4j2-json-template.json`:
 }
 ```
 
-### 2.6. Configuracao por perfil com Spring
+### 2.6. Configuração por perfil com Spring
 
 Use `log4j2-spring.xml` (com `-spring`) para habilitar o Spring Profile lookup:
 
@@ -301,10 +301,10 @@ Use `log4j2-spring.xml` (com `-spring`) para habilitar o Spring Profile lookup:
 <!-- src/main/resources/log4j2-spring.xml -->
 <Configuration status="WARN">
     <SpringProfile name="dev">
-        <!-- configuracao de desenvolvimento -->
+        <!-- configuração de desenvolvimento -->
     </SpringProfile>
     <SpringProfile name="prod">
-        <!-- configuracao de producao -->
+        <!-- configuração de produção -->
     </SpringProfile>
 </Configuration>
 ```
@@ -318,9 +318,9 @@ logging:
 
 ---
 
-## 3. Configuracoes recomendadas
+## 3. Configurações recomendadas
 
-### 3.1. application.yml — Nivel por pacote
+### 3.1. application.yml — Nível por pacote
 
 ```yaml
 logging:
@@ -331,26 +331,26 @@ logging:
     org.springframework.web: INFO
     org.springframework.security: INFO
     org.hibernate.SQL: DEBUG            # SQL gerado pelo Hibernate
-    org.hibernate.orm.jdbc.bind: TRACE  # Parametros das queries
+    org.hibernate.orm.jdbc.bind: TRACE  # Parâmetros das queries
     io.lettuce.core: WARN
-  # Arquivo de saida (Logback padrao)
+  # Arquivo de saída (Logback padrão)
   file:
-    name: /var/log/app/aplicacao.log
+    name: /var/log/app/aplicação.log
   pattern:
     console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
 ```
 
-### 3.2. Variaveis de ambiente para producao
+### 3.2. Variáveis de ambiente para produção
 
-Exporte niveis de log sem redeploy:
+Exporte níveis de log sem redeploy:
 
 ```bash
-# Ajuste temporario em producao via variavel de ambiente
+# Ajuste temporário em produção via variável de ambiente
 LOGGING_LEVEL_COM_EXEMPLO_DOMINIO_PEDIDO=DEBUG java -jar app.jar
 ```
 
-### 3.3. Ajuste dinamico via Actuator
+### 3.3. Ajuste dinâmico via Actuator
 
 Com `spring-boot-starter-actuator` habilitado:
 
@@ -368,7 +368,7 @@ management:
 Altere o nivel em tempo de execucao via HTTP:
 
 ```bash
-# Ver nivel atual de um logger
+# Ver nível atual de um logger
 curl http://localhost:8080/actuator/loggers/com.exemplo.dominio.pedido
 
 # Alterar para DEBUG temporariamente
@@ -376,19 +376,19 @@ curl -X POST http://localhost:8080/actuator/loggers/com.exemplo.dominio.pedido \
      -H "Content-Type: application/json" \
      -d '{"configuredLevel": "DEBUG"}'
 
-# Resetar para o nivel configurado
+# Resetar para o nível configurado
 curl -X POST http://localhost:8080/actuator/loggers/com.exemplo.dominio.pedido \
      -H "Content-Type: application/json" \
      -d '{"configuredLevel": null}'
 ```
 
-### 3.4. O que nao logar
+### 3.4. O que não logar
 
-- Senhas, tokens, numeros de cartao, dados pessoais (LGPD/GDPR).
-- Stack traces completos em nivel INFO — use ERROR ou WARN.
-- Parametros de entrada brutos sem sanitizacao.
+- Senhas, tokens, números de cartão, dados pessoais (LGPD/GDPR).
+- Stack traces completos em nível INFO — use ERROR ou WARN.
+- Parâmetros de entrada brutos sem sanitização.
 
-Use uma classe utilitaria para mascarar dados sensiveis:
+Use uma classe utilitária para mascarar dados sensíveis:
 
 ```java
 public final class LogMascarador {
@@ -413,12 +413,12 @@ log.info("Processando pagamento: cartao={}", LogMascarador.mascarar(numeroCartao
 
 ## 4. MDC — Mapped Diagnostic Context
 
-### 4.1. O que e o MDC
+### 4.1. O que é o MDC
 
-O MDC e um mapa de chave-valor associado ao `ThreadLocal` corrente. Valores inseridos no MDC aparecem automaticamente em todos os logs emitidos pela mesma thread, sem precisar passar o contexto explicitamente para cada metodo.
+O MDC é um mapa de chave-valor associado ao `ThreadLocal` corrente. Valores inseridos no MDC aparecem automaticamente em todos os logs emitidos pela mesma thread, sem precisar passar o contexto explicitamente para cada método.
 
 ```
-requisicao HTTP
+Requisição HTTP
     │
     ├── MDC.put("requestId", "abc-123")
     ├── MDC.put("userId", "user-456")
@@ -428,7 +428,7 @@ requisicao HTTP
     └── PedidoRepository.save(...)    → log imprime requestId e userId
 ```
 
-### 4.2. Filter para popular o MDC por requisicao
+### 4.2. Filter para popular o MDC por requisição
 
 ```java
 @Component
@@ -465,9 +465,9 @@ public class MdcFilter extends OncePerRequestFilter {
 }
 ```
 
-### 4.3. Propagar MDC para threads assincronas
+### 4.3. Propagar MDC para threads assíncronas
 
-O MDC e vinculado ao `ThreadLocal` — threads filhas nao herdam o contexto automaticamente.
+O MDC e vinculado ao `ThreadLocal` — threads filhas não herdam o contexto automaticamente.
 
 ```java
 @Configuration
@@ -508,7 +508,7 @@ public class MdcTaskDecorator implements TaskDecorator {
 }
 ```
 
-### 4.4. Incluir MDC no padrao de log
+### 4.4. Incluir MDC no padrão de log
 
 **Logback (logback-spring.xml):**
 
@@ -522,9 +522,9 @@ public class MdcTaskDecorator implements TaskDecorator {
 %d{HH:mm:ss.SSS} %-5level [%X{requestId}] [%thread] %logger{36} - %msg%n
 ```
 
-**Log4j2 (JSON template)** — o campo `mdc` no template da secao 2.5 ja inclui todos os valores automaticamente.
+**Log4j2 (JSON template)** — o campo `mdc` no template da seção 2.5 já inclui todos os valores automaticamente.
 
-### 4.5. Enriquecer o MDC com dados do usuario autenticado
+### 4.5. Enriquecer o MDC com dados do usuário autenticado
 
 ```java
 @Component
@@ -557,7 +557,7 @@ public class SecurityMdcFilter extends OncePerRequestFilter {
 
 ### 5.1. Por que JSON
 
-Sistemas como Loki, Elasticsearch e Splunk ingerem JSON nativamente. Com logs em texto livre, o parser precisa extrair campos via regex — processo fragil e custoso.
+Sistemas como Loki, Elasticsearch e Splunk ingerem JSON nativamente. Com logs em texto livre, o parser precisa extrair campos via regex — processo frágil e custoso.
 
 Com JSON:
 
@@ -621,7 +621,7 @@ logger.info(new StringMapMessage()
 
 ### 5.4. Logback com logstash-logback-encoder
 
-Se estiver usando Logback, o `logstash-logback-encoder` e a solucao mais popular:
+Se estiver usando Logback, o `logstash-logback-encoder` e a solução mais popular:
 
 ```xml
 <dependency>
@@ -656,9 +656,9 @@ log.info("Pedido criado",
 
 ---
 
-## 6. Rastreamento Distribuido
+## 6. Rastreamento Distribuído
 
-### 6.1. Dependencias
+### 6.1. Dependências
 
 ```xml
 <dependencies>
@@ -674,13 +674,13 @@ log.info("Pedido criado",
         <artifactId>opentelemetry-exporter-otlp</artifactId>
     </dependency>
 
-    <!-- Propagacao de contexto automatica no Spring MVC e WebClient -->
+    <!-- Propagação de contexto automática no Spring MVC e WebClient -->
     <dependency>
         <groupId>io.micrometer</groupId>
         <artifactId>micrometer-tracing</artifactId>
     </dependency>
 
-    <!-- Actuator (expoe metricas para Prometheus) -->
+    <!-- Actuator (expõe métricas para Prometheus) -->
     <dependency>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-actuator</artifactId>
@@ -695,13 +695,13 @@ log.info("Pedido criado",
 </dependencies>
 ```
 
-### 6.2. Configuracao
+### 6.2. Configuração
 
 ```yaml
 management:
   tracing:
     sampling:
-      probability: 1.0   # 100% em dev; use 0.1 a 0.5 em producao
+      probability: 1.0   # 100% em dev; use 0.1 a 0.5 em produção
   otlp:
     tracing:
       endpoint: http://localhost:4318/v1/traces
@@ -722,17 +722,17 @@ spring:
     name: pedidos-service
 ```
 
-### 6.3. Correlacao de traceId com logs
+### 6.3. correlação de traceId com logs
 
-Com `micrometer-tracing`, o `traceId` e `spanId` sao propagados automaticamente para o MDC:
+Com `micrometer-tracing`, o `traceId` e `spanId` são propagados automaticamente para o MDC:
 
 ```
-# Saida de log com rastreamento
+# saída de log com rastreamento
 INFO [pedidos-service,4bf92f3577b34da6,a3ce929d0e0e4736] c.e.d.p.PedidoService - Pedido criado: id=789
 #                     ^traceId              ^spanId
 ```
 
-Para aparecer no padrao de log do Logback:
+Para aparecer no padrão de log do Logback:
 
 ```xml
 <pattern>%d %-5level [%X{traceId},%X{spanId}] %logger{36} - %msg%n</pattern>
@@ -740,7 +740,7 @@ Para aparecer no padrao de log do Logback:
 
 ### 6.4. @WithSpan — Criar spans personalizados
 
-A anotacao `@WithSpan` cria um span de rastreamento para o metodo anotado, visivel no Grafana Tempo.
+A anotação `@WithSpan` cria um span de rastreamento para o método anotado, visível no Grafana Tempo.
 
 ```java
 import io.opentelemetry.instrumentation.annotations.WithSpan;
@@ -752,7 +752,7 @@ public class PedidoService {
     @WithSpan("pedido.criar")
     public Pedido criar(@SpanAttribute("clienteId") Long clienteId,
                         CriarPedidoRequest request) {
-        // Este metodo aparece como um span no trace
+        // Este método aparece como um span no trace
         Pedido pedido = pedidoRepository.save(new Pedido(request));
         return pedido;
     }
@@ -775,10 +775,10 @@ public void processarPagamento(Pedido pedido) {
 }
 ```
 
-### 6.5. @Observed — Metricas e rastreamento automaticos
+### 6.5. @Observed — métricas e rastreamento automáticos
 
-A anotacao `@Observed` do Micrometer gera automaticamente:
-- Um timer (duracao da operacao)
+A anotação `@Observed` do Micrometer gera automaticamente:
+- Um timer (duração da operação)
 - Um span de rastreamento
 - Um contador de erros
 
@@ -812,7 +812,7 @@ public class ObservabilidadeConfig {
 }
 ```
 
-### 6.6. ObservationRegistry para instrumentacao manual
+### 6.6. ObservationRegistry para instrumentação manual
 
 ```java
 @Service
@@ -831,27 +831,27 @@ public class PedidoService {
 }
 ```
 
-> **Alta vs Baixa cardinalidade**: use `lowCardinalityKeyValue` para valores com poucas variantes (tipo, status, regiao) e `highCardinalityKeyValue` para valores de alta variacao (IDs) — estes ultimos sao incluidos apenas no trace, nao nas metricas, para evitar explosao de series temporais no Prometheus.
+> **Alta vs Baixa cardinalidade**: use `lowCardinalityKeyValue` para valores com poucas variantes (tipo, status, região) e `highCardinalityKeyValue` para valores de alta variação (IDs) — estes últimos são incluídos apenas no trace, não nas métricas, para evitar explosão de series temporais no Prometheus.
 
 ---
 
 ## 7. Infraestrutura de Observabilidade
 
-A pilha recomendada para coletar e visualizar logs, metricas e traces:
+A pilha recomendada para coletar e visualizar logs, métricas e traces:
 
 ```
-Aplicacao Spring Boot
+Aplicação Spring Boot
     │
     ├── logs JSON ──────────────► Promtail/Alloy ──► Loki ──────────┐
     │                                                                 │
-    ├── metricas (/actuator/prometheus) ◄──── Prometheus scrape      │
+    ├── métricas (/actuator/prometheus) ◄──── Prometheus scrape      │
     │                                              │                  │
     └── traces (OTLP) ──────────────────► OTel Collector ──► Tempo  │
                                                    │                  │
                                               Prometheus              │
                                                    │                  │
                                                Grafana ◄─────────────┘
-                                    (dashboards, alertas, correlacao)
+                                    (dashboards, alertas, correlação)
 ```
 
 ### 7.1. docker-compose.yml
@@ -861,7 +861,7 @@ version: "3.9"
 
 services:
 
-  # ── Banco de series temporais para metricas ──────────────────────
+  # ── Banco de series temporais para métricas ──────────────────────
   prometheus:
     image: prom/prometheus:v2.51.2
     container_name: prometheus
@@ -898,7 +898,7 @@ services:
     networks: [obs]
     depends_on: [loki]
 
-  # ── Banco de traces distribuidos ──────────────────────────────────
+  # ── Banco de traces distribuídos ──────────────────────────────────
   tempo:
     image: grafana/tempo:2.4.1
     container_name: tempo
@@ -917,15 +917,15 @@ services:
     image: otel/opentelemetry-collector-contrib:0.99.0
     container_name: otel-collector
     ports:
-      - "4319:4318"   # OTLP HTTP (recebe da aplicacao)
-      - "8888:8888"   # metricas internas do collector
+      - "4319:4318"   # OTLP HTTP (recebe da aplicação)
+      - "8888:8888"   # métricas internas do collector
     volumes:
       - ./observabilidade/otel-collector.yml:/etc/otelcol/config.yaml:ro
     command: ["--config=/etc/otelcol/config.yaml"]
     networks: [obs]
     depends_on: [tempo, prometheus]
 
-  # ── Grafana (visualizacao) ────────────────────────────────────────
+  # ── Grafana (visualização) ────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.2
     container_name: grafana
@@ -1109,7 +1109,7 @@ processors:
     attributes:
       - action: insert
         key: service.namespace
-        value: producao
+        value: produção
 
 exporters:
   otlp/tempo:
@@ -1183,19 +1183,19 @@ datasources:
 
 ---
 
-## 8. Correlacao entre Logs, Metricas e Traces no Grafana
+## 8. Correlação entre Logs, métricas e Traces no Grafana
 
-### 8.1. Fluxo de correlacao
+### 8.1. Fluxo de correlação
 
-Com a configuracao acima, o Grafana permite navegar entre as tres fontes:
+Com a configuração acima, o Grafana permite navegar entre as três fontes:
 
-1. **Metricas (Prometheus)** → detectar anomalia (ex.: latencia alta no endpoint `/pedidos`)
-2. **Traces (Tempo)** → abrir o trace correspondente ao periodo de anomalia (exemplares nos graficos)
+1. **métricas (Prometheus)** → detectar anomalia (ex.: latência alta no endpoint `/pedidos`)
+2. **Traces (Tempo)** → abrir o trace correspondente ao período de anomalia (exemplares nos gráficos)
 3. **Logs (Loki)** → a partir do traceId no Tempo, saltar para os logs relacionados
 
 ### 8.2. Exemplares no Prometheus
 
-Habilite o envio de exemplares (liga metricas a traces):
+Habilite o envio de exemplares (liga métricas a traces):
 
 ```yaml
 management:
@@ -1208,7 +1208,7 @@ management:
 ### 8.3. LogQL — Consultas no Loki
 
 ```logql
-# Todos os logs de erro do servico pedidos-service
+# Todos os logs de erro do serviço pedidos-service
 {job="pedidos-service"} | json | level = "ERROR"
 
 # Logs de um trace especifico
@@ -1217,7 +1217,7 @@ management:
 # Contagem de erros por minuto
 sum(rate({job="pedidos-service"} | json | level = "ERROR" [1m])) by (logger)
 
-# Latencia extraida dos logs (se logar duracao)
+# Latência extraída dos logs (se logar duração)
 {job="pedidos-service"}
     | json
     | level = "INFO"
@@ -1234,7 +1234,7 @@ sum(rate({job="pedidos-service"} | json | level = "ERROR" [1m])) by (logger)
 # Traces lentos do endpoint de pedidos
 { .http.route = "/pedidos" && duration > 500ms }
 
-# Traces de um usuario especifico
+# Traces de um usuário especifico
 { .userId = "user-456" }
 
 # Spans com atributo customizado
@@ -1243,29 +1243,29 @@ sum(rate({job="pedidos-service"} | json | level = "ERROR" [1m])) by (logger)
 
 ---
 
-## 9. Boas Praticas Consolidadas
+## 9. Boas Práticas Consolidadas
 
 ### 9.1. Estrutura de mensagem de log
 
 ```java
-// Padrao recomendado: evento + campos relevantes
+// padrão recomendado: evento + campos relevantes
 log.info("Pedido criado: id={}, clienteId={}, total={}, itens={}",
          pedido.getId(), pedido.getClienteId(),
          pedido.getTotal(), pedido.getItens().size());
 
-// Para eventos de negocio criticos, use um campo de evento estruturado
+// Para eventos de negócio críticos, use um campo de evento estruturado
 MDC.put("event", "pedido.criado");
 log.info("Pedido criado com sucesso");
 MDC.remove("event");
 ```
 
-### 9.2. Nao abuse do MDC
+### 9.2. Não abuse do MDC
 
-O MDC e um mapa global da thread. Abusar pode gerar confusao em fluxos complexos:
+O MDC é um mapa global da thread. Abusar pode gerar confusão em fluxos complexos:
 
 ```java
 // RUIM: MDC com dados de vida longa sem limpeza
-MDC.put("pedidoId", pedido.getId().toString()); // e se o metodo lancar excecao?
+MDC.put("pedidoId", pedido.getId().toString()); // e se o método lançar exceção?
 
 // BOM: use try-finally para garantir limpeza
 MDC.put("pedidoId", pedido.getId().toString());
@@ -1276,18 +1276,18 @@ try {
 }
 ```
 
-### 9.3. Cheklist de revisao de logging
+### 9.3. Cheklist de revisão de logging
 
 - [ ] Nenhum dado pessoal ou senha nos logs.
-- [ ] Mensagens em ingles ou portugues — escolha um padrao por projeto.
-- [ ] Parametros e nao concatenacao de strings.
-- [ ] Throwable passado como ultimo argumento nos logs de erro.
-- [ ] MDC limpo ao final de cada requisicao/tarefa.
-- [ ] Nivel correto: DEBUG para diagnostico, INFO para negocio, ERROR para falhas.
-- [ ] Logs de entrada e saida em endpoints criticos.
+- [ ] Mensagens em inglês ou português — escolha um padrão por projeto.
+- [ ] Parâmetros e não concatenação de strings.
+- [ ] Throwable passado como último argumento nos logs de erro.
+- [ ] MDC limpo ao final de cada requisição/tarefa.
+- [ ] Nível correto: DEBUG para diagnostico, INFO para negócio, ERROR para falhas.
+- [ ] Logs de entrada e saída em endpoints críticos.
 - [ ] Correlation ID (`requestId`, `traceId`) presente em todos os logs.
 
-### 9.4. Health check e metricas customizadas
+### 9.4. Health check e métricas customizadas
 
 ```java
 @Component
@@ -1380,10 +1380,10 @@ public class PedidoService {
 }
 ```
 
-Com essa configuracao, cada requisicao a `POST /pedidos`:
+Com essa configuração, cada requisição a `POST /pedidos`:
 
 1. Ganha um `requestId` e `traceId` no MDC (via filtros).
 2. Emite um log INFO estruturado em JSON com todos os campos de contexto.
-3. Gera metricas de contagem e latencia no Prometheus.
-4. Registra um trace com spans hierarquicos no Tempo.
-5. Permite correlacao direta entre logs, metricas e traces no Grafana.
+3. Gera métricas de contagem e latência no Prometheus.
+4. Registra um trace com spans hierárquicos no Tempo.
+5. Permite correlação direta entre logs, métricas e traces no Grafana.
