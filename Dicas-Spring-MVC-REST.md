@@ -2415,6 +2415,227 @@ public class CpfValidator implements ConstraintValidator<CPF, String> {
 }
 ```
 
+#### i18n — Internacionalização da Mensagem da Constraint Customizada
+
+O atributo `message()` de uma constraint segue o mesmo mecanismo de interpolação do
+Bean Validation usado nas constraints padrão. Há três formas de internacionalizar a
+mensagem de uma constraint customizada.
+
+> **Pré-requisito:** para que chaves entre `{}` sejam resolvidas via `messages.properties`,
+> é necessária a integração com `LocalValidatorFactoryBean` descrita na seção 11.5.
+
+##### Forma 1 — Chave fixa no `default` do atributo `message()`
+
+A forma mais comum: o `default` de `message()` declara uma chave entre `{}`. O Bean
+Validation resolve essa chave no `messages.properties` correspondente ao locale da
+requisição, permitindo traduções por arquivo de locale.
+
+```java
+// A anotação @CPF já utiliza esta abordagem:
+//   String message() default "{br.com.app.validation.cpf.invalido}";
+//
+// O Bean Validation trata a chave entre {} como uma referência a mensagem,
+// não como texto literal. A resolução ocorre no MessageSource configurado.
+```
+
+```properties
+# messages.properties (locale padrão / português)
+br.com.app.validation.cpf.invalido=CPF inválido
+
+# messages_en.properties (locale inglês)
+br.com.app.validation.cpf.invalido=Invalid CPF number
+
+# messages_es.properties (locale espanhol)
+br.com.app.validation.cpf.invalido=CPF inválido (documento brasileño)
+```
+
+##### Forma 2 — Atributos customizados da anotação como parâmetros da mensagem
+
+Assim como `@Size` expõe `{min}` e `{max}`, é possível declarar atributos extras na
+própria anotação e referenciá-los como `{nomeDoAtributo}` na mensagem. O Bean
+Validation injeta automaticamente os valores dos atributos da anotação como variáveis
+disponíveis na interpolação — o mesmo mecanismo das constraints padrão.
+
+```java
+@Target({FIELD, PARAMETER, ANNOTATION_TYPE})
+@Retention(RUNTIME)
+@Constraint(validatedBy = TamanhoArquivoValidator.class)
+@Documented
+public @interface TamanhoArquivo {
+
+    // Atributos extras ficam disponíveis como {maxMB} e {extensoesPermitidas}
+    // na mensagem — o Bean Validation os injeta automaticamente na interpolação.
+    long maxMB() default 5;
+    String[] extensoesPermitidas() default {"jpg", "png", "pdf"};
+
+    // A mensagem referencia {maxMB} e {extensoesPermitidas} pelo nome do atributo
+    String message() default "{br.com.app.validation.arquivo.tamanho}";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}
+```
+
+```java
+public class TamanhoArquivoValidator implements ConstraintValidator<TamanhoArquivo, MultipartFile> {
+
+    private long maxBytes;
+
+    @Override
+    public void initialize(TamanhoArquivo annotation) {
+        // Converte MB → bytes uma única vez ao inicializar o validator
+        this.maxBytes = annotation.maxMB() * 1024 * 1024;
+    }
+
+    @Override
+    public boolean isValid(MultipartFile file, ConstraintValidatorContext context) {
+        if (file == null || file.isEmpty()) return true;
+        return file.getSize() <= maxBytes;
+    }
+}
+```
+
+```properties
+# messages.properties
+# {maxMB} e {extensoesPermitidas} são substituídos pelos valores definidos na anotação
+br.com.app.validation.arquivo.tamanho=\
+  Arquivo deve ter no máximo {maxMB} MB. Extensões permitidas: {extensoesPermitidas}
+
+# messages_en.properties
+br.com.app.validation.arquivo.tamanho=\
+  File must be at most {maxMB} MB. Allowed extensions: {extensoesPermitidas}
+```
+
+```java
+// Uso — os valores dos atributos substituem os placeholders na mensagem gerada
+@TamanhoArquivo(maxMB = 10, extensoesPermitidas = {"jpg", "png"})
+MultipartFile foto;
+// Mensagem gerada: "Arquivo deve ter no máximo 10 MB. Extensões permitidas: [jpg, png]"
+
+// Com os defaults da anotação (maxMB=5, extensoesPermitidas={"jpg","png","pdf"})
+@TamanhoArquivo
+MultipartFile documento;
+// Mensagem gerada: "Arquivo deve ter no máximo 5 MB. Extensões permitidas: [jpg, png, pdf]"
+```
+
+> Apenas atributos declarados com getter simples (sem parâmetros) na anotação ficam
+> disponíveis como variáveis. `{validatedValue}` também está disponível automaticamente
+> em qualquer constraint.
+
+##### Forma 3 — Mensagem dinâmica no Validator via `ConstraintValidatorContext`
+
+Quando a mensagem depende do estado interno da validação (ex.: qual regra específica
+falhou dentre várias), é possível construí-la dinamicamente dentro do
+`ConstraintValidator`, sobrescrevendo o `message()` padrão da anotação em tempo de
+execução. O template passado também é interpolado, podendo referenciar chaves do
+`messages.properties`.
+
+```java
+@Target({FIELD, PARAMETER, ANNOTATION_TYPE})
+@Retention(RUNTIME)
+@Constraint(validatedBy = SenhaForteValidator.class)
+@Documented
+public @interface SenhaForte {
+    String message() default "{br.com.app.validation.senha.fraca}";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}
+```
+
+```java
+public class SenhaForteValidator implements ConstraintValidator<SenhaForte, String> {
+
+    @Override
+    public boolean isValid(String senha, ConstraintValidatorContext context) {
+        if (senha == null) return true;
+
+        List<String> violacoes = new ArrayList<>();
+        if (senha.length() < 8)              violacoes.add("mínimo 8 caracteres");
+        if (!senha.matches(".*[A-Z].*"))      violacoes.add("ao menos uma letra maiúscula");
+        if (!senha.matches(".*[0-9].*"))      violacoes.add("ao menos um número");
+        if (!senha.matches(".*[!@#$%^&*].*")) violacoes.add("ao menos um caractere especial");
+
+        if (violacoes.isEmpty()) return true;
+
+        // Desabilita a mensagem padrão definida em message() da anotação
+        context.disableDefaultConstraintViolation();
+
+        // Constrói mensagem detalhada — o template ainda é interpolado pelo Bean
+        // Validation: pode conter chaves {} resolvidas via messages.properties.
+        //
+        // ⚠️  NUNCA insira aqui texto proveniente de entrada do usuário sem sanitizar:
+        //     o template é interpolado, então {chave} seria resolvida no MessageSource.
+        context
+            .buildConstraintViolationWithTemplate(
+                "Senha não atende aos critérios: " + String.join(", ", violacoes)
+            )
+            .addConstraintViolation();
+
+        return false;
+    }
+}
+```
+
+Para delegar a mensagem dinâmica ao `messages.properties`, use uma chave no template:
+
+```java
+// ─── Mensagem de fallback via chave do messages.properties ────────────────────
+context
+    .buildConstraintViolationWithTemplate("{br.com.app.validation.senha.fraca}")
+    .addConstraintViolation();
+```
+
+```properties
+# messages.properties
+br.com.app.validation.senha.fraca=Senha não atende aos critérios de segurança exigidos
+
+# messages_en.properties
+br.com.app.validation.senha.fraca=Password does not meet the required security criteria
+```
+
+**Violações em campos específicos via `addPropertyNode()`**
+
+Em constraints de **classe** (que validam múltiplos campos ao mesmo tempo), é possível
+apontar a violação para um campo específico em vez do objeto inteiro:
+
+```java
+// ─── Constraint de classe — valida relação entre dois campos ──────────────────
+@Target(TYPE)
+@Retention(RUNTIME)
+@Constraint(validatedBy = SenhaConfirmacaoValidator.class)
+@Documented
+public @interface SenhaConfirmacao {
+    String message() default "{br.com.app.validation.senha.confirmacao}";
+    Class<?>[] groups() default {};
+    Class<? extends Payload>[] payload() default {};
+}
+
+public class SenhaConfirmacaoValidator
+        implements ConstraintValidator<SenhaConfirmacao, AlterarSenhaRequest> {
+
+    @Override
+    public boolean isValid(AlterarSenhaRequest req, ConstraintValidatorContext context) {
+        if (req.senha() == null || req.confirmacaoSenha() == null) return true;
+        if (req.senha().equals(req.confirmacaoSenha())) return true;
+
+        context.disableDefaultConstraintViolation();
+
+        // Aponta a violação para o campo confirmacaoSenha, não para o objeto inteiro.
+        // O BindingResult (REST) e o FieldError (Thymeleaf) receberão o erro no campo correto.
+        context
+            .buildConstraintViolationWithTemplate("{br.com.app.validation.senha.confirmacao}")
+            .addPropertyNode("confirmacaoSenha")
+            .addConstraintViolation();
+
+        return false;
+    }
+}
+```
+
+```properties
+# messages.properties
+br.com.app.validation.senha.confirmacao=Confirmação de senha não confere com a senha informada
+```
+
 ### 5.6 Constraint com Acesso a Banco (Spring Bean)
 
 ```java
@@ -5090,6 +5311,125 @@ spring:
     cache-duration: 1s          # 0 = sem cache (útil em desenvolvimento)
     use-code-as-default-message: false  # false = lança exceção se chave não existir
 ```
+
+#### Chaves padrão do Bean Validation (ValidationMessages.properties)
+
+O Jakarta Bean Validation inclui um arquivo `ValidationMessages.properties` embutido no JAR da especificação, com mensagens padrão no formato `{jakarta.validation.constraints.NomeConstraint.message}`. Estas são as chaves utilizadas internamente quando nenhum `message=` é declarado na anotação.
+
+Para **sobrescrever globalmente** essas mensagens (traduzindo para português, por exemplo), basta declarar a mesma chave no seu `messages.properties` — após a integração com `LocalValidatorFactoryBean`, o Spring passa a resolver essas chaves pelo `MessageSource` da aplicação.
+
+| Constraint | Chave padrão | Mensagem padrão (inglês) |
+|---|---|---|
+| `@NotNull` | `jakarta.validation.constraints.NotNull.message` | must not be null |
+| `@NotBlank` | `jakarta.validation.constraints.NotBlank.message` | must not be blank |
+| `@NotEmpty` | `jakarta.validation.constraints.NotEmpty.message` | must not be empty |
+| `@Size` | `jakarta.validation.constraints.Size.message` | size must be between {min} and {max} |
+| `@Min` | `jakarta.validation.constraints.Min.message` | must be greater than or equal to {value} |
+| `@Max` | `jakarta.validation.constraints.Max.message` | must be less than or equal to {value} |
+| `@Positive` | `jakarta.validation.constraints.Positive.message` | must be greater than 0 |
+| `@PositiveOrZero` | `jakarta.validation.constraints.PositiveOrZero.message` | must be greater than or equal to 0 |
+| `@Negative` | `jakarta.validation.constraints.Negative.message` | must be less than 0 |
+| `@NegativeOrZero` | `jakarta.validation.constraints.NegativeOrZero.message` | must be less than or equal to 0 |
+| `@DecimalMin` | `jakarta.validation.constraints.DecimalMin.message` | must be greater than {inclusive == true ? "or equal to " : ""}{value} |
+| `@DecimalMax` | `jakarta.validation.constraints.DecimalMax.message` | must be less than {inclusive == true ? "or equal to " : ""}{value} |
+| `@Digits` | `jakarta.validation.constraints.Digits.message` | numeric value out of bounds (\<{integer} digits\>.\<{fraction} digits\> expected) |
+| `@Pattern` | `jakarta.validation.constraints.Pattern.message` | must match "{regexp}" |
+| `@Email` | `jakarta.validation.constraints.Email.message` | must be a well-formed email address |
+| `@Past` | `jakarta.validation.constraints.Past.message` | must be a past date |
+| `@PastOrPresent` | `jakarta.validation.constraints.PastOrPresent.message` | must be a date in the past or in the present |
+| `@Future` | `jakarta.validation.constraints.Future.message` | must be a future date |
+| `@FutureOrPresent` | `jakarta.validation.constraints.FutureOrPresent.message` | must be a date in the present or in the future |
+| `@AssertTrue` | `jakarta.validation.constraints.AssertTrue.message` | must be true |
+| `@AssertFalse` | `jakarta.validation.constraints.AssertFalse.message` | must be false |
+
+```properties
+# Sobrescrevendo as chaves padrão do Bean Validation para português
+# Funciona após a integração com LocalValidatorFactoryBean (seção acima).
+# Estas chaves são resolvidas automaticamente quando message= não é declarado.
+jakarta.validation.constraints.NotNull.message=Campo obrigatório
+jakarta.validation.constraints.NotBlank.message=Campo não pode ser vazio
+jakarta.validation.constraints.NotEmpty.message=Campo não pode ser vazio
+jakarta.validation.constraints.Size.message=Tamanho deve ser entre {min} e {max} caracteres
+jakarta.validation.constraints.Min.message=Valor deve ser maior ou igual a {value}
+jakarta.validation.constraints.Max.message=Valor deve ser menor ou igual a {value}
+jakarta.validation.constraints.Positive.message=Valor deve ser positivo
+jakarta.validation.constraints.PositiveOrZero.message=Valor deve ser positivo ou zero
+jakarta.validation.constraints.Negative.message=Valor deve ser negativo
+jakarta.validation.constraints.NegativeOrZero.message=Valor deve ser negativo ou zero
+jakarta.validation.constraints.Digits.message=Valor fora dos limites: máximo {integer} dígitos inteiros e {fraction} decimais
+jakarta.validation.constraints.Pattern.message=Formato inválido: deve corresponder ao padrão {regexp}
+jakarta.validation.constraints.Email.message=E-mail inválido
+jakarta.validation.constraints.Past.message=Data deve estar no passado
+jakarta.validation.constraints.PastOrPresent.message=Data deve estar no passado ou no presente
+jakarta.validation.constraints.Future.message=Data deve estar no futuro
+jakarta.validation.constraints.FutureOrPresent.message=Data deve estar no futuro ou no presente
+jakarta.validation.constraints.AssertTrue.message=Deve ser verdadeiro
+jakarta.validation.constraints.AssertFalse.message=Deve ser falso
+```
+
+#### Parâmetros das annotations nas mensagens
+
+Dentro dos templates de mensagem — tanto em `messages.properties` quanto diretamente no atributo `message=` da anotação — é possível interpolar os **atributos da própria constraint** usando `{nomeDoAtributo}`. O Bean Validation substitui esses placeholders pelos valores configurados na anotação em tempo de validação.
+
+Além dos atributos específicos de cada constraint, `{validatedValue}` está disponível em qualquer mensagem e contém o valor que falhou na validação.
+
+| Constraint | Parâmetros disponíveis nas mensagens |
+|---|---|
+| `@Size` | `{min}`, `{max}` |
+| `@Min` | `{value}` |
+| `@Max` | `{value}` |
+| `@DecimalMin` | `{value}`, `{inclusive}` |
+| `@DecimalMax` | `{value}`, `{inclusive}` |
+| `@Digits` | `{integer}`, `{fraction}` |
+| `@Pattern` | `{regexp}`, `{flags}` |
+| `@Email` | `{regexp}`, `{flags}` (quando sobrescritos) |
+| `@Positive` / `@Negative` / `@Past` / `@Future` | — (sem parâmetros) |
+| Qualquer constraint | `{validatedValue}` — o valor que falhou na validação |
+
+> **Atenção com `{validatedValue}`:** expor o valor submetido em mensagens de erro de APIs públicas pode revelar dados sensíveis ou facilitar ataques de enumeração. Use com cuidado, especialmente em campos como senha ou CPF.
+
+```properties
+# Usando parâmetros da anotação nas mensagens do messages.properties
+Size.produtoRequest.nome=Nome deve ter entre {min} e {max} caracteres
+Min.produtoRequest.estoque=Estoque mínimo é {value} unidade(s)
+Max.produtoRequest.desconto=Desconto máximo permitido é {value}%
+Digits.produtoRequest.preco=Preço deve ter no máximo {integer} dígitos inteiros e {fraction} decimais
+Pattern.produtoRequest.cep=CEP deve seguir o padrão {regexp}
+
+# Com {validatedValue} — útil em ambientes internos/backoffice, cuidado em APIs públicas
+Min.pedidoRequest.quantidade=Quantidade mínima é {value}, mas foi informado: {validatedValue}
+```
+
+```java
+// Usando parâmetros diretamente no atributo message= da anotação
+// — útil quando a mensagem não precisa de tradução por locale
+public record PedidoRequest(
+
+    // {value} é substituído pelo valor configurado na anotação (1)
+    @Min(value = 1, message = "Quantidade mínima é {value}")
+    int quantidade,
+
+    // {min} e {max} são substituídos pelos atributos da @Size
+    @Size(min = 10, max = 500, message = "Descrição deve ter entre {min} e {max} caracteres")
+    String descricao,
+
+    // {regexp} recebe o valor do atributo regexp da @Pattern
+    // {validatedValue} recebe o CEP inválido submetido pelo cliente
+    @Pattern(
+        regexp = "\\d{5}-\\d{3}",
+        message = "CEP inválido '{validatedValue}': use o formato {regexp}"
+    )
+    String cep,
+
+    // {integer} e {fraction} recebem os limites configurados na @Digits
+    @Digits(
+        integer = 10, fraction = 2,
+        message = "Valor deve ter no máximo {integer} dígitos inteiros e {fraction} decimais"
+    )
+    BigDecimal valor
+) {}
+```
+
 ## 12. CORS — Cross-Origin Resource Sharing
 
 ### 12.1 Como o CORS Funciona

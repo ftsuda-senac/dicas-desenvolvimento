@@ -20,6 +20,33 @@
     - [3.5 Tratamento de Exceções no Service](#35-tratamento-de-exceções-no-service)
     - [3.6 Services Stateless — Evitar Estado em Campos](#36-services-stateless-evitar-estado-em-campos)
     - [3.7 Checklist — Boas Práticas do `@Service`](#37-checklist-boas-práticas-do-service)
+4. [Classes Utilitárias do Spring](#4-classes-utilitárias-do-spring)
+    - [4.1 `StringUtils` — Validação e Manipulação de Strings](#41-stringutils-validação-e-manipulação-de-strings)
+    - [4.2 `Assert` — Pré-condições e Invariantes](#42-assert-pré-condições-e-invariantes)
+    - [4.3 `CollectionUtils` — Operações Null-Safe em Coleções](#43-collectionutils-operações-null-safe-em-coleções)
+    - [4.4 `ObjectUtils` — Operações Null-Safe em Objetos](#44-objectutils-operações-null-safe-em-objetos)
+    - [4.5 `ClassUtils` — Introspecção de Classes](#45-classutils-introspecção-de-classes)
+    - [4.6 `BeanUtils` — Cópia de Propriedades entre Objetos](#46-beanutils-cópia-de-propriedades-entre-objetos)
+    - [4.7 `ReflectionUtils` — Reflexão Sem Checked Exceptions](#47-reflectionutils-reflexão-sem-checked-exceptions)
+    - [4.8 `StopWatch` — Medição de Desempenho](#48-stopwatch-medição-de-desempenho)
+    - [4.9 `AntPathMatcher` — Correspondência de Padrões de Caminho](#49-antpathmatcher-correspondência-de-padrões-de-caminho)
+    - [4.10 `FileCopyUtils` — Operações de I/O com Cópia Automática](#410-filecopyutils-operações-de-io-com-cópia-automática)
+    - [4.11 `MultiValueMap` e `LinkedMultiValueMap` — Mapas com Múltiplos Valores por Chave](#411-multivaluemap-e-linkedmultivaluemap--mapas-com-múltiplos-valores-por-chave)
+    - [4.12 `LinkedCaseInsensitiveMap` — Mapa com Chaves Case-Insensitive](#412-linkedcaseinsensitivemap--mapa-com-chaves-case-insensitive)
+    - [4.13 `DigestUtils` — Cálculo de Digests MD5](#413-digestutils--cálculo-de-digests-md5)
+    - [4.14 `SerializationUtils` — Serialização e Clone de Objetos](#414-serializationutils--serialização-e-clone-de-objetos)
+    - [4.15 `MethodInvoker` — Invocação Declarativa de Métodos](#415-methodinvoker--invocação-declarativa-de-métodos)
+    - [4.16 `PathMatcher` e `RouteMatcher` — Interfaces de Correspondência](#416-pathmatcher-e-routematcher--interfaces-de-correspondência)
+    - [4.17 `ResourceUtils` — Resolução de Recursos no Classpath e Sistema de Arquivos](#417-resourceutils--resolução-de-recursos-no-classpath-e-sistema-de-arquivos)
+    - [4.18 `MimeTypeUtils` — Tipos MIME](#418-mimetypeutils--tipos-mime)
+    - [4.19 `NumberUtils` — Conversão e Parsing de Números](#419-numberutils--conversão-e-parsing-de-números)
+    - [4.20 `ConcurrentReferenceHashMap` — Cache Thread-Safe com Referências Fracas/Suaves](#420-concurrentreferencehashmap--cache-thread-safe-com-referências-fracassuaves)
+    - [4.21 `ExponentialBackOff` e `FixedBackOff` — Estratégias de Retry com Backoff](#421-exponentialbackoff-e-fixedbackoff--estratégias-de-retry-com-backoff)
+    - [4.22 `IdGenerator` e Implementações — Geração de UUIDs](#422-idgenerator-e-implementações--geração-de-uuids)
+    - [4.23 `PropertyPlaceholderHelper` — Resolução de Placeholders em Strings](#423-propertyplaceholderhelper--resolução-de-placeholders-em-strings)
+    - [4.24 `SocketUtils` / `TestSocketUtils` — Portas TCP Disponíveis em Testes](#424-socketutils--testSocketutils--portas-tcp-disponíveis-em-testes)
+    - [4.25 `DataSize` — Representação de Tamanhos de Dados](#425-datasize--representação-de-tamanhos-de-dados)
+    - [4.26 Resumo das Classes Utilitárias](#426-resumo-das-classes-utilitárias)
 
 ---
 
@@ -2877,6 +2904,1230 @@ public class RequestContext {
 | Evitar self-invocation para métodos `@Transactional` | Proxy bypassa `@Transactional` em chamadas internas |
 | `@Validated` para invariantes de domínio | Contratos válidos independente do chamador |
 
+---
 
+## 4. Classes Utilitárias do Spring
+
+O Spring Framework disponibiliza um conjunto de classes utilitárias no pacote
+`org.springframework.util` (e subpacotes) que cobrem necessidades comuns de
+desenvolvimento — validação de parâmetros, manipulação de strings, coleções,
+reflexão, I/O e medição de desempenho. Como essas classes fazem parte do
+`spring-core` (dependência transitiva de todo projeto Spring Boot), estão sempre
+disponíveis sem dependências adicionais.
+
+> **Quando usar:** prefira as classes abaixo em vez de reimplementar lógica
+> equivalente com Apache Commons, Guava ou código manual — menos dependências,
+> menos código, comportamento consistente com o ecossistema Spring.
+
+---
+
+### 4.1 `StringUtils` — Validação e Manipulação de Strings
+
+`org.springframework.util.StringUtils` oferece operações null-safe para strings,
+mais robustas que `String.isEmpty()` pois tratam espaços em branco corretamente.
+
+```java
+import org.springframework.util.StringUtils;
+
+// ─── Verificação de conteúdo ──────────────────────────────────────────────────
+StringUtils.hasText(null)    // false — null
+StringUtils.hasText("")      // false — string vazia
+StringUtils.hasText("  ")    // false — só espaços em branco
+StringUtils.hasText("João")  // true
+
+StringUtils.hasLength(null)  // false — null
+StringUtils.hasLength("")    // false — string vazia
+StringUtils.hasLength(" ")   // true — tem comprimento (não verifica whitespace)
+
+// ─── Manipulação ──────────────────────────────────────────────────────────────
+StringUtils.trimAllWhitespace("  Spring  Boot  ") // "SpringBoot"
+StringUtils.capitalize("spring")                  // "Spring"
+StringUtils.uncapitalize("Spring")               // "spring"
+StringUtils.delete("Hello World", "World")        // "Hello "
+StringUtils.replace("foo bar", "bar", "baz")      // "foo baz"
+
+// ─── Arquivos e caminhos ──────────────────────────────────────────────────────
+StringUtils.getFilename("src/main/resources/app.yml")     // "app.yml"
+StringUtils.getFilenameExtension("app.yml")               // "yml"
+StringUtils.stripFilenameExtension("app.yml")             // "app"
+StringUtils.cleanPath("src/../resources/./app.yml")       // "resources/app.yml"
+
+// ─── Divisão e junção ─────────────────────────────────────────────────────────
+// tokenizeToStringArray: faz trim e ignora tokens vazios automaticamente
+String[] partes = StringUtils.tokenizeToStringArray("a, b, ,c", ",", true, true);
+// ["a", "b", "c"]
+
+String csv = StringUtils.arrayToCommaDelimitedString(new String[]{"a", "b", "c"});
+// "a,b,c"
+
+// ─── Uso em validação de serviço ──────────────────────────────────────────────
+@Service
+public class ClienteService {
+    public ClienteResponse criar(ClienteRequest request) {
+        if (!StringUtils.hasText(request.nome())) {
+            throw new NegocioException("Nome é obrigatório");
+        }
+        // ...
+    }
+}
+```
+
+---
+
+### 4.2 `Assert` — Pré-condições e Invariantes
+
+`org.springframework.util.Assert` valida argumentos e invariantes de domínio.
+Lança `IllegalArgumentException` (para parâmetros inválidos) ou
+`IllegalStateException` (para estado interno inconsistente) ao falhar.
+
+```java
+import org.springframework.util.Assert;
+
+// ─── Validação de argumentos ──────────────────────────────────────────────────
+Assert.notNull(pedido, "Pedido não pode ser nulo");
+Assert.hasText(nome, "Nome é obrigatório");
+Assert.isTrue(valor > 0, "Valor deve ser positivo");
+Assert.notEmpty(itens, "Pedido deve ter ao menos um item");
+Assert.isNull(id, "ID deve ser nulo para criação");
+
+// ─── Com mensagem via Supplier (lazy — evita concatenação desnecessária) ──────
+Assert.notNull(pedido, () -> "Pedido " + pedidoId + " não encontrado");
+
+// ─── Estado interno — lança IllegalStateException ────────────────────────────
+Assert.state(conexao.isOpen(), "Conexão deve estar aberta");
+
+// ─── Uso típico no topo de um método de serviço ───────────────────────────────
+@Service
+public class PedidoService {
+
+    @Transactional
+    public PedidoResponse criar(PedidoRequest request) {
+        Assert.notNull(request, "Request não pode ser nulo");
+        Assert.notEmpty(request.itens(), "Pedido deve ter ao menos um item");
+        Assert.isTrue(
+            request.itens().stream().allMatch(i -> i.quantidade() > 0),
+            "Quantidade de todos os itens deve ser positiva"
+        );
+        // ...
+    }
+}
+```
+
+> **`Assert` vs Bean Validation:** use Bean Validation (`@NotNull`, `@Size`) para
+> validar entrada de usuário na camada de controle. Use `Assert` para proteger
+> invariantes dentro do domínio — pré-condições que nunca deveriam ser violadas
+> por código correto.
+
+---
+
+### 4.3 `CollectionUtils` — Operações Null-Safe em Coleções
+
+`org.springframework.util.CollectionUtils` oferece verificações e transformações
+de coleções que funcionam corretamente com `null`, sem lançar `NullPointerException`.
+
+```java
+import org.springframework.util.CollectionUtils;
+
+// ─── Verificação null-safe ────────────────────────────────────────────────────
+CollectionUtils.isEmpty(null)           // true
+CollectionUtils.isEmpty(List.of())      // true
+CollectionUtils.isEmpty(List.of("a"))   // false
+
+// ─── Acesso a elementos ───────────────────────────────────────────────────────
+CollectionUtils.firstElement(List.of("a", "b", "c"))   // "a"
+CollectionUtils.lastElement(List.of("a", "b", "c"))    // "c"
+CollectionUtils.firstElement(Collections.emptyList())  // null (sem exceção)
+
+// ─── Verificação de intersecção ───────────────────────────────────────────────
+List<String> permissoes  = List.of("ADMIN", "USER");
+List<String> necessarias = List.of("ADMIN");
+CollectionUtils.containsAny(permissoes, necessarias)   // true
+
+// ─── Busca de primeiro elemento comum ─────────────────────────────────────────
+String match = CollectionUtils.findFirstMatch(permissoes, necessarias); // "ADMIN"
+
+// ─── Conversão array → coleção existente ─────────────────────────────────────
+List<String> destino = new ArrayList<>();
+CollectionUtils.mergeArrayIntoCollection(new String[]{"x", "y"}, destino);
+
+// ─── Uso em serviço ───────────────────────────────────────────────────────────
+public List<ProdutoResponse> buscarPorIds(List<Long> ids) {
+    if (CollectionUtils.isEmpty(ids)) return List.of();
+    return produtoRepository.findAllById(ids)
+            .stream().map(ProdutoResponse::from).toList();
+}
+```
+
+---
+
+### 4.4 `ObjectUtils` — Operações Null-Safe em Objetos
+
+`org.springframework.util.ObjectUtils` oferece métodos null-safe para operações
+que normalmente lançariam `NullPointerException`, incluindo suporte a arrays.
+
+```java
+import org.springframework.util.ObjectUtils;
+
+// ─── Verificação de vazio (funciona para null, strings, arrays e coleções) ─────
+ObjectUtils.isEmpty(null)              // true
+ObjectUtils.isEmpty("")                // true
+ObjectUtils.isEmpty(new int[]{})       // true
+ObjectUtils.isEmpty(List.of())         // true
+ObjectUtils.isEmpty("texto")           // false
+ObjectUtils.isEmpty(new int[]{1, 2})  // false
+
+// ─── Comparação null-safe ─────────────────────────────────────────────────────
+ObjectUtils.nullSafeEquals(null, null) // true
+ObjectUtils.nullSafeEquals("a", null)  // false
+ObjectUtils.nullSafeEquals(null, "a")  // false
+ObjectUtils.nullSafeEquals("a", "a")   // true
+
+// ─── toString null-safe ───────────────────────────────────────────────────────
+ObjectUtils.nullSafeToString(null)            // "null" (String, não NullPointerException)
+ObjectUtils.nullSafeToString(new int[]{1, 2}) // "{1, 2}"
+
+// ─── Verificação de tipo ──────────────────────────────────────────────────────
+ObjectUtils.isArray(new String[]{"a"})        // true
+ObjectUtils.isArray(List.of("a"))             // false
+
+// ─── Identificar se é um tipo simples (primitivo, String, Number, Date…) ──────
+ObjectUtils.isSimpleValueType(String.class)   // true
+ObjectUtils.isSimpleValueType(Long.class)     // true
+ObjectUtils.isSimpleValueType(Produto.class)  // false
+```
+
+---
+
+### 4.5 `ClassUtils` — Introspecção de Classes
+
+`org.springframework.util.ClassUtils` facilita operações dinâmicas de carregamento
+e introspecção de classes, úteis em código genérico e configurações condicionais.
+
+```java
+import org.springframework.util.ClassUtils;
+
+// ─── Verificar se uma classe está disponível no classpath ─────────────────────
+if (ClassUtils.isPresent("com.fasterxml.jackson.databind.ObjectMapper", null)) {
+    // Jackson disponível — configurar serialização JSON
+}
+
+// ─── Carregar classe pelo nome ────────────────────────────────────────────────
+Class<?> clazz = ClassUtils.forName("com.example.Produto", null);
+
+// ─── Obter nome curto (sem pacote) ────────────────────────────────────────────
+ClassUtils.getShortName(ProdutoService.class)          // "ProdutoService"
+ClassUtils.getShortName("com.example.ProdutoService")  // "ProdutoService"
+
+// ─── Identificar tipos ────────────────────────────────────────────────────────
+ClassUtils.isPrimitiveOrWrapper(int.class)      // true
+ClassUtils.isPrimitiveOrWrapper(Integer.class)  // true
+ClassUtils.isPrimitiveOrWrapper(String.class)   // false
+
+ClassUtils.isPrimitiveArray(int[].class)                        // true
+ClassUtils.isAssignable(Number.class, Integer.class)            // true
+
+// ─── ClassLoader padrão da aplicação ─────────────────────────────────────────
+ClassLoader loader = ClassUtils.getDefaultClassLoader();
+```
+
+---
+
+### 4.6 `BeanUtils` — Cópia de Propriedades entre Objetos
+
+`org.springframework.beans.BeanUtils` copia propriedades entre objetos por
+reflexão, usando convenção JavaBeans (getters/setters). Útil para mapeamento
+simples DTO ↔ entidade quando MapStruct seria excessivo.
+
+```java
+import org.springframework.beans.BeanUtils;
+
+// ─── Cópia simples — copia propriedades com mesmo nome e tipo ─────────────────
+ProdutoRequest request = new ProdutoRequest("Caneta", new BigDecimal("2.50"));
+Produto produto = new Produto();
+BeanUtils.copyProperties(request, produto);
+// produto.nome = "Caneta", produto.preco = 2.50
+
+// ─── Cópia ignorando campos específicos ───────────────────────────────────────
+// Útil em PATCH: preserva campos não enviados pelo cliente
+BeanUtils.copyProperties(request, produto, "id", "criadoEm");
+
+// ─── Instanciar classe com construtor padrão ──────────────────────────────────
+Produto novoProduto = BeanUtils.instantiateClass(Produto.class);
+
+// ─── Obter PropertyDescriptors (para iterar propriedades) ────────────────────
+PropertyDescriptor[] props = BeanUtils.getPropertyDescriptors(Produto.class);
+for (PropertyDescriptor pd : props) {
+    System.out.println(pd.getName() + " : " + pd.getPropertyType().getSimpleName());
+}
+```
+
+> **Limitações de `BeanUtils.copyProperties`:**
+> - Copia apenas propriedades com nome **e tipo** idênticos entre origem e destino.
+> - Não realiza deep copy de objetos aninhados.
+> - Para mapeamentos complexos (tipos diferentes, transformações, aninhamentos),
+>   prefira **MapStruct** (seção 3.3) — type-safe e sem overhead de reflexão em runtime.
+
+---
+
+### 4.7 `ReflectionUtils` — Reflexão Sem Checked Exceptions
+
+`org.springframework.util.ReflectionUtils` simplifica a API de reflexão do Java,
+eliminando o tratamento verboso de checked exceptions (`NoSuchFieldException`,
+`IllegalAccessException`, etc.).
+
+```java
+import org.springframework.util.ReflectionUtils;
+
+// ─── Acesso a campos (incluindo privados) ─────────────────────────────────────
+Field campo = ReflectionUtils.findField(Produto.class, "nome");
+ReflectionUtils.makeAccessible(campo);                     // torna acessível
+Object valor = ReflectionUtils.getField(campo, produto);   // lê o valor
+ReflectionUtils.setField(campo, produto, "Novo Nome");     // escreve o valor
+
+// ─── Invocação de métodos ─────────────────────────────────────────────────────
+Method metodo = ReflectionUtils.findMethod(
+    Produto.class, "calcularDesconto", BigDecimal.class);
+ReflectionUtils.makeAccessible(metodo);
+Object resultado = ReflectionUtils.invokeMethod(metodo, produto, new BigDecimal("0.1"));
+
+// ─── Iteração sobre campos (percorre também superclasses) ────────────────────
+ReflectionUtils.doWithFields(Produto.class, field -> {
+    ReflectionUtils.makeAccessible(field);
+    System.out.println(field.getName() + " = " + field.get(produto));
+});
+
+// ─── Iteração sobre métodos com filtro ───────────────────────────────────────
+ReflectionUtils.doWithMethods(Produto.class,
+    method -> System.out.println(method.getName()),
+    method -> method.getParameterCount() == 0 && Modifier.isPublic(method.getModifiers()));
+```
+
+> **Quando usar `ReflectionUtils`:** em código de infraestrutura, serializers,
+> plugins ou testes. Em código de negócio, reflexão geralmente indica design
+> problemático — prefira polimorfismo ou interfaces.
+
+---
+
+### 4.8 `StopWatch` — Medição de Desempenho
+
+`org.springframework.util.StopWatch` mede o tempo de execução de múltiplas tarefas
+em sequência, útil para profiling rápido e logs de diagnóstico sem dependência de
+biblioteca externa.
+
+```java
+import org.springframework.util.StopWatch;
+
+StopWatch sw = new StopWatch("Importação de Produtos");
+
+sw.start("Leitura do CSV");
+var linhas = lerCsv(arquivo);
+sw.stop();
+
+sw.start("Validação");
+var validos = validar(linhas);
+sw.stop();
+
+sw.start("Persistência");
+produtoRepository.saveAll(validos);
+sw.stop();
+
+// ─── Resumo formatado ─────────────────────────────────────────────────────────
+log.info(sw.prettyPrint());
+// StopWatch 'Importação de Produtos': 1,234 ms
+// ----------------------------------------
+// ms     %     Task name
+// ----------------------------------------
+// 00045  04%   Leitura do CSV
+// 00089  07%   Validação
+// 01100  89%   Persistência
+
+log.info("Total: {} ms", sw.getTotalTimeMillis());
+log.info("Última tarefa: {} ms", sw.getLastTaskTimeMillis());
+```
+
+---
+
+### 4.9 `AntPathMatcher` — Correspondência de Padrões de Caminho
+
+`org.springframework.util.AntPathMatcher` implementa a notação Ant para matching
+de caminhos — a mesma usada internamente pelo Spring MVC e Spring Security para
+mapeamento de rotas.
+
+```java
+import org.springframework.util.AntPathMatcher;
+
+AntPathMatcher matcher = new AntPathMatcher();
+
+// ─── Símbolos da notação Ant ──────────────────────────────────────────────────
+// ?  → qualquer caractere único
+// *  → qualquer sequência dentro de um segmento (sem /)
+// ** → qualquer sequência de segmentos (zero ou mais /)
+
+matcher.match("/api/produtos/*",   "/api/produtos/42")         // true
+matcher.match("/api/produtos/**",  "/api/produtos/42/itens")   // true
+matcher.match("/api/*/itens",      "/api/pedidos/itens")       // true
+matcher.match("/api/?rodutos",     "/api/produtos")            // true
+
+// ─── Extração de variáveis de template ───────────────────────────────────────
+Map<String, String> vars = matcher.extractUriTemplateVariables(
+    "/api/{recurso}/{id}", "/api/produtos/42");
+// {"recurso": "produtos", "id": "42"}
+
+// ─── Verificar se string é um padrão ─────────────────────────────────────────
+matcher.isPattern("/api/produtos/*")   // true
+matcher.isPattern("/api/produtos/42")  // false
+
+// ─── Uso em filtros de autorização customizados ───────────────────────────────
+List<String> rotasPublicas = List.of("/api/auth/**", "/actuator/health");
+boolean isPublica = rotasPublicas.stream()
+        .anyMatch(padrao -> matcher.match(padrao, request.getRequestURI()));
+```
+
+---
+
+### 4.10 `FileCopyUtils` — Operações de I/O com Cópia Automática
+
+`org.springframework.util.FileCopyUtils` lida com leitura e escrita de arquivos e
+streams, garantindo o fechamento automático dos recursos sem necessidade de
+`try-with-resources` manual.
+
+```java
+import org.springframework.util.FileCopyUtils;
+
+// ─── Ler arquivo como bytes ───────────────────────────────────────────────────
+byte[] bytes = FileCopyUtils.copyToByteArray(new File("dados.csv"));
+
+// ─── Ler InputStream como bytes (fecha o stream ao final) ────────────────────
+byte[] bytes = FileCopyUtils.copyToByteArray(inputStream);
+
+// ─── Ler Reader como String ───────────────────────────────────────────────────
+String conteudo = FileCopyUtils.copyToString(
+        new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+
+// ─── Copiar entre streams ─────────────────────────────────────────────────────
+int bytesCopiados = FileCopyUtils.copy(inputStream, outputStream);
+
+// ─── Copiar bytes para arquivo ────────────────────────────────────────────────
+FileCopyUtils.copy(bytes, new File("saida.csv"));
+
+// ─── Uso em download de arquivo em controller ─────────────────────────────────
+@GetMapping("/relatorios/{id}/download")
+public ResponseEntity<byte[]> download(@PathVariable Long id) throws IOException {
+    var arquivo = relatorioService.gerarArquivo(id);
+    byte[] conteudo = FileCopyUtils.copyToByteArray(arquivo);
+    return ResponseEntity.ok()
+            .header(HttpHeaders.CONTENT_DISPOSITION,
+                    "attachment; filename=\"relatorio-" + id + ".csv\"")
+            .contentType(MediaType.TEXT_PLAIN)
+            .body(conteudo);
+}
+```
+
+---
+
+---
+
+### 4.11 `MultiValueMap` e `LinkedMultiValueMap` — Mapas com Múltiplos Valores por Chave
+
+`org.springframework.util.MultiValueMap<K,V>` estende `Map<K, List<V>>` e permite
+que uma mesma chave tenha múltiplos valores associados — o mesmo modelo dos
+parâmetros de query HTTP, headers e dados de formulário. A implementação padrão é
+`LinkedMultiValueMap`, que preserva a ordem de inserção.
+
+```java
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+
+// ─── Criação e adição de valores ──────────────────────────────────────────────
+MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+params.add("cor", "vermelho");
+params.add("cor", "azul");           // mesma chave, novo valor
+params.add("cor", "verde");
+params.add("tamanho", "M");
+
+// ─── Leitura ──────────────────────────────────────────────────────────────────
+String primeira = params.getFirst("cor");      // "vermelho"
+List<String> todas = params.get("cor");        // ["vermelho", "azul", "verde"]
+
+// ─── set() substitui todos os valores da chave ────────────────────────────────
+params.set("cor", "preto");                    // ["preto"] — descarta anteriores
+
+// ─── addAll() adiciona uma lista inteira ──────────────────────────────────────
+params.addAll("tamanho", List.of("G", "GG"));
+
+// ─── Converter para Map<K, V> com apenas o primeiro valor de cada chave ───────
+Map<String, String> simples = params.toSingleValueMap();   // cópia
+Map<String, String> visao   = params.asSingleValueMap();   // visão (live)
+
+// ─── Uso no RestClient / WebClient ───────────────────────────────────────────
+MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
+queryParams.add("status", "ATIVO");
+queryParams.add("status", "PENDENTE");
+
+String uri = UriComponentsBuilder.fromPath("/api/pedidos")
+        .queryParams(queryParams)
+        .build().toUriString();
+// /api/pedidos?status=ATIVO&status=PENDENTE
+
+// ─── Uso em envio de formulário (application/x-www-form-urlencoded) ───────────
+MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
+formData.add("username", "joao");
+formData.add("roles", "USER");
+formData.add("roles", "ADMIN");
+
+restClient.post().uri("/login")
+        .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+        .body(formData)
+        .retrieve().toBodilessEntity();
+```
+
+---
+
+### 4.12 `LinkedCaseInsensitiveMap` — Mapa com Chaves Case-Insensitive
+
+`org.springframework.util.LinkedCaseInsensitiveMap<V>` estende `LinkedHashMap`
+para oferecer busca, verificação e remoção de chaves sem distinção de maiúsculas/
+minúsculas, preservando a ordem de inserção e o case original das chaves.
+Usado internamente pelo Spring nos `HttpHeaders`.
+
+```java
+import org.springframework.util.LinkedCaseInsensitiveMap;
+
+// ─── Criação ──────────────────────────────────────────────────────────────────
+LinkedCaseInsensitiveMap<String> headers = new LinkedCaseInsensitiveMap<>();
+
+// ─── Inserção com case variado ────────────────────────────────────────────────
+headers.put("Content-Type",   "application/json");
+headers.put("AUTHORIZATION",  "Bearer token123");
+headers.put("accept-language","pt-BR");
+
+// ─── Busca case-insensitive ───────────────────────────────────────────────────
+headers.get("content-type")    // "application/json"
+headers.get("Authorization")   // "Bearer token123"
+headers.get("Accept-Language") // "pt-BR"
+
+// ─── containsKey também é case-insensitive ────────────────────────────────────
+headers.containsKey("CONTENT-TYPE")   // true
+headers.containsKey("authorization")  // true
+
+// ─── keySet() preserva o case original ───────────────────────────────────────
+headers.keySet().forEach(System.out::println);
+// Content-Type
+// AUTHORIZATION
+// accept-language
+
+// ─── Com Locale específico (importante para idiomas com regras de case especiais) ─
+var mapa = new LinkedCaseInsensitiveMap<String>(16, Locale.ROOT);
+mapa.put("İstanbul", "Turquia");     // case seguro independente de Locale
+```
+
+---
+
+### 4.13 `DigestUtils` — Cálculo de Digests MD5
+
+`org.springframework.util.DigestUtils` fornece métodos estáticos para calcular
+digests MD5 de bytes ou streams. Útil para gerar checksums, ETags ou fingerprints
+de conteúdo.
+
+> **Atenção:** MD5 não é adequado para hashing de senhas (use BCrypt/Argon2) nem
+> para verificação de integridade contra adversários (use SHA-256+). Use MD5
+> apenas para checksums não-criptográficos (cache, ETag, detecção de duplicatas).
+
+```java
+import org.springframework.util.DigestUtils;
+
+// ─── Hash como array de bytes ─────────────────────────────────────────────────
+byte[] hash = DigestUtils.md5Digest("Spring Boot".getBytes(StandardCharsets.UTF_8));
+
+// ─── Hash como String hexadecimal ────────────────────────────────────────────
+String hex = DigestUtils.md5DigestAsHex("Spring Boot".getBytes(StandardCharsets.UTF_8));
+// "f2b8e92bc0a0de3c40fbb38d30d3b087"
+
+// ─── Hash de InputStream (stream NÃO é fechado automaticamente) ──────────────
+try (var is = new FileInputStream("arquivo.bin")) {
+    String hexHash = DigestUtils.md5DigestAsHex(is);
+}
+
+// ─── Append em StringBuilder ──────────────────────────────────────────────────
+var sb = new StringBuilder("ETag: \"");
+DigestUtils.appendMd5DigestAsHex("conteudo".getBytes(), sb);
+sb.append("\"");
+// ETag: "9a0364b9e99bb480dd25e1f0284c8555"
+
+// ─── Geração de ETag em controller ───────────────────────────────────────────
+@GetMapping("/produtos/{id}")
+public ResponseEntity<ProdutoResponse> buscar(@PathVariable Long id) {
+    var produto = produtoService.buscarPorId(id);
+    String etag = "\"" + DigestUtils.md5DigestAsHex(
+            produto.toString().getBytes(StandardCharsets.UTF_8)) + "\"";
+    return ResponseEntity.ok().eTag(etag).body(produto);
+}
+```
+
+---
+
+### 4.14 `SerializationUtils` — Serialização e Clone de Objetos
+
+`org.springframework.util.SerializationUtils` oferece serialização Java padrão e
+clonagem profunda de objetos `Serializable`.
+
+> **Aviso de segurança:** `deserialize()` foi **depreciado no Spring 6.0** por
+> vulnerabilidade de Remote Code Execution (RCE) ao desserializar dados de fontes
+> não confiáveis. Prefira JSON/XML para persistência e transferência de dados.
+> O método `clone()` (adicionado no Spring 6.0) é seguro pois opera sobre dados
+> produzidos pelo próprio processo.
+
+```java
+import org.springframework.util.SerializationUtils;
+
+// ─── Serializar objeto em bytes ───────────────────────────────────────────────
+Produto produto = new Produto("Caneta", new BigDecimal("2.50"));
+byte[] bytes = SerializationUtils.serialize(produto);   // Produto deve implementar Serializable
+
+// ─── Clone profundo via serialização (Spring 6.0+) ───────────────────────────
+// Cria uma cópia independente do objeto — todos os objetos aninhados são copiados
+Produto copia = SerializationUtils.clone(produto);
+copia.setNome("Lápis");       // não afeta o original
+
+// ─── Uso típico: cópia de configuração para evitar mutação compartilhada ──────
+@Service
+public class ConfigService {
+    private final AppConfig config;
+
+    public AppConfig getConfigSnapshot() {
+        // Retorna cópia para que chamadores não alterem o estado interno
+        return SerializationUtils.clone(config);
+    }
+}
+```
+
+---
+
+### 4.15 `MethodInvoker` — Invocação Declarativa de Métodos
+
+`org.springframework.util.MethodInvoker` invoca métodos estáticos ou de instância
+de forma programática e declarativa, com resolução de sobrecarga baseada nos
+argumentos fornecidos.
+
+```java
+import org.springframework.util.MethodInvoker;
+
+// ─── Método estático ──────────────────────────────────────────────────────────
+MethodInvoker invoker = new MethodInvoker();
+invoker.setTargetClass(Math.class);
+invoker.setTargetMethod("max");
+invoker.setArguments(5, 10);
+invoker.prepare();
+int resultado = (int) invoker.invoke();   // 10
+
+// ─── Método de instância ──────────────────────────────────────────────────────
+MethodInvoker invoker2 = new MethodInvoker();
+invoker2.setTargetObject(produtoService);
+invoker2.setTargetMethod("buscarPorId");
+invoker2.setArguments(42L);
+invoker2.prepare();
+ProdutoResponse produto = (ProdutoResponse) invoker2.invoke();
+
+// ─── Forma concisa para estático (nome completo com classe) ──────────────────
+MethodInvoker invoker3 = new MethodInvoker();
+invoker3.setStaticMethod("java.lang.Integer.parseInt");
+invoker3.setArguments("42");
+invoker3.prepare();
+int valor = (int) invoker3.invoke();   // 42
+
+// ─── Invoke pode ser chamado múltiplas vezes após prepare() ──────────────────
+// prepare() é custoso (reflexão); invoke() é barato.
+// Crie um invoker por método; reutilize invoke() para chamadas repetidas.
+```
+
+---
+
+### 4.16 `PathMatcher` e `RouteMatcher` — Interfaces de Correspondência
+
+O Spring define duas interfaces complementares para correspondência de caminhos:
+
+- **`PathMatcher`** (`org.springframework.util`) — trabalha diretamente com `String`;
+  implementação padrão: `AntPathMatcher` (seção 4.9).
+- **`RouteMatcher`** (`org.springframework.util`) — trabalha com objetos `Route`
+  pré-analisados, mais eficiente quando um padrão é comparado repetidamente contra
+  muitas rotas. Implementação padrão: `SimpleRouteMatcher`.
+
+```java
+import org.springframework.util.PathMatcher;
+import org.springframework.util.AntPathMatcher;
+import org.springframework.util.RouteMatcher;
+import org.springframework.util.SimpleRouteMatcher;
+
+// ─── PathMatcher — uso genérico baseado em String ────────────────────────────
+PathMatcher pathMatcher = new AntPathMatcher();
+pathMatcher.match("/api/**", "/api/produtos/42")          // true
+pathMatcher.isPattern("/api/**")                          // true
+pathMatcher.isPattern("/api/produtos")                    // false
+pathMatcher.combine("/api", "/produtos/{id}")             // "/api/produtos/{id}"
+
+Map<String, String> vars = pathMatcher.extractUriTemplateVariables(
+    "/api/{recurso}/{id}", "/api/produtos/42");
+// {recurso=produtos, id=42}
+
+// ─── RouteMatcher — eficiente para múltiplas rotas (ex: WebSocket, mensageria) ─
+RouteMatcher routeMatcher = new SimpleRouteMatcher(new AntPathMatcher());
+
+// Parsear a rota uma vez e reutilizar em múltiplas comparações
+RouteMatcher.Route route = routeMatcher.parseRoute("/api/produtos/42");
+
+routeMatcher.match("/api/**",            route)   // true
+routeMatcher.match("/api/produtos/{id}", route)   // true
+routeMatcher.isPattern("/api/**")                 // true
+
+Map<String, String> vars2 = routeMatcher.matchAndExtract("/api/{recurso}/{id}", route);
+// {recurso=produtos, id=42}
+
+// ─── Quando usar cada interface ───────────────────────────────────────────────
+// PathMatcher  → filtros, autorização, operações pontuais de matching
+// RouteMatcher → roteamento de mensagens WebSocket/STOMP, event handlers
+//               (a rota é parseada uma vez; o padrão é checado muitas vezes)
+```
+
+---
+
+### 4.17 `ResourceUtils` — Resolução de Recursos no Classpath e Sistema de Arquivos
+
+`org.springframework.util.ResourceUtils` resolve caminhos de recursos para
+`java.io.File` ou `java.net.URL`, suportando os prefixos `classpath:` e `file:`.
+
+> **Preferência:** para novo código, use a abstração `Resource` do Spring
+> (`ResourceLoader`, `ClassPathResource`, `FileSystemResource`) — mais uniforme
+> e testável. `ResourceUtils` é útil em código utilitário ou de configuração onde
+> a injeção de `ResourceLoader` seria excessiva.
+
+```java
+import org.springframework.util.ResourceUtils;
+
+// ─── Constantes de prefixo ────────────────────────────────────────────────────
+ResourceUtils.CLASSPATH_URL_PREFIX   // "classpath:"
+ResourceUtils.FILE_URL_PREFIX        // "file:"
+
+// ─── Resolver arquivo do classpath ────────────────────────────────────────────
+File props = ResourceUtils.getFile("classpath:application.properties");
+
+// ─── Resolver arquivo do sistema de arquivos ──────────────────────────────────
+File dados = ResourceUtils.getFile("file:/var/data/importacao.csv");
+
+// ─── Verificar tipo de URL ────────────────────────────────────────────────────
+URL url = new URL("jar:file:/app/lib/core.jar!/META-INF/config.xml");
+ResourceUtils.isJarURL(url)          // true
+ResourceUtils.isFileURL(url)         // false
+
+// ─── Extrair URL do JAR a partir de URL de recurso interno ───────────────────
+URL jarFileUrl = ResourceUtils.extractJarFileURL(url);
+// file:/app/lib/core.jar
+
+// ─── Verificar se string é uma URL válida ────────────────────────────────────
+ResourceUtils.isUrl("classpath:config.xml")     // true
+ResourceUtils.isUrl("file:/data/file.txt")      // true
+ResourceUtils.isUrl("/relative/path.txt")       // false
+
+// ─── Converter localização para URI com espaços codificados ──────────────────
+URI uri = ResourceUtils.toURI("file:/caminho com espaços/arquivo.txt");
+// file:/caminho%20com%20espa%C3%A7os/arquivo.txt
+
+// ─── Uso em inicialização de aplicação ───────────────────────────────────────
+@PostConstruct
+public void carregarDados() throws IOException {
+    File csv = ResourceUtils.getFile("classpath:dados/seed.csv");
+    Files.lines(csv.toPath()).forEach(this::processarLinha);
+}
+```
+
+---
+
+### 4.18 `MimeTypeUtils` — Tipos MIME
+
+`org.springframework.util.MimeTypeUtils` fornece constantes para tipos MIME comuns
+e métodos para parsing, validação e ordenação de tipos MIME.
+
+```java
+import org.springframework.util.MimeTypeUtils;
+import org.springframework.util.MimeType;
+
+// ─── Constantes pré-definidas (MimeType e String _VALUE) ─────────────────────
+MimeTypeUtils.APPLICATION_JSON          // application/json
+MimeTypeUtils.APPLICATION_XML           // application/xml
+MimeTypeUtils.APPLICATION_OCTET_STREAM  // application/octet-stream
+MimeTypeUtils.TEXT_HTML                 // text/html
+MimeTypeUtils.TEXT_PLAIN                // text/plain
+MimeTypeUtils.TEXT_XML                  // text/xml
+MimeTypeUtils.IMAGE_PNG                 // image/png
+MimeTypeUtils.IMAGE_JPEG                // image/jpeg
+MimeTypeUtils.ALL                       // */*
+
+// ─── Parsing de um tipo MIME (resultado é cacheado) ──────────────────────────
+MimeType json   = MimeTypeUtils.parseMimeType("application/json");
+MimeType custom = MimeTypeUtils.parseMimeType("application/vnd.empresa+json;version=2");
+MimeType comCharset = MimeTypeUtils.parseMimeType("text/html;charset=UTF-8");
+// Lança InvalidMimeTypeException se a string for inválida
+
+// ─── Parsing de lista separada por vírgula ────────────────────────────────────
+List<MimeType> tipos = MimeTypeUtils.parseMimeTypes(
+    "application/json, text/html;q=0.9, */*;q=0.8");
+
+// ─── Tokenizar (respeita parâmetros entre aspas) ─────────────────────────────
+List<String> tokens = MimeTypeUtils.tokenize(
+    "text/html;charset=UTF-8, application/json");
+// ["text/html;charset=UTF-8", "application/json"]
+
+// ─── Ordenar por especificidade (RFC 7231) ────────────────────────────────────
+List<MimeType> accept = MimeTypeUtils.parseMimeTypes("*/*, text/*, text/html");
+MimeTypeUtils.sortBySpecificity(accept);
+// [text/html, text/*, */*]  — mais específico primeiro
+
+// ─── toString de coleção ─────────────────────────────────────────────────────
+String header = MimeTypeUtils.toString(
+    List.of(MimeTypeUtils.APPLICATION_JSON, MimeTypeUtils.TEXT_HTML));
+// "application/json, text/html"
+
+// ─── Gerar boundary para requisições multipart ───────────────────────────────
+String boundary = MimeTypeUtils.generateMultipartBoundaryString();
+// Ex: "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+```
+
+---
+
+### 4.19 `NumberUtils` — Conversão e Parsing de Números
+
+`org.springframework.util.NumberUtils` converte entre tipos numéricos e faz parse
+de strings para qualquer subtipo de `Number` do JDK.
+
+```java
+import org.springframework.util.NumberUtils;
+
+// ─── Tipos suportados ─────────────────────────────────────────────────────────
+// Byte, Short, Integer, Long, BigInteger, Float, Double, BigDecimal
+
+// ─── Converter entre tipos numéricos ─────────────────────────────────────────
+Integer intVal = NumberUtils.convertNumberToTargetClass(100L, Integer.class);
+BigDecimal bd  = NumberUtils.convertNumberToTargetClass(42, BigDecimal.class);
+// Lança IllegalArgumentException se o tipo alvo não for suportado
+
+// ─── Parse de String (decimal) ────────────────────────────────────────────────
+Integer n1 = NumberUtils.parseNumber("123", Integer.class);
+Double  n2 = NumberUtils.parseNumber("  45.67  ", Double.class);  // trim automático
+Long    n3 = NumberUtils.parseNumber("9876543210", Long.class);
+BigDecimal n4 = NumberUtils.parseNumber("123.456789", BigDecimal.class);
+
+// ─── Parse hexadecimal (prefixos 0x, 0X ou #) ────────────────────────────────
+Integer hex = NumberUtils.parseNumber("0x1F", Integer.class);  // 31
+Integer hex2 = NumberUtils.parseNumber("#FF", Integer.class);  // 255
+
+// ─── Parse com NumberFormat (locale-aware) ────────────────────────────────────
+// Útil para strings numéricas em formatos locais (vírgula como decimal, etc.)
+NumberFormat nf = NumberFormat.getInstance(Locale.GERMAN);
+Double german = NumberUtils.parseNumber("1.234,56", Double.class, nf);
+// 1234.56
+
+NumberFormat ptBr = NumberFormat.getInstance(new Locale("pt", "BR"));
+Double brl = NumberUtils.parseNumber("1.234,56", Double.class, ptBr);
+// 1234.56
+```
+
+---
+
+### 4.20 `ConcurrentReferenceHashMap` — Cache Thread-Safe com Referências Fracas/Suaves
+
+`org.springframework.util.ConcurrentReferenceHashMap<K,V>` é uma variante
+thread-safe de `ConcurrentHashMap` que utiliza **referências soft ou weak** para
+chaves e/ou valores, permitindo que o garbage collector recupere memória
+automaticamente sob pressão.
+
+```java
+import org.springframework.util.ConcurrentReferenceHashMap;
+import org.springframework.util.ConcurrentReferenceHashMap.ReferenceType;
+
+// ─── SOFT (padrão) — libera entradas só sob pressão de memória ───────────────
+ConcurrentReferenceHashMap<String, Relatorio> cache =
+        new ConcurrentReferenceHashMap<>();
+
+// ─── WEAK — libera entradas assim que não há mais referências fortes ─────────
+ConcurrentReferenceHashMap<String, Sessao> sessions =
+        new ConcurrentReferenceHashMap<>(16, ReferenceType.WEAK);
+
+// ─── Configuração completa ────────────────────────────────────────────────────
+var map = new ConcurrentReferenceHashMap<String, byte[]>(
+    1024,          // capacidade inicial
+    0.75f,         // load factor
+    16,            // nível de concorrência (segmentos)
+    ReferenceType.SOFT
+);
+
+// ─── API idêntica ao ConcurrentHashMap ───────────────────────────────────────
+map.put("chave", dados);
+byte[] val = map.get("chave");          // pode ser null se o GC coletou a entrada
+map.computeIfAbsent("chave", k -> carregar(k));
+map.putIfAbsent("chave", dados);
+
+// ─── Forçar limpeza de entradas já coletadas pelo GC ─────────────────────────
+map.purgeUnreferencedEntries();
+
+// ─── Diferença entre SOFT e WEAK ─────────────────────────────────────────────
+// SOFT: o GC só coleta quando a JVM está com pouca memória
+//       → ideal para cache de objetos caros de recriar (relatórios, imagens)
+// WEAK: o GC coleta na próxima passagem sem garantias de retenção
+//       → ideal para metadata associado a objetos externos (listeners, wrappers)
+
+// ─── Atenção: get() pode retornar null mesmo após put() ──────────────────────
+// Sempre use computeIfAbsent() para garantir que a entrada existe ao acessar
+```
+
+> **Quando usar:** cache de dados caros de calcular, onde a perda de entradas
+> sob pressão de memória é aceitável. Para cache com política de evicção explícita
+> (TTL, LRU), prefira Caffeine ou Spring Cache com `@Cacheable`.
+
+---
+
+### 4.21 `ExponentialBackOff` e `FixedBackOff` — Estratégias de Retry com Backoff
+
+`org.springframework.util.backoff` define a interface `BackOff` e duas
+implementações para controlar o intervalo entre tentativas de retry.
+
+```java
+import org.springframework.util.backoff.BackOff;
+import org.springframework.util.backoff.BackOffExecution;
+import org.springframework.util.backoff.ExponentialBackOff;
+import org.springframework.util.backoff.FixedBackOff;
+
+// ════════════════════════════════════════════════════════════════════════════════
+// ExponentialBackOff — intervalo cresce exponencialmente a cada tentativa
+// ════════════════════════════════════════════════════════════════════════════════
+ExponentialBackOff expBackOff = new ExponentialBackOff();
+expBackOff.setInitialInterval(1_000);   // 1 s na 1ª tentativa
+expBackOff.setMultiplier(2.0);          // dobra a cada falha: 1s, 2s, 4s, 8s…
+expBackOff.setMaxInterval(30_000);      // teto de 30 s
+expBackOff.setMaxElapsedTime(120_000);  // desiste após 2 min no total
+expBackOff.setMaxAttempts(10);          // ou após 10 tentativas
+
+// Sequência resultante: 1000, 2000, 4000, 8000, 16000, 30000, 30000… (ms)
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FixedBackOff — intervalo constante (mais simples)
+// ════════════════════════════════════════════════════════════════════════════════
+FixedBackOff fixedBackOff = new FixedBackOff(2_000, 3);
+// 2 s entre tentativas, máximo 3 tentativas
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Uso com BackOffExecution — controle manual do loop de retry
+// ════════════════════════════════════════════════════════════════════════════════
+BackOffExecution execution = expBackOff.start();
+
+long waitMs;
+while ((waitMs = execution.nextBackOff()) != BackOffExecution.STOP) {
+    try {
+        chamarApiExterna();
+        return;                          // sucesso — sai do loop
+    } catch (TransientException e) {
+        log.warn("Falha temporária, próxima tentativa em {} ms", waitMs);
+        Thread.sleep(waitMs);
+    }
+}
+throw new ServiceUnavailableException("API indisponível após todas as tentativas");
+
+// ════════════════════════════════════════════════════════════════════════════════
+// Uso com Spring AMQP (RabbitMQ) — configuração de retry listener
+// ════════════════════════════════════════════════════════════════════════════════
+@Bean
+public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+        ConnectionFactory connectionFactory) {
+
+    var factory = new SimpleRabbitListenerContainerFactory();
+    factory.setConnectionFactory(connectionFactory);
+
+    var retryTemplate = new RetryTemplate();
+    retryTemplate.setBackOffPolicy(new ExponentialBackOffPolicy());
+    factory.setRetryTemplate(retryTemplate);
+    return factory;
+}
+```
+
+| Estratégia | Intervalo | Uso típico |
+|---|---|---|
+| `FixedBackOff` | Constante | Retry simples com intervalo previsível |
+| `ExponentialBackOff` | Cresce exponencialmente | APIs externas, filas — evita thundering herd |
+
+---
+
+### 4.22 `IdGenerator` e Implementações — Geração de UUIDs
+
+`org.springframework.util.IdGenerator` é uma interface funcional para geração de
+UUIDs. O Spring fornece três implementações prontas com perfis de desempenho
+diferentes.
+
+```java
+import org.springframework.util.IdGenerator;
+import org.springframework.util.JdkIdGenerator;
+import org.springframework.util.AlternativeJdkIdGenerator;
+import org.springframework.util.SimpleIdGenerator;
+
+// ─── JdkIdGenerator — delega para UUID.randomUUID() (padrão JDK) ─────────────
+// Usa SecureRandom a cada chamada; mais lento sob alta concorrência
+IdGenerator jdk = new JdkIdGenerator();
+UUID id1 = jdk.generateId();
+
+// ─── AlternativeJdkIdGenerator — SecureRandom apenas para seed; Random para geração ─
+// Mais rápido que JdkIdGenerator em cenários de alta concorrência
+IdGenerator alt = new AlternativeJdkIdGenerator();
+UUID id2 = alt.generateId();   // recomendado para produção com alto volume de IDs
+
+// ─── SimpleIdGenerator — UUID sequencial (00000000-0000-0000-0000-000000000001…) ─
+// Determinístico; útil apenas em testes
+IdGenerator simple = new SimpleIdGenerator();
+UUID id3 = simple.generateId();   // 00000000-0000-0000-0000-000000000001
+UUID id4 = simple.generateId();   // 00000000-0000-0000-0000-000000000002
+
+// ─── Injeção via Spring ───────────────────────────────────────────────────────
+@Configuration
+public class IdConfig {
+    @Bean
+    public IdGenerator idGenerator() {
+        return new AlternativeJdkIdGenerator();   // troca para SimpleIdGenerator em testes
+    }
+}
+
+@Service
+public class PedidoService {
+    private final IdGenerator idGenerator;
+
+    public PedidoService(IdGenerator idGenerator) {
+        this.idGenerator = idGenerator;
+    }
+
+    @Transactional
+    public PedidoResponse criar(PedidoRequest request) {
+        var pedido = Pedido.from(request);
+        pedido.setCorrelationId(idGenerator.generateId());
+        return PedidoResponse.from(pedidoRepository.save(pedido));
+    }
+}
+```
+
+| Implementação | Algoritmo | Desempenho | Quando usar |
+|---|---|---|---|
+| `JdkIdGenerator` | `UUID.randomUUID()` | Médio | Uso geral |
+| `AlternativeJdkIdGenerator` | SecureRandom seed + Random | Alto | Alto volume, produção |
+| `SimpleIdGenerator` | Sequencial | Muito alto | Testes unitários |
+
+---
+
+### 4.23 `PropertyPlaceholderHelper` — Resolução de Placeholders em Strings
+
+`org.springframework.util.PropertyPlaceholderHelper` resolve placeholders do tipo
+`${chave}` (ou formato customizado) em strings arbitrárias, similar ao que o Spring
+faz internamente ao processar `@Value` e `application.properties`.
+
+```java
+import org.springframework.util.PropertyPlaceholderHelper;
+
+// ─── Configuração básica ──────────────────────────────────────────────────────
+var helper = new PropertyPlaceholderHelper("${", "}");
+
+// ─── Resolver com Properties ──────────────────────────────────────────────────
+Properties props = new Properties();
+props.setProperty("app.nome",    "SistemaLoja");
+props.setProperty("app.versao",  "2.1.0");
+props.setProperty("app.env",     "producao");
+
+String template = "Bem-vindo ao ${app.nome} v${app.versao} [${app.env}]";
+String resultado = helper.replacePlaceholders(template, props);
+// "Bem-vindo ao SistemaLoja v2.1.0 [producao]"
+
+// ─── Resolver com lambda (PlaceholderResolver) ────────────────────────────────
+String msg = helper.replacePlaceholders(
+    "OS: ${os.name}, Usuário: ${user.name}",
+    System::getProperty   // method reference para System.getProperty(String)
+);
+
+// ─── Com valor padrão (separador :) ──────────────────────────────────────────
+var helperComDefault = new PropertyPlaceholderHelper("${", "}", ":", null, true);
+String porta = helperComDefault.replacePlaceholders(
+    "Porta: ${server.port:8080}", new Properties());
+// "Porta: 8080" (chave ausente usa o default)
+
+// ─── Ignorar placeholders não resolvidos (ignoreUnresolvablePlaceholders=true) ─
+var lenient = new PropertyPlaceholderHelper("${", "}", null, null, true);
+String out = lenient.replacePlaceholders(
+    "Valor: ${definido} e ${nao.definido}", props);
+// "Valor: <valor> e ${nao.definido}"  — placeholder não encontrado é mantido
+
+// ─── Caso de uso: geração de mensagens de notificação com template ─────────────
+@Service
+public class NotificacaoService {
+    private static final PropertyPlaceholderHelper HELPER =
+            new PropertyPlaceholderHelper("${", "}");
+
+    public String renderizar(String template, Map<String, String> dados) {
+        Properties props = new Properties();
+        props.putAll(dados);
+        return HELPER.replacePlaceholders(template, props);
+    }
+}
+// template: "Olá ${nome}, seu pedido #${pedidoId} foi confirmado."
+// dados:    {nome=Maria, pedidoId=1234}
+```
+
+---
+
+### 4.24 `SocketUtils` / `TestSocketUtils` — Portas TCP Disponíveis em Testes
+
+`SocketUtils` foi **removido no Spring 6.0** (depreciado desde 5.3.16).
+O substituto é `TestSocketUtils` em `org.springframework.test.util`, disponível
+no módulo `spring-test`.
+
+> **Aviso:** encontrar uma porta livre e tentar usá-la logo em seguida é inerentemente
+> sujeito a condição de corrida. A abordagem recomendada é deixar o servidor
+> escolher a própria porta (porta 0) e consultar qual porta foi atribuída após
+> a inicialização.
+
+```java
+// ─── TestSocketUtils (substituto, Spring 6.0+) — apenas para testes ──────────
+import org.springframework.test.util.TestSocketUtils;
+
+// Encontra uma porta TCP aleatória disponível no range [1024, 65535]
+int porta = TestSocketUtils.findAvailableTcpPort();
+
+// ─── Abordagem preferida: porta 0 (o SO escolhe) ─────────────────────────────
+// Em testes de integração com Spring Boot, configure porta=0 e leia a porta real:
+
+// application-test.yml
+// server:
+//   port: 0
+
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class IntegracaoTest {
+
+    @LocalServerPort              // injeta a porta atribuída pelo SO
+    private int porta;
+
+    @Test
+    void deveResponder() {
+        RestAssured.given()
+                .baseUri("http://localhost:" + porta)
+                .get("/actuator/health")
+                .then().statusCode(200);
+    }
+}
+
+// ─── Para servidores embutidos (ex: WireMock em testes) ──────────────────────
+WireMockServer wireMock = new WireMockServer(
+    WireMockConfiguration.options().dynamicPort());
+wireMock.start();
+int portaWireMock = wireMock.port();   // consulta após inicializar
+```
+
+---
+
+### 4.25 `DataSize` — Representação de Tamanhos de Dados
+
+`org.springframework.util.unit.DataSize` representa tamanhos de dados de forma
+imutável e type-safe, usando prefixos binários (potências de 2). Integra-se
+diretamente ao sistema de binding de propriedades do Spring Boot.
+
+```java
+import org.springframework.util.unit.DataSize;
+import org.springframework.util.unit.DataUnit;
+
+// ─── Criação via factory methods ─────────────────────────────────────────────
+DataSize cincoMb  = DataSize.ofMegabytes(5);
+DataSize doisGb   = DataSize.ofGigabytes(2);
+DataSize quinzeKb = DataSize.ofKilobytes(15);
+DataSize generico = DataSize.of(512, DataUnit.KILOBYTES);
+
+// ─── Parse de string ──────────────────────────────────────────────────────────
+DataSize s1 = DataSize.parse("10MB");     // 10 megabytes
+DataSize s2 = DataSize.parse("1GB");      // 1 gigabyte
+DataSize s3 = DataSize.parse("2048");     // 2048 bytes (sem unidade = bytes)
+DataSize s4 = DataSize.parse("20", DataUnit.KILOBYTES);  // 20 KB (unidade padrão)
+
+// ─── Conversão entre unidades ─────────────────────────────────────────────────
+DataSize tamanho = DataSize.ofMegabytes(5);
+tamanho.toBytes();       // 5_242_880
+tamanho.toKilobytes();   // 5_120
+tamanho.toMegabytes();   // 5
+tamanho.toGigabytes();   // 0
+
+// ─── Utilitários ──────────────────────────────────────────────────────────────
+tamanho.isNegative()     // false
+tamanho.toString()       // "5MB"
+tamanho.compareTo(DataSize.ofMegabytes(3))  // > 0
+
+// ─── Binding em @ConfigurationProperties ─────────────────────────────────────
+@ConfigurationProperties(prefix = "app.storage")
+public class StorageProperties {
+    private DataSize maxUploadSize    = DataSize.ofMegabytes(10);
+    private DataSize maxCacheSize     = DataSize.ofGigabytes(1);
+    private DataSize chunkSize        = DataSize.ofKilobytes(64);
+
+    // getters / setters
+}
+
+// application.yml:
+// app.storage:
+//   max-upload-size: 50MB
+//   max-cache-size: 4GB
+//   chunk-size: 128KB
+
+// ─── Validação de tamanho de arquivo em serviço ───────────────────────────────
+@Service
+public class UploadService {
+    private final StorageProperties props;
+
+    public void validar(MultipartFile arquivo) {
+        long limiteBytes = props.getMaxUploadSize().toBytes();
+        if (arquivo.getSize() > limiteBytes) {
+            throw new NegocioException(
+                "Arquivo excede o limite de " + props.getMaxUploadSize());
+        }
+    }
+}
+```
+
+| Unidade | Constante `DataUnit` | Bytes equivalentes |
+|---|---|---|
+| Byte | `DataUnit.BYTES` | 1 |
+| Kilobyte | `DataUnit.KILOBYTES` | 1.024 |
+| Megabyte | `DataUnit.MEGABYTES` | 1.048.576 |
+| Gigabyte | `DataUnit.GIGABYTES` | 1.073.741.824 |
+| Terabyte | `DataUnit.TERABYTES` | 1.099.511.627.776 |
+
+---
+
+### 4.26 Resumo das Classes Utilitárias
+
+| Classe | Pacote | Finalidade Principal |
+|---|---|---|
+| `StringUtils` | `org.springframework.util` | Validação e manipulação de strings null-safe |
+| `Assert` | `org.springframework.util` | Pré-condições e invariantes (lança exceção se falhar) |
+| `CollectionUtils` | `org.springframework.util` | Operações null-safe em coleções |
+| `ObjectUtils` | `org.springframework.util` | Operações null-safe em objetos e arrays |
+| `ClassUtils` | `org.springframework.util` | Introspecção e carregamento dinâmico de classes |
+| `BeanUtils` | `org.springframework.beans` | Cópia de propriedades e instanciação de beans |
+| `ReflectionUtils` | `org.springframework.util` | Reflexão sem checked exceptions |
+| `StopWatch` | `org.springframework.util` | Medição de tempo de execução por tarefa |
+| `AntPathMatcher` | `org.springframework.util` | Matching de caminhos com notação Ant |
+| `FileCopyUtils` | `org.springframework.util` | Cópia/leitura de arquivos e streams |
+| `MultiValueMap` / `LinkedMultiValueMap` | `org.springframework.util` | Map com múltiplos valores por chave |
+| `LinkedCaseInsensitiveMap` | `org.springframework.util` | Map String com busca case-insensitive |
+| `DigestUtils` | `org.springframework.util` | Cálculo de hash MD5 (checksum, ETag) |
+| `SerializationUtils` | `org.springframework.util` | Serialização Java e clone profundo |
+| `MethodInvoker` | `org.springframework.util` | Invocação declarativa de métodos por reflexão |
+| `PathMatcher` | `org.springframework.util` | Interface para matching de caminhos (impl: `AntPathMatcher`) |
+| `RouteMatcher` / `SimpleRouteMatcher` | `org.springframework.util` | Matching eficiente de rotas pré-analisadas |
+| `ResourceUtils` | `org.springframework.util` | Resolução de recursos `classpath:` e `file:` |
+| `MimeTypeUtils` | `org.springframework.util` | Constantes e parsing de tipos MIME |
+| `NumberUtils` | `org.springframework.util` | Conversão e parsing de números |
+| `ConcurrentReferenceHashMap` | `org.springframework.util` | Cache thread-safe com referências soft/weak |
+| `ExponentialBackOff` | `org.springframework.util.backoff` | Retry com intervalo crescente exponencialmente |
+| `FixedBackOff` | `org.springframework.util.backoff` | Retry com intervalo fixo |
+| `IdGenerator` / `AlternativeJdkIdGenerator` | `org.springframework.util` | Geração de UUIDs |
+| `PropertyPlaceholderHelper` | `org.springframework.util` | Resolução de placeholders `${chave}` em strings |
+| `TestSocketUtils` | `org.springframework.test.util` | Porta TCP aleatória disponível (somente testes) |
+| `DataSize` | `org.springframework.util.unit` | Representação type-safe de tamanhos de dados |
 
 ---

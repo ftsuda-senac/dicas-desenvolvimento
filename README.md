@@ -50,6 +50,12 @@ Documentação consolidada com apoio de agentes de IA (Claude Code).
 
 ---
 
+## Infraestrutura como Código
+
+* [Terraform.md](Terraform.md) — IaC com Terraform: providers, resources, variables, outputs, data sources, state, módulos, workspaces, remote backend, testes, integração com CI/CD e boas práticas com exemplos na AWS
+
+---
+
 # Dicas e boas práticas de desenvolvimento (legado)
 
 Documentações, tutoriais e dicas gerais
