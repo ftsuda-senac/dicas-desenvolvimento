@@ -80,18 +80,21 @@
     - [15.1 Cursor](#151-cursor)
     - [15.2 Windsurf](#152-windsurf)
     - [15.3 GitHub Copilot Workspace](#153-github-copilot-workspace)
-    - [15.4 Comparativo IDEs com IA](#154-comparativo-ides-com-ia)
+    - [15.4 Antigravity](#154-antigravity)
+    - [15.5 Comparativo IDEs com IA](#155-comparativo-ides-com-ia)
 16. [Gerenciamento de Custo e Uso de Tokens](#16-gerenciamento-de-custo-e-uso-de-tokens)
     - [16.1 Entendendo Tokens e Custo](#161-entendendo-tokens-e-custo)
     - [16.2 Prompt Caching](#162-prompt-caching)
     - [16.3 Escolha de Modelo por Tipo de Tarefa](#163-escolha-de-modelo-por-tipo-de-tarefa)
     - [16.4 Otimizando o CLAUDE.md para Caching](#164-otimizando-o-claudemd-para-caching)
+    - [16.5 Otimização de Custo e Tokens com Google Gemini](#165-otimização-de-custo-e-tokens-com-google-gemini)
 17. [Workflows Multi-Agente](#17-workflows-multi-agente)
     - [17.1 Conceito e Motivação](#171-conceito-e-motivação)
     - [17.2 Padrão ReAct](#172-padrão-react)
     - [17.3 Padrão Plan-and-Execute](#173-padrão-plan-and-execute)
     - [17.4 Subagentes no Claude Code](#174-subagentes-no-claude-code)
     - [17.5 Orquestração com a API Anthropic](#175-orquestração-com-a-api-anthropic)
+    - [17.6 Workflows Multi-agentes usando o Gemini](#176-workflows-multi-agentes-usando-o-gemini)
 18. [IA para Modernização de Código Legado](#18-ia-para-modernização-de-código-legado)
     - [18.1 Estratégia de Abordagem](#181-estratégia-de-abordagem)
     - [18.2 Migrações Java (8 → 21)](#182-migrações-java-8--21)
@@ -690,73 +693,71 @@ de nomenclatura `deveria_{resultado}_quando_{condição}`.
 
 ### 4.1 Visão Geral das Ferramentas Gemini
 
-O ecossistema Gemini para desenvolvedores inclui:
+O ecossistema Gemini para desenvolvedores oferece algumas das janelas de contexto mais amplas do mercado e forte capacidade multimodal nativa. Ele inclui:
 
-| Ferramenta            | Contexto de uso                                |
-|-----------------------|------------------------------------------------|
-| **Gemini CLI**        | Agente agentic no terminal (similar ao Claude Code) |
-| **Gemini Code Assist**| Extensão IDE (VS Code, JetBrains)              |
-| **AI Studio**         | Interface web para experimentação de prompts   |
-| **Vertex AI**         | API enterprise para integração em produtos     |
-| **NotebookLM**        | RAG sobre documentos próprios                  |
+| Ferramenta                 | Contexto de uso                                |
+|----------------------------|------------------------------------------------|
+| **Gemini CLI**             | Agente interativo no terminal (similar ao Claude Code). |
+| **Gemini Code Assist**     | Extensão para IDEs (VS Code, JetBrains, Cloud Workstations). Suporta personalização corporativa. |
+| **Google AI Studio**       | Interface web ideal para experimentação de prompts iterativos, *Context Caching* e ajuste fino (fine-tuning). |
+| **Vertex AI**              | Plataforma enterprise no Google Cloud para integração segura via API. |
+| **NotebookLM / IDX**       | Ferramentas complementares para RAG focado em documentos e IDE web assistido por IA (Project IDX). |
 
-Modelos disponíveis (2025):
+Modelos de destaque:
 
 ```
-gemini-2.5-pro      — máxima capacidade, 1M tokens de contexto
-gemini-2.5-flash    — rápido e econômico, bom custo-benefício
-gemini-2.0-flash    — versão anterior, estável e amplamente disponível
+gemini-3.1-pro      — modelo de fronteira, mais de 2 milhões de tokens, ideal para mapear repositórios massivos.
+gemini-3.1-flash    — extrema velocidade e otimização de custo para tarefas repetitivas.
+gemini-3.0-flash    — versão estável altamente eficiente para autocomplete e interações rápidas.
 ```
 
 ---
 
 ### 4.2 Gemini CLI
 
-O **Gemini CLI** é a interface agentic de linha de comando do Google para o Gemini, lançada em 2025, com suporte nativo a MCP e contexto de 1 milhão de tokens.
+A **Gemini CLI** atua como uma interface de linha de comando voltada a fluxos agentic. Lançada com foco em proporcionar iteração rápida direto do terminal, ela possui suporte a MCP e janelas extensas de contexto.
 
 ```bash
-# Instalar via npm
+# Instalação global via npm
 npm install -g @google/gemini-cli
 
-# Autenticar (Google Account ou API Key)
+# Autenticação (OAuth ou configurando a variável GEMINI_API_KEY)
+export GEMINI_API_KEY="AIzaSy..."
 gemini auth login
 
-# Iniciar em um projeto
+# Iniciar uma sessão interativa no projeto em escopo
 cd meu-projeto
 gemini
-
-# Modo não-interativo
-gemini -p "Liste todos os endpoints REST do projeto"
 ```
 
-**Atalhos e flags úteis:**
+**Atalhos e flags essenciais:**
 
 ```bash
-gemini --model gemini-2.5-pro    # escolher modelo
-gemini --sandbox                  # modo isolado (sem escrita em disco)
-gemini --yolo                     # aprovar todas as ações automaticamente
-gemini --debug                    # logs detalhados de tool calls
+gemini --model gemini-3.1-pro     # Sobrescreve o modelo padrão
+gemini --sandbox                  # Inicia a IA em modo leitura, bloqueando execuções que alteram arquivos
+gemini --yolo                     # Aprovação automática para execução imediata (Vibe Coding extremo)
+gemini --debug                    # Modela os logs contendo chamadas de ferramentas e telemetria
+gemini -p "Explique a pasta src"  # Execução one-shot (não-interativo)
 ```
 
 ---
 
 ### 4.3 Gemini Code Assist (IDE)
 
-**Gemini Code Assist** é a extensão para VS Code e JetBrains, com:
-- Completions inline (como GitHub Copilot)
-- Chat contextual sobre o código aberto
-- Geração de testes
-- Revisão de código em PRs (integração GitHub/GitLab)
-- Contexto de todo o repositório via indexação
+O **Gemini Code Assist** vai muito além do autocomplete convencional. Como extensão integrada para editores como VS Code e IntelliJ, ele oferece:
+- **Completions inline avançados:** Considera o raciocínio local e padrões adotados no projeto.
+- **Chat Contextual e Code Actions:** Comandos como "Gerar Testes", "Explicar" ou "Refatorar" atrelados ao código ativado na janela.
+- **Integração a repositórios externos:** A versão *Enterprise* do Code Assist viabiliza RAG corporativo: ela se conecta a repositórios hospedados no GitHub, GitLab ou Bitbucket para aplicar contexto amplo focado nas regras de negócio subjacentes da empresa, sempre com estrita privacidade.
 
-**Configuração no VS Code (settings.json do editor):**
+**Exemplo de Configuração Ativa (VS Code em `settings.json`):**
 
 ```json
 {
-  "geminicodeassist.project": "meu-projeto-gcp",
+  "geminicodeassist.project": "meu-projeto-gcp-123",
   "geminicodeassist.enableInlineCompletion": true,
   "geminicodeassist.enableCodeActions": true,
-  "geminicodeassist.maxCompletionTokens": 2048
+  "geminicodeassist.maxCompletionTokens": 4096,
+  "geminicodeassist.telemetry": false
 }
 ```
 
@@ -764,48 +765,42 @@ gemini --debug                    # logs detalhados de tool calls
 
 ### 4.4 O Arquivo GEMINI.md
 
-Equivalente ao `CLAUDE.md`, o `GEMINI.md` é carregado automaticamente pelo Gemini CLI no início de cada sessão.
+Equivalente ao `CLAUDE.md`, o `GEMINI.md` é a âncora de *Harness Engineering* da `gemini-cli`. Ao iniciar, ele é alimentado nas **System Instructions**, pautando o jeito de o modelo analisar ou gerar código.
 
 ```markdown
 <!-- GEMINI.md — exemplo para projeto Angular + Spring Boot -->
 # Projeto: Portal do Aluno
 
-## Stack
+## Stack e Ferramentas
 - Backend: Java 21, Spring Boot 3.4, PostgreSQL 16
 - Frontend: Angular 19, TypeScript 5.7, Standalone Components
 - Build: Maven (backend), Angular CLI (frontend)
-- Testes: JUnit 5 + Mockito (backend), Jest + Testing Library (frontend)
 
-## Arquitetura
-- Backend API REST em /api/v1/**
-- Frontend SPA em /
-- JWT stateless (header Authorization: Bearer)
-- CORS configurado para localhost:4200 em dev
+## Arquitetura e Roteamento
+- Backend atua rigidamente como API REST respondendo em /api/v1/**.
+- Frontend Single Page Application consumindo tokens JWT Stateless.
 
-## Regras de código
+## Diretrizes de Código
 ### Backend
-- Controllers finos: apenas validação HTTP, delegam para Service
-- Services: lógica de negócio, transações com @Transactional
-- DTOs: Java Records para imutabilidade
-### Frontend
-- Componentes standalone (não usar NgModules)
-- Signals para estado reativo (@signal, @computed, @effect)
-- HttpClient com Observables + async pipe nos templates
-- Serviços injetáveis com providedIn: 'root'
+- **Controladores Finos:** Devem apenas mapear dados HTTP, encaminhar validações para a camada `@Service`.
+- **Transações controladas:** Somente as implementações de Serviço lidam com transação via `@Transactional`.
+- **DTOs:** Utilizar Java Records sem exceção para prover imutabilidade robusta.
 
-## Comandos úteis
-- Backend: `mvn spring-boot:run`
-- Frontend: `ng serve`
-- Testes backend: `mvn test`
-- Testes frontend: `ng test --watch=false`
-- Build produção: `mvn package -P prod`
+### Frontend
+- **Design de Componentes:** Componentes sempre via formato *Standalone* moderno.
+- **Estado Reativo:** Optar pelo direcionamento Angular Signals (`@signal`, `@computed`, `@effect`) descartando RxJS sempre que não houver assincronia pesada.
+
+## Integrações de Automação
+Comandos centrais que devem obrigatoriamente rodar com sucesso:
+- Backend em fase de Testes: `mvn test && mvn checkstyle:check`
+- Validação de Interface: `ng lint && ng test --no-watch --browsers=ChromeHeadless`
 ```
 
 ---
 
 ### 4.5 MCP no Gemini CLI
 
-O Gemini CLI suporta MCP nativamente via arquivo `~/.gemini/settings.json`:
+Tirando proveito da padronização e arquitetura aberta MCP, o Gemini agiliza requisições a bancos unificados ou ferramentas por meio do arquivo de ajustes `~/.gemini/settings.json`:
 
 ```json
 {
@@ -824,72 +819,83 @@ O Gemini CLI suporta MCP nativamente via arquivo `~/.gemini/settings.json`:
     "postgres": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-postgres",
-               "postgresql://localhost/meubanco"]
+               "postgresql://admin:secret@localhost:5432/meubanco"]
     }
   }
 }
 ```
 
+Disponibilizando esse `settings.json`, permite-se, por exemplo, extrair contexto das _issues_ de um repositório fechado, simplificando revisões baseadas unicamente por ID do ticket.
+
 ---
 
 ### 4.6 Boas Práticas com Gemini
 
-**1. Aproveitar o contexto enorme**
-Com 1M de tokens, o Gemini 2.5 Pro pode processar repositórios maiores inteiros. Mas contexto grande = custo maior e resposta mais lenta. Use com propósito.
+**1. Dominando a Janela de 2 Milhões de Tokens**
+Com 2M de tokens (modelos Pro recentes), passa a ser possível varrer logs gigantes ou toda a topologia de um imenso monólito. Porém, tome cuidado com latência e uso da janela: restrinja a varredura a módulos que justifiquem um contexto total.
 
-**2. Grounding com Google Search**
-O Gemini CLI pode buscar informações atualizadas via Google Search. Útil para:
-- Verificar se uma biblioteca tem vulnerabilidade conhecida
-- Consultar documentação de versões recentes de frameworks
+**2. Context Caching (Cache de Contexto)**
+Ao lidar com repositórios e bases grandes, explore as APIs da Vertex AI ou AI Studio onde há *Context Caching*. Essa técnica armazena "referências de tokens em buffer temporal", reduzindo severamente os custos (frequentemente em 50% ou mais) para as contínuas chamadas subsequentes usando os mesmos arquivos bases de prompt.
+
+**3. Grounding com Google Search**
+Um diferencial das IAs fundamentadas do Google é a capacidade de busca atrelada (*Grounding*).
+Use esse atributo contra alucinações sobre frameworks efêmeros recém-lançados ou modificados:
 ```
-"Verifique a documentação mais recente do Spring Boot 3.4 para configurar
-o novo suporte a Virtual Threads e aplique no nosso projeto"
+"Pesquise as diretrizes documentais oficiais sobre a versão lançada esta 
+semana do framework Next.JS e escreva um docker-compose amarrado a ele."
 ```
 
-**3. Usar o AI Studio para iterar prompts**
-Antes de usar um prompt complexo na CLI, teste-o no Google AI Studio para ajustar o comportamento sem custo de execução.
+**4. Explorar Tarefas Multimodais de Ponta**
+Diferente da simples analítica de código contínuo, nativamente o Gemini mapeia diagramas em rede, áudios explicativos, PDFs técnicos e até mesmo quadros desenhados a mão de uma lousa (*Whiteboarding*).
+```
+[Enviando uma foto ou rascunho anexado]
+"Baseado no fluxo do usuário e tabelas vistas nesta tela do planejamento, construa do zero 
+os models Django refletindo precisamente essa topologia de relacionamentos exposta na imagem."
+```
 
-**4. Gemini para tarefas multimodais**
-Diferente de Claude Code, o Gemini aceita imagens e PDFs diretamente:
-```
-[anexa screenshot do erro]
-"Este é o erro que aparece na tela. Analise e corrija o código responsável."
-```
+**5. Uso de System Instructions e Otimização Customizada**
+Para quem roda IAs fora do CLI, o Google AI Studio permite criar rascunhos de _System Instructions_ perfeitas e gerar _Structured Outputs_ em estrito *schema* JSON de saída na interface base da chamada da API (ótimo em rotinas de scripts próprios).
 
 ---
 
 ### 4.7 Exemplos de Prompts para Gemini
 
-**Análise de repositório completo:**
+**Análise Completa de Dívida Técnica (Explorando o Long Context):**
 ```
-Leia todo o projeto e produza um relatório com:
-1. Diagrama de componentes (texto ASCII)
-2. Principais fluxos de dados identificados
-3. Problemas de arquitetura detectados
-4. Dependências desatualizadas críticas
-5. Estimativa de dívida técnica por módulo
-```
-
-**Migração de versão:**
-```
-O projeto usa Spring Boot 2.7. Analise o pom.xml e todos os arquivos Java e
-produza um plano de migração para Spring Boot 3.4, listando:
-- Mudanças obrigatórias (breaking changes)
-- Dependências a atualizar com versões específicas
-- Código a refatorar (javax → jakarta, etc.)
-- Ordem recomendada de execução das mudanças
-Em seguida, execute as mudanças no código com minha aprovação a cada etapa.
+Este ambiente compõe mais de 50 rotas em microsserviço. Usando todo o mapeamento amplo 
+aqui presente, crie um relatório de dívida técnica destrinchando:
+1. Diagrama ASCII demonstrando o fluxo falho central de integração na transação.
+2. Identificação de gargalos de acoplamento severo.
+3. Dependências presentes no POM/Package que já estão defasadas criticamente perante o CISA.
+4. Estimativa balanceada do peso estrutural se isolarmos o Gateway.
 ```
 
-**Revisão de segurança:**
+**Migração Tecnológica Guiada e Rastreável:**
 ```
-Revise todo o código do módulo de autenticação (src/main/java/**/auth/**) e
-identifique vulnerabilidades de segurança, especialmente:
-- Injeção SQL
-- Problemas de JWT (alg:none, segredo fraco, sem validação de expiração)
-- Senhas hardcoded
-- Logging de dados sensíveis
-Para cada problema encontrado, forneça o código corrigido e a justificativa.
+O projeto atual usa Spring Boot 2.7. Explore meticulosamente a profundidade da codebase.
+Proponha um plano formal atualizado em direção ao uso seguro do Spring Boot 3.4. Destaque:
+- Quaisquer roturas de sintaxe obrigatórias (ex: javax.persistence para jakarta.persistence).
+- Quais pacotes internos precisarão ser adaptados obrigatoriamente perante as novidades introduzidas.
+- Rotas propensas à injeção com as novas classes de config SecurityFilterChain atuais.
+Escreva as recomendações em etapas separadas, me perguntando antes de encadear à reescrita.
+```
+
+**Refatoração Baseada na Pesquisa de Segurança (Grounding):**
+```
+Examine por inteiro nossos interceptadores nas subpastas globais '/security'.
+Gostaria que pesquisasse ativamente as normativas atuais contra evasões clássicas de sessão JWT. 
+Retorne um review mostrando falhas sobre fixação simétrica forjada de chaves, expondo em detalhes:
+Qual é o risco explícito encontrado?
+Qual será o trecho alterado corrigindo em alinhamento aos guias de cibersegurança e OIDC modernos?
+```
+
+**Prototipagem de UI Estritamente Visual (*Vibe Coding* guiado por mockup):**
+```
+[Anexe o PDF com o design exportado do wireframe da jornada do carrinho]
+Observe ativamente os caminhos da experiência descritos neste PDF de UI. 
+Extraia todos os focos reativos importantes dessa jornada e converta visualmente a 
+tela para componentes fluidos em React e Tailwind CSS mimetizando botões e espaçamentos 
+com alto nível de responsividade e modernidade sem placeholders genéricos.
 ```
 
 ---
@@ -2268,7 +2274,19 @@ Windsurf: IA observa → propõe → você aprova (mais proativo)
 
 ---
 
-### 15.4 Comparativo IDEs com IA
+### 15.4 Antigravity
+
+**Antigravity** é o assistente de programação agentic projetado pela equipe do Google Deepmind. Diferente das extensões de autocomplete padrão, ele atua como um parceiro de pair programming autônomo (Agentic Coding) conectado a modelos de fronteira, como as versões mais avançadas do Gemini.
+
+**Características Principais:**
+- **Atuação Autônoma (Agente):** Entende requisições do usuário, navega na base de código, cria/edita arquivos em massa, pesquisa na web e roda comandos de terminal de forma autônoma e interativa.
+- **Modos de Planejamento (*Planning Mode*):** Diferencia tarefas simples (*one-shots*) de mudanças grandes na arquitetura, elaborando planos de execução passo-a-passo sujeitos à aprovação prévia do desenvolvedor (Spec-Driven Híbrido).
+- **Capacidade Multimodal Integrada:** Como utiliza o ecossistema Gemini diretamente, suporta desde o uso prático de tokens na casa dos milhões (Context Caching e *Long Context*) até "Vibe Coding" baseado em wireframes de interface ou descrições rascunhadas.
+- **Artefatos e Walkthroughs:** Produz documentações ativas, checklists para tracking da execução da task em tempo real (`task.md`) e log detalhado da alteração implementada para revisão (`walkthrough.md`).
+
+---
+
+### 15.5 Comparativo IDEs com IA
 
 | Critério                   | Cursor        | Windsurf      | VS Code + Copilot | VS Code + Claude |
 |----------------------------|---------------|---------------|-------------------|------------------|
@@ -2420,6 +2438,22 @@ com.empresa.app
 ```
 
 **Regra:** informações que mudam frequentemente (sprint atual, bugs em aberto, tarefas pendentes) devem ir no **prompt**, não no `CLAUDE.md`.
+
+### 16.5 Otimização de Custo e Tokens com Google Gemini
+
+No ecossistema do **Gemini**, o principal mecanismo para gerenciar contas de projetos com prompts extensos (podendo chegar a mais de 2 milhões de tokens na versão Gemini 3.1 Pro) é o uso de **Context Caching** disponibilizado por APIs nativas.
+
+**O que cachear:**
+- `GEMINI.md` ou documentação base e glossários.
+- Bibliotecas inteiras carregadas por repositório com suporte a *Grounding*.
+- Arquivos estáticos legados muito acoplados que precisam ser compreendidos como infraestrutura, mas cujos fontes não recebem commits.
+
+**O que NÃO cachear:**
+- Prompts de alteração pontual interativa.
+- O próprio código da *feature* que vem sendo amplamente modificada na sprint do dia.
+- Consultas rápidas focadas num único método curto da classe.
+
+Além disso, sempre opte pelo **Gemini 3.1 Flash** (mais barato e otimizado para latência) quando seu script, CLI, pipeline CI/CD ou agente iterativo for realizar automações puramente repetitivas onde raciocínio abstrato complexo não for a prioridade. Assim você delega varredura maciça ou planejamentos arquiteturais (*Planning*) de projetos para o modelo avançado **Pro**.
 
 ---
 
@@ -2598,6 +2632,14 @@ if "APROVADO" in aprovacao:
 else:
     print(f"Revisão rejeitada: {aprovacao}")
 ```
+
+### 17.6 Workflows Multi-agentes usando o Gemini
+
+As arquiteturas de múltiplos agentes fluem de maneira bastante orgânica via **Google Gemini**. Isso ocorre sobretudo em razão da generosa janela de contexto, que acomoda fluxos comunicativos complexos e *thought-processes* compartilhados entre os agentes, combinada com o uso robusto do formato **Structured Outputs** (forçando que agentes formatem respostas uns aos outros em esquemas JSON rigorosos em pipelines programáticas).
+
+**Exemplos usando APIs do Gemini:**
+- **Modelos Framework Agentes Open-Source** (CrewAI, LangGraph, AutoGen): Você consegue plugar as chaves de API restritas do AI Studio ou Vertex AI para que a divisão de especializações funcione de forma assertiva. Por exemplo, alocar um "Agente Revisor (Flash)" consumindo de forma barata centenas de rotinas de PRs, emitindo flags apenas para os arquivos suspeitos onde um "Agente Pesquisador Avançado (Pro)" seja engatilhado para consertar problemas profundos.
+- **Vertex AI Agents em Nuvem Protegida:** Utilizado em times empresariais onde o dado não pode sair de perímetros controlados de nuvem. Subagentes autônomos criados dentro da VPC da empresa que não só interagem com banco e APIs de pagamento limitadas em *zero-trust*, como enviam diagnósticos a um modelo cliente local que atua como Gemini Code Assist do dev de sustentação.
 
 ---
 
@@ -3106,6 +3148,9 @@ Inclua na spec:
 - SecurityScheme com Bearer JWT
 ```
 
+> [!TIP]
+> **Structured Outputs no Gemini:** Uma das maiores dores na geração de documentações complexas como Swagger/OpenAPI é a IA omitir fechamento de tags ou formatar o YAML/JSON de modo inválido. O **Gemini** resolve isso ao suportar nativamente **Structured Outputs**. Ao definir um Schema rígido (via AI Studio ou na requisição via API), você limita a IA a emitir estritamente apenas a sintaxe correta. Isso permite gerar contratos e specs de dezenas de páginas simultâneas com 100% de precisão gramatical no parse.
+
 ---
 
 ### 21.3 Geração de Código a partir de Spec
@@ -3501,6 +3546,15 @@ de classes PlantUML mostrando:
 - Cardinalidade de cada relacionamento
 - Enums usados pelas entidades
 ```
+
+**Multimodalidade Reversa (Lousa para Código):**
+Em reuniões de alinhamento técnico, é comum desenhar rascunhos de sistemas em quadros brancos com a equipe inteira na sala.
+
+> [!TIP]
+> **Diagramas a partir de fotos:** Usando a capacidade nativa multimodal do **Gemini**, tire uma foto da lousa contendo a infraestrutura desenhada à mão e aplique o prompt: *"Converta os diagramas mapeados neste quadro em código Mermaid limpo para nossa documentação, mapeando rigorosamente o direcionamento e nomes de todas as setas e componentes desenhados"*.
+
+> [!NOTE]
+> **NotebookLM para Ingestão de Requisitos:** Nas fases iniciais de concepção (*Discovery*), faça o upload de longas transcrições das gravações do Google Meet ou de documentos isolados de pautas para dentro do **NotebookLM** (que age como um RAG em caixinha isolada utilizando o modelo Gemini). Assim, você consegue pedir: *"Cruze todas as discussões de escopo das reuniões dessa semana e gere uma Especificação Técnica central estruturada que atenda aos requisitos gerenciais listados."*
 
 ---
 
