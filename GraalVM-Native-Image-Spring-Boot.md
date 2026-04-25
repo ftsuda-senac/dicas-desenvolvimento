@@ -518,6 +518,436 @@ public class HibernateHints implements RuntimeHintsRegistrar {
 }
 ```
 
+### 6.5. Herança de entidades
+
+As três estratégias de herança do JPA têm comportamentos distintos em Native Image:
+
+**`SINGLE_TABLE`** — a mais segura para Native Image: todas as subclasses compartilham a mesma tabela e não há necessidade de joins ou queries polimórficas que exijam resolução dinâmica de tipo.
+
+**`JOINED`** e **`TABLE_PER_CLASS`** — o Hibernate precisa resolver o tipo concreto de cada linha em tempo de execução. As subclasses precisam estar registradas para reflexão:
+
+```java
+package br.com.exemplo.dominio;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "pagamentos")
+@Inheritance(strategy = InheritanceType.JOINED)
+public abstract class Pagamento {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+}
+
+@Entity
+@Table(name = "pagamentos_cartao")
+public class PagamentoCartao extends Pagamento {
+    private String bandeira;
+    private int parcelas;
+}
+
+@Entity
+@Table(name = "pagamentos_pix")
+public class PagamentoPix extends Pagamento {
+    private String chavePix;
+}
+```
+
+Registro necessário para hierarquias com `JOINED` ou `TABLE_PER_CLASS`:
+
+```java
+public class HibernateHerancaHints implements RuntimeHintsRegistrar {
+
+    @Override
+    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+        // Todas as subclasses concretas precisam de reflexão completa
+        Stream.of(Pagamento.class, PagamentoCartao.class, PagamentoPix.class)
+            .forEach(tipo -> hints.reflection().registerType(tipo,
+                MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+                MemberCategory.INVOKE_PUBLIC_METHODS,
+                MemberCategory.PUBLIC_FIELDS,
+                MemberCategory.DECLARED_FIELDS));
+    }
+}
+```
+
+**`@DiscriminatorValue`** com estratégia `SINGLE_TABLE` também pode falhar se o Hibernate tentar instanciar subclasses por reflexão para resolver o discriminador em alguns provedores. O registro preventivo das subclasses resolve o problema.
+
+### 6.6. Cache de segundo nível (L2 Cache)
+
+O cache de segundo nível do Hibernate com provedores como **Ehcache** ou **Caffeine via JCache** requer atenção especial, pois envolve serialização de entidades fora do contexto do Jackson.
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-cache</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.hibernate.orm</groupId>
+    <artifactId>hibernate-jcache</artifactId>
+</dependency>
+<dependency>
+    <groupId>com.github.ben-manes.caffeine</groupId>
+    <artifactId>caffeine</artifactId>
+</dependency>
+```
+
+```yaml
+spring:
+  jpa:
+    properties:
+      hibernate:
+        cache:
+          use_second_level_cache: true
+          use_query_cache: true
+          region.factory_class: org.hibernate.cache.jcache.JCacheCacheRegionFactory
+        javax.cache.provider: com.github.benmanes.caffeine.jcache.spi.CaffeineCachingProvider
+```
+
+**Conflito**: o Hibernate serializa entidades cacheadas usando reflexão para acessar campos. Registrar as entidades anotadas com `@Cache`:
+
+```java
+@Entity
+@Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
+public class Produto {
+    // campos...
+}
+
+// Na configuração de hints:
+hints.reflection().registerType(Produto.class,
+    MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+    MemberCategory.DECLARED_FIELDS,        // necessário para serialização do cache
+    MemberCategory.INVOKE_PUBLIC_METHODS);
+hints.serialization().registerType(Produto.class);  // se usar serialização Java no cache
+```
+
+**Recomendação**: preferir Caffeine como cache L2 com `CacheConcurrencyStrategy.READ_WRITE`. Evitar `NONSTRICT_READ_WRITE` com Native Image, pois utiliza caminhos de código menos testados para atualização assíncrona.
+
+### 6.7. Criteria API e metamodelo estático
+
+A Criteria API do JPA usa o metamodelo estático gerado em tempo de compilação (`Produto_`, `Pedido_`, etc.). Esse metamodelo é compatível com Native Image, mas as classes geradas precisam ser detectadas pelo processador AOT:
+
+```java
+// Uso correto com metamodelo estático — compatível com Native Image
+public List<Produto> buscarPorPreco(BigDecimal precoMinimo) {
+    CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+    CriteriaQuery<Produto> cq = cb.createQuery(Produto.class);
+    Root<Produto> root = cq.from(Produto.class);
+
+    // Produto_.preco é a classe de metamodelo gerada pelo processador de anotações
+    cq.where(cb.greaterThanOrEqualTo(root.get(Produto_.preco), precoMinimo));
+    return entityManager.createQuery(cq).getResultList();
+}
+```
+
+**Conflito com metamodelo dinâmico**: acessar atributos por `String` em vez do metamodelo estático pode falhar se o Hibernate tentar resolver o atributo via reflexão:
+
+```java
+// Evitar: resolução dinâmica de atributo por String
+root.get("preco")   // pode falhar em Native Image sem hints
+
+// Preferir: referência ao metamodelo estático
+root.get(Produto_.preco)   // seguro — referência direta ao campo gerado
+```
+
+Configuração do processador de anotações do metamodelo no Maven:
+
+```xml
+<dependency>
+    <groupId>org.hibernate.orm</groupId>
+    <artifactId>hibernate-jpamodelgen</artifactId>
+    <scope>provided</scope>
+</dependency>
+```
+
+**Spring Data Specifications** — ao usar `Specification<T>` do Spring Data JPA, preferir referências ao metamodelo estático pelos mesmos motivos:
+
+```java
+public static Specification<Produto> comPrecoAcimaDe(BigDecimal valor) {
+    return (root, query, cb) ->
+        cb.greaterThanOrEqualTo(root.get(Produto_.preco), valor);
+}
+```
+
+### 6.8. Projeções e resultados customizados
+
+O Spring Data JPA oferece três formas de projeção, com compatibilidades diferentes em Native Image:
+
+**Projeções baseadas em interface** — compatíveis, pois o Spring Data gera os proxies em tempo de build via AOT:
+
+```java
+// Seguro: proxy gerado pelo AOT do Spring Data
+public interface ProdutoResumo {
+    String getNome();
+    BigDecimal getPreco();
+}
+
+List<ProdutoResumo> findAllProjectedBy();
+```
+
+**Projeções baseadas em classe (DTO constructor expression)** — requerem que o construtor esteja registrado para reflexão:
+
+```java
+// O Hibernate instancia ProdutoDTO via reflexão
+public record ProdutoDTO(String nome, BigDecimal preco) {}
+
+@Query("SELECT new br.com.exemplo.dto.ProdutoDTO(p.nome, p.preco) FROM Produto p")
+List<ProdutoDTO> buscarResumidos();
+
+// Hint necessário:
+hints.reflection().registerType(ProdutoDTO.class,
+    MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS);
+```
+
+**Projeções com `@SqlResultSetMapping`** — o mapeamento de resultado nativo depende de reflexão para instanciar as classes mapeadas:
+
+```java
+@SqlResultSetMapping(
+    name = "ProdutoComEstoque",
+    classes = @ConstructorResult(
+        targetClass = ProdutoEstoqueDTO.class,
+        columns = {
+            @ColumnResult(name = "nome", type = String.class),
+            @ColumnResult(name = "quantidade", type = Integer.class)
+        }
+    )
+)
+@Entity
+public class Produto { /* ... */ }
+```
+
+Hints necessários para `@SqlResultSetMapping`:
+
+```java
+hints.reflection().registerType(ProdutoEstoqueDTO.class,
+    MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+    MemberCategory.INVOKE_PUBLIC_METHODS);
+```
+
+### 6.9. Callbacks de entidades e listeners
+
+Callbacks JPA (`@PrePersist`, `@PostLoad`, `@PreUpdate`, etc.) definidos tanto na própria entidade quanto em classes externas via `@EntityListeners` são invocados por reflexão:
+
+```java
+// Callback na própria entidade — AOT geralmente detecta
+@Entity
+public class Pedido {
+
+    @PrePersist
+    void prePersist() {
+        this.criadoEm = LocalDateTime.now();
+    }
+
+    @PostLoad
+    void postLoad() {
+        // lógica pós-carregamento
+    }
+}
+
+// Listener externo — requer hint explícito
+@EntityListeners(AuditoriaListener.class)
+@Entity
+public class Produto { /* ... */ }
+
+public class AuditoriaListener {
+
+    @PrePersist
+    @PreUpdate
+    public void aoSalvar(Object entidade) {
+        // lógica de auditoria
+    }
+}
+```
+
+Hint para listeners externos:
+
+```java
+hints.reflection()
+    .registerType(AuditoriaListener.class,
+        MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+        MemberCategory.INVOKE_PUBLIC_METHODS,
+        MemberCategory.DECLARED_METHODS);   // inclui métodos anotados com @Pre/@Post
+```
+
+**Conflito frequente**: listeners que injetam `ApplicationContext` ou usam `@Autowired`. Em Native Image, listeners JPA são instanciados pelo Hibernate, não pelo Spring. A solução é usar o padrão `ApplicationContextAware` com um bean estático:
+
+```java
+@Component
+public class SpringContextHolder implements ApplicationContextAware {
+
+    private static ApplicationContext context;
+
+    @Override
+    public void setApplicationContext(ApplicationContext ctx) {
+        context = ctx;
+    }
+
+    public static <T> T getBean(Class<T> tipo) {
+        return context.getBean(tipo);
+    }
+}
+
+public class AuditoriaListener {
+
+    @PrePersist
+    public void aoSalvar(Object entidade) {
+        // Obtém o bean via holder estático em vez de @Autowired
+        AuditoriaService service = SpringContextHolder.getBean(AuditoriaService.class);
+        service.registrar(entidade);
+    }
+}
+```
+
+### 6.10. IDs compostos e tipos embutidos
+
+**`@EmbeddedId`** e **`@IdClass`** — as classes de chave composta precisam de reflexão para instanciação e comparação:
+
+```java
+// Chave composta como @Embeddable
+@Embeddable
+public class PedidoItemId implements Serializable {
+    private Long pedidoId;
+    private Long produtoId;
+    // equals e hashCode obrigatórios
+}
+
+@Entity
+public class PedidoItem {
+    @EmbeddedId
+    private PedidoItemId id;
+    private int quantidade;
+}
+```
+
+Hints para chaves compostas:
+
+```java
+hints.reflection().registerType(PedidoItemId.class,
+    MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+    MemberCategory.INVOKE_PUBLIC_METHODS,
+    MemberCategory.DECLARED_FIELDS);
+hints.serialization().registerType(PedidoItemId.class);  // Serializable é obrigatório
+```
+
+**`@Embeddable` em campos comuns** — tipos embutidos usados como atributos de entidades:
+
+```java
+@Embeddable
+public class Endereco {
+    private String logradouro;
+    private String cidade;
+    private String cep;
+}
+
+@Entity
+public class Cliente {
+    @Embedded
+    private Endereco endereco;
+}
+```
+
+O Spring Boot AOT geralmente detecta `@Embeddable` referenciados em entidades gerenciadas. Contudo, se o tipo embutido for compartilhado entre módulos ou adicionado via biblioteca, o hint manual é necessário:
+
+```java
+hints.reflection().registerType(Endereco.class,
+    MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+    MemberCategory.DECLARED_FIELDS);
+```
+
+### 6.11. Repositórios com fragmentos customizados
+
+O Spring Data JPA permite compor repositórios com fragmentos de implementação customizada. O mecanismo de descoberta de fragmentos usa reflexão:
+
+```java
+// Interface do fragmento
+public interface ProdutoRepositoryCustom {
+    List<Produto> buscarComFiltros(FiltroProduto filtro);
+}
+
+// Implementação do fragmento — o Spring Data descobre pelo nome da convenção
+public class ProdutoRepositoryImpl implements ProdutoRepositoryCustom {
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    @Override
+    public List<Produto> buscarComFiltros(FiltroProduto filtro) {
+        // implementação com Criteria API ou JPQL dinâmico
+    }
+}
+
+// Repositório final compondo os fragmentos
+public interface ProdutoRepository
+        extends JpaRepository<Produto, Long>, ProdutoRepositoryCustom {
+}
+```
+
+**Conflito**: a descoberta automática do fragmento (`ProdutoRepositoryImpl`) depende de convenção de nomenclatura resolvida via reflexão. O Spring Boot AOT 3.x detecta esse padrão para beans no contexto Spring, mas falha se a implementação não seguir a convenção ou estiver em um jar separado.
+
+**Solução**: registrar explicitamente a implementação do fragmento:
+
+```java
+hints.reflection().registerType(ProdutoRepositoryImpl.class,
+    MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+    MemberCategory.INVOKE_PUBLIC_METHODS);
+```
+
+### 6.12. Auditoria com Spring Data JPA
+
+A auditoria automática via `@EnableJpaAuditing` usa `AuditorAware` e listeners internos que dependem de reflexão:
+
+```java
+@Configuration
+@EnableJpaAuditing(auditorAwareRef = "auditorProvider")
+public class JpaAuditingConfig {
+
+    @Bean
+    public AuditorAware<String> auditorProvider() {
+        return () -> Optional.ofNullable(
+            SecurityContextHolder.getContext()
+                .getAuthentication()
+                .getName()
+        );
+    }
+}
+
+@Entity
+@EntityListeners(AuditingEntityListener.class)
+public class Produto {
+
+    @CreatedDate
+    private LocalDateTime criadoEm;
+
+    @LastModifiedDate
+    private LocalDateTime atualizadoEm;
+
+    @CreatedBy
+    private String criadoPor;
+
+    @LastModifiedBy
+    private String atualizadoPor;
+}
+```
+
+O `AuditingEntityListener` do Spring Data é registrado automaticamente pelo processador AOT. Contudo, o `AuditorAware` customizado precisa ser um bean Spring gerenciado para ser detectado corretamente — não instanciá-lo manualmente.
+
+**Conflito com `@Version` (controle de concorrência otimista)**: o Hibernate acessa o campo de versão via reflexão para comparar e incrementar. Certificar que o campo está acessível:
+
+```java
+@Entity
+public class Produto {
+
+    @Version
+    private Long versao;   // o Hibernate usa reflexão para ler e gravar este campo
+}
+
+// Se a entidade não estiver registrada com DECLARED_FIELDS, o versionamento pode falhar
+hints.reflection().registerType(Produto.class,
+    MemberCategory.DECLARED_FIELDS,
+    MemberCategory.INVOKE_PUBLIC_METHODS);
+```
+
 ---
 
 ## 7. Jackson e serialização/desserialização

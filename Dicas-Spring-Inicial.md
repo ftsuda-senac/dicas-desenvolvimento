@@ -1352,7 +1352,147 @@ public class InfraConfig {
 }
 ```
 
-### 2.3.1 Injetando um Bean Prototype dentro de um Singleton
+### 2.3.1 Escopos de Beans (`@Scope`)
+
+O escopo de um bean define **quantas instâncias** o container cria e **por quanto
+tempo** cada instância vive. O Spring oferece dois escopos universais (disponíveis
+em qualquer contexto) e quatro escopos web (requerem um `WebApplicationContext`).
+
+#### Escopos universais
+
+| Escopo | Valor em `@Scope` | Instâncias | Ciclo de vida |
+|---|---|---|---|
+| **Singleton** | `"singleton"` | **1** por container | Nasce com o contexto, morre com ele |
+| **Prototype** | `"prototype"` | **1 nova por solicitação** | Nasce a cada `getBean()` / injeção; destruição é responsabilidade do chamador |
+
+`singleton` é o **padrão**; não precisa ser declarado explicitamente.
+
+```java
+@Component                        // singleton implícito
+public class ServicoCalculo { }
+
+@Component
+@Scope("prototype")               // nova instância a cada ponto de injeção
+public class RelatorioBuilder { }
+```
+
+#### Escopos web
+
+Disponíveis apenas quando o contexto é um `WebApplicationContext` (aplicações
+Spring MVC / Spring Boot com servlet container).
+
+| Escopo | Valor em `@Scope` | Instâncias | Ciclo de vida |
+|---|---|---|---|
+| **Request** | `"request"` | 1 por **requisição HTTP** | Nasce no início do request, morre ao final |
+| **Session** | `"session"` | 1 por **sessão HTTP** | Nasce na criação da sessão, morre no timeout/invalidação |
+| **Application** | `"application"` | 1 por **`ServletContext`** | Análogo ao singleton, mas vinculado ao `ServletContext` (partilhado por todos os `ApplicationContext` da mesma app web) |
+| **WebSocket** | `"websocket"` | 1 por **sessão WebSocket** | Nasce na abertura da conexão, morre no fechamento |
+
+#### `proxyMode` — por que é necessário nos escopos web
+
+Quando um bean de escopo curto (ex.: `request`) é injetado em um bean de escopo
+mais longo (ex.: `singleton`), surge um problema estrutural: o singleton é criado
+**uma única vez** pelo container. Nesse momento, o Spring tentaria injetar a
+instância `request`-scoped — mas ainda não existe nenhuma requisição HTTP em
+curso. Mesmo que existisse, a referência ficaria **fixada** para sempre naquele
+singleton, vazando dados entre requisições diferentes.
+
+A solução é o **scoped proxy**: em vez de injetar o bean real, o Spring injeta
+um objeto proxy com a mesma interface. O proxy sabe como localizar a instância
+correta para o contexto ativo (requisição ou sessão atual) a cada chamada de
+método.
+
+```
+Singleton  →  [Proxy]  →  instância real do request/session atual
+                ↑
+        redireciona cada chamada ao bean real do contexto ativo
+```
+
+O atributo `proxyMode` de `@Scope` controla **como** o proxy é gerado:
+
+| Valor | Mecanismo | Quando usar |
+|---|---|---|
+| `ScopedProxyMode.NO` | Sem proxy (padrão) | Bean nunca é injetado em escopo mais longo |
+| `ScopedProxyMode.TARGET_CLASS` | Proxy CGLIB (subclasse) | Bean é uma **classe concreta** — caso mais comum |
+| `ScopedProxyMode.INTERFACES` | Proxy JDK (interface) | Bean implementa uma **interface** e você prefere proxy dinâmico |
+| `ScopedProxyMode.DEFAULT` | Depende da configuração do container | Delega a decisão ao contexto |
+
+```java
+// ── Bean de escopo request com proxy CGLIB (classe concreta) ─────────────────
+@Component
+@Scope(value = "request", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class ContextoRequisicao {
+    private String usuarioId;
+    // getters / setters
+}
+
+// ── Bean de escopo session com proxy CGLIB ────────────────────────────────────
+@Component
+@Scope(value = "session", proxyMode = ScopedProxyMode.TARGET_CLASS)
+public class CarrinhoCompras {
+    private final List<Item> itens = new ArrayList<>();
+    // getters / setters
+}
+
+// ── Singleton que injeta os dois beans de escopo mais curto ───────────────────
+@Service
+public class PedidoService {
+
+    // O Spring injeta proxies aqui — nunca o bean real diretamente.
+    // Cada chamada a carrinho.getItens() ou contexto.getUsuarioId()
+    // é redirecionada pelo proxy à instância real da requisição/sessão ativa.
+    private final CarrinhoCompras carrinho;
+    private final ContextoRequisicao contexto;
+
+    public PedidoService(CarrinhoCompras carrinho, ContextoRequisicao contexto) {
+        this.carrinho = carrinho;
+        this.contexto = contexto;
+    }
+
+    public Pedido fecharPedido() {
+        // proxy resolve carrinho e contexto para a requisição HTTP atual
+        return new Pedido(contexto.getUsuarioId(), carrinho.getItens());
+    }
+}
+```
+
+> **Regra prática:** use sempre `TARGET_CLASS` para beans de escopo `request`,
+> `session` ou `websocket` que precisem ser injetados em singletons. `INTERFACES`
+> só vale a pena quando o bean já implementa uma interface e você quer evitar a
+> dependência do CGLIB (rara no Spring Boot, que inclui CGLIB por padrão).
+> Consulte a seção 2.3.3 para o detalhamento completo do problema e das soluções.
+
+#### Escopos do Spring Batch (dependência separada)
+
+| Escopo | Ativação | Ciclo de vida |
+|---|---|---|
+| `@StepScope` | `spring-batch-core` | 1 instância por execução de **step** |
+| `@JobScope` | `spring-batch-core` | 1 instância por execução de **job** |
+
+Esses escopos permitem que parâmetros de job/step sejam resolvidos via SpEL em
+tempo de execução: `@Value("#{jobParameters['arquivo']}")`.
+
+#### Escopos customizados
+
+É possível registrar escopos próprios via
+`ConfigurableBeanFactory.registerScope(name, scope)` e usá-los normalmente com
+`@Scope("meuEscopo")`. Exemplos de terceiros: `refreshScope` (Spring Cloud
+Config), `tenantScope` (soluções multi-tenant).
+
+#### Resumo — quando usar cada escopo
+
+| Necessidade | Escopo recomendado |
+|---|---|
+| Serviços sem estado compartilhado (regra geral) | `singleton` |
+| Objeto com estado mutável que não pode ser compartilhado | `prototype` |
+| Dados específicos de uma requisição (locale, usuário autenticado) | `request` |
+| Carrinho de compras, preferências do usuário na sessão | `session` |
+| Cache ou configuração global de uma app web | `application` |
+| Estado de uma conexão WebSocket específica | `websocket` |
+
+---
+
+### 2.3.2 Injetando um Bean Prototype dentro de um Singleton
 
 Por padrão, todos os beans Spring são **singleton**: o container cria uma única
 instância e a reutiliza. Um bean **prototype** gera uma nova instância a cada
@@ -1497,7 +1637,7 @@ public class RelatorioService implements ApplicationContextAware {
 > utiliza deve solicitar uma **nova instância por chamada**, nunca armazenar o
 > prototype em um campo. Use `ObjectProvider` como padrão.
 
-### 2.3.2 Injetando Beans de Escopo `request` ou `session` em Beans de Escopo Mais Amplo
+### 2.3.3 Injetando Beans de Escopo `request` ou `session` em Beans de Escopo Mais Amplo
 
 Os escopos web do Spring criam instâncias vinculadas ao ciclo de vida de uma
 requisição HTTP (`request`) ou de uma sessão de usuário (`session`). O escopo

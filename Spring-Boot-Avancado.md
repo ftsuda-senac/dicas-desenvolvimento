@@ -12,6 +12,7 @@ Este documento reúne informações e exemplos práticos sobre recursos avançad
 - cache e Spring Session, incluindo `@Cacheable`, `@CachePut`, `@CacheEvict`, Caffeine, Redis e sessão distribuída.
 - upload e download de arquivos, incluindo `MultipartFile`, streaming, armazenamento local, validações de segurança e detecção de tipo real com Apache Tika.
 - leitura e exportação de dados em CSV e Excel com Apache Commons CSV, Apache POI e `excel-streaming-reader`.
+- concorrência com `java.util.concurrent`, incluindo locks (`ReentrantLock`, `ReentrantReadWriteLock`, `StampedLock`), classes atômicas (`AtomicInteger`, `LongAdder`, `AtomicReference`), coleções concorrentes (`ConcurrentHashMap`, `CopyOnWriteArrayList`, filas bloqueantes) e sincronizadores (`CountDownLatch`, `Semaphore`, `CyclicBarrier`, `Phaser`).
 
 Os exemplos abaixo seguem um estilo compatível com Spring Boot 3.x e Jakarta EE.
 
@@ -5987,7 +5988,986 @@ public class FileExceptionHandler {
 - monitore uso de disco, temporários e falhas de upload;
 - em aplicações distribuídas, prefira storage compartilhado ou externo.
 
-## 10. Sugestão de organização do projeto
+## 10. Concorrência com `java.util.concurrent`
+
+Os pacotes `java.util.concurrent`, `java.util.concurrent.locks` e `java.util.concurrent.atomic` formam o núcleo de concorrência da plataforma Java. Em aplicações Spring Boot, eles costumam aparecer em cenários como:
+
+- proteção de recursos compartilhados em serviços stateful;
+- controle de acesso concorrente a caches locais;
+- sincronização de operações que precisam distinguir leitura de escrita;
+- coordenação entre threads em processamento paralelo.
+
+Os principais grupos de tipos são:
+
+**Locks (`java.util.concurrent.locks`)**
+
+| Tipo | Finalidade |
+| --- | --- |
+| `ReentrantLock` | Exclusão mútua reentrant com controle explícito |
+| `ReentrantReadWriteLock` | Múltiplos leitores simultâneos ou um único escritor |
+| `StampedLock` | Lock otimista para leitura, além dos modos tradicional de leitura e escrita |
+| `Condition` | Coordenação entre threads, substituto de `wait/notify` |
+| `LockSupport` | Utilitário de baixo nível para suspender e retomar threads |
+
+**Classes atômicas (`java.util.concurrent.atomic`)**
+
+| Tipo | Finalidade |
+| --- | --- |
+| `AtomicBoolean` / `AtomicInteger` / `AtomicLong` | Tipos primitivos thread-safe com operações CAS |
+| `AtomicReference<V>` | Referência de objeto trocada atomicamente |
+| `LongAdder` / `DoubleAdder` | Acumulação de alta frequência com menor contenção |
+| `LongAccumulator` / `DoubleAccumulator` | Acumulação com operação customizada (max, min, etc.) |
+
+**Coleções concorrentes (`java.util.concurrent`)**
+
+| Tipo | Finalidade |
+| --- | --- |
+| `ConcurrentHashMap` | Mapa thread-safe com alto paralelismo interno |
+| `CopyOnWriteArrayList` / `CopyOnWriteArraySet` | Lista/conjunto otimizado para leitura frequente |
+| `LinkedBlockingQueue` / `ArrayBlockingQueue` | Fila bloqueante produtor-consumidor |
+| `PriorityBlockingQueue` | Fila bloqueante com prioridade |
+| `DelayQueue` | Fila com elementos disponíveis após atraso |
+| `ConcurrentSkipListMap` / `ConcurrentSkipListSet` | Mapa e conjunto concorrentes ordenados |
+
+**Sincronizadores (`java.util.concurrent`)**
+
+| Tipo | Finalidade |
+| --- | --- |
+| `CountDownLatch` | Aguardar N operações concluírem (uso único) |
+| `CyclicBarrier` | Sincronizar threads em fases repetíveis |
+| `Semaphore` | Limitar o número de acessos simultâneos |
+| `Exchanger` | Trocar objetos entre dois threads |
+| `Phaser` | Barreira reutilizável com participantes dinâmicos |
+
+### 10.1. `ReentrantLock`
+
+`ReentrantLock` é a alternativa explícita ao `synchronized`. O mesmo thread pode adquirir o lock mais de uma vez sem se bloquear (reentrada), e deve liberá-lo a mesma quantidade de vezes.
+
+Diferenças práticas em relação ao `synchronized`:
+
+- permite tentar adquirir o lock com timeout (`tryLock`);
+- permite interromper a espera (`lockInterruptibly`);
+- permite consultar quantos threads estão aguardando;
+- o unlock deve ficar sempre em um bloco `finally`.
+
+#### Situações de uso
+
+- substituir `synchronized` quando for necessário timeout ou interrupção na espera;
+- proteger operações críticas em services com estado compartilhado;
+- garantir exclusividade em operações de inicialização ou reset de recursos;
+- controlar acesso a recursos externos que não são thread-safe.
+
+#### Exemplo em um service Spring Boot
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.locks.ReentrantLock;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ContadorService {
+
+    private final ReentrantLock lock = new ReentrantLock();
+    private int contador = 0;
+
+    public void incrementar() {
+        lock.lock();
+        try {
+            contador++;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public int obterValor() {
+        lock.lock();
+        try {
+            return contador;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+#### Exemplo com `tryLock` e timeout
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
+import org.springframework.stereotype.Service;
+
+@Service
+public class RecursoExclusivoService {
+
+    private final ReentrantLock lock = new ReentrantLock();
+
+    public boolean processarSeTiver() throws InterruptedException {
+        boolean adquiriu = lock.tryLock(500, TimeUnit.MILLISECONDS);
+        if (!adquiriu) {
+            return false;
+        }
+        try {
+            // Operação exclusiva.
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+`tryLock` é especialmente útil em cenários onde não faz sentido bloquear indefinidamente, por exemplo em endpoints de processamento manual ou jobs concorrentes.
+
+### 10.2. `ReentrantReadWriteLock`
+
+`ReentrantReadWriteLock` mantém dois locks internos:
+
+- `readLock()`: pode ser adquirido por vários threads simultaneamente, desde que não haja escritor ativo;
+- `writeLock()`: exclusivo — bloqueia todos os outros leitores e escritores.
+
+Isso permite maior paralelismo em cenários com muitas leituras e poucas escritas.
+
+#### Situações de uso
+
+- cache local em memória com alta taxa de leitura e baixa taxa de atualização;
+- tabelas de configuração ou parâmetros consultados com frequência e alterados raramente;
+- estruturas de dados compartilhadas entre threads em processamento paralelo;
+- registros em memória (como listas ou mapas) que precisam de consistência nas escritas, mas podem ser lidos em paralelo.
+
+#### Exemplo com cache local
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ConfiguracaoCacheService {
+
+    private final ReentrantReadWriteLock rwLock = new ReentrantReadWriteLock();
+    private final Map<String, String> cache = new HashMap<>();
+
+    public String obter(String chave) {
+        rwLock.readLock().lock();
+        try {
+            return cache.get(chave);
+        } finally {
+            rwLock.readLock().unlock();
+        }
+    }
+
+    public void atualizar(String chave, String valor) {
+        rwLock.writeLock().lock();
+        try {
+            cache.put(chave, valor);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    public void limpar() {
+        rwLock.writeLock().lock();
+        try {
+            cache.clear();
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+}
+```
+
+Nesse modelo:
+
+- múltiplos threads podem chamar `obter` ao mesmo tempo sem bloquear uns aos outros;
+- `atualizar` e `limpar` esperam todos os leitores terminarem antes de adquirir o lock de escrita;
+- após o lock de escrita ser adquirido, novas leituras também ficam bloqueadas.
+
+### 10.3. `StampedLock`
+
+`StampedLock` foi introduzido no Java 8 e oferece três modos de operação:
+
+- **escrita**: exclusão mútua total, similar ao `writeLock` do `ReentrantReadWriteLock`;
+- **leitura pessimista**: permite vários leitores simultâneos, mas bloqueia escritores;
+- **leitura otimista**: não bloqueia ninguém — o thread lê assumindo que ninguém vai escrever, e ao final valida se isso foi verdade.
+
+A leitura otimista é o principal diferencial. Ela evita contenção em leituras quando escritas são raras, pois não adquire nenhum lock de verdade.
+
+Atenção importante: `StampedLock` **não é reentrant**. Um thread que já possui o lock de escrita e tentar adquirir o lock de leitura vai entrar em deadlock.
+
+#### Situações de uso
+
+- estruturas de dados muito lidas e raramente modificadas onde performance é crítica;
+- substituição de `ReentrantReadWriteLock` quando leituras otimistas forem suficientes;
+- cenários de altíssimo throughput em leitura onde o custo do lock precisa ser mínimo;
+- coordenação de acesso a dados voláteis em processamento paralelo intensivo.
+
+#### Exemplo com leitura otimista
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.locks.StampedLock;
+import org.springframework.stereotype.Service;
+
+@Service
+public class SaldoService {
+
+    private final StampedLock lock = new StampedLock();
+    private double saldo = 0.0;
+
+    public double lerSaldo() {
+        long stamp = lock.tryOptimisticRead();
+        double valorLido = saldo;
+
+        if (!lock.validate(stamp)) {
+            // Houve escrita durante a leitura otimista; faz leitura pesimista.
+            stamp = lock.readLock();
+            try {
+                valorLido = saldo;
+            } finally {
+                lock.unlockRead(stamp);
+            }
+        }
+
+        return valorLido;
+    }
+
+    public void creditar(double valor) {
+        long stamp = lock.writeLock();
+        try {
+            saldo += valor;
+        } finally {
+            lock.unlockWrite(stamp);
+        }
+    }
+}
+```
+
+O padrão "tenta otimista, cai para pessimista se inválido" é o idioma mais comum com `StampedLock`. Quando escritas são raras, a maioria das leituras passa pelo caminho otimista sem qualquer bloqueio.
+
+### 10.4. `Condition`
+
+`Condition` é usado junto com `ReentrantLock` para coordenar threads que precisam esperar por uma condição específica antes de prosseguir. Equivale ao `wait/notify` do `synchronized`, mas com mais flexibilidade:
+
+- é possível ter múltiplas condições por lock;
+- a espera pode ter timeout;
+- a espera pode ser interrompível.
+
+Os métodos principais são `await()`, `signal()` e `signalAll()`.
+
+#### Situações de uso
+
+- fila de trabalho com produtor e consumidor em threads diferentes;
+- controle de capacidade de buffers compartilhados;
+- sincronização de fases de processamento paralelo;
+- implementação de semáforos ou barreiras customizadas.
+
+#### Exemplo de fila limitada com produtor e consumidor
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.LinkedList;
+import java.util.Queue;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+import org.springframework.stereotype.Component;
+
+@Component
+public class FilaLimitada<T> {
+
+    private final int capacidade;
+    private final Queue<T> fila = new LinkedList<>();
+    private final ReentrantLock lock = new ReentrantLock();
+    private final Condition naoCheia = lock.newCondition();
+    private final Condition naoVazia = lock.newCondition();
+
+    public FilaLimitada(int capacidade) {
+        this.capacidade = capacidade;
+    }
+
+    public void produzir(T item) throws InterruptedException {
+        lock.lock();
+        try {
+            while (fila.size() == capacidade) {
+                naoCheia.await();
+            }
+            fila.add(item);
+            naoVazia.signal();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public T consumir() throws InterruptedException {
+        lock.lock();
+        try {
+            while (fila.isEmpty()) {
+                naoVazia.await();
+            }
+            T item = fila.poll();
+            naoCheia.signal();
+            return item;
+        } finally {
+            lock.unlock();
+        }
+    }
+}
+```
+
+Ter duas condições separadas (`naoCheia` e `naoVazia`) é mais eficiente do que uma única condição com `signalAll`, porque só acorda os threads relevantes para cada situação.
+
+### 10.5. `LockSupport`
+
+`LockSupport` é um utilitário de baixo nível que permite suspender (`park`) e retomar (`unpark`) threads diretamente, sem necessidade de monitor ou lock. É a base sobre a qual os outros mecanismos do `java.util.concurrent` são construídos.
+
+Na prática, raramente é usado diretamente em código de aplicação. Ele é mais comum em:
+
+- implementações customizadas de estruturas de sincronização;
+- frameworks de async como `CompletableFuture`, `ForkJoinPool` e virtual threads;
+- instrumentação e diagnóstico de threads.
+
+#### Situações de uso em código de aplicação
+
+- implementar mecanismos de sincronização muito específicos que os outros locks não cobrem;
+- construir filas não bloqueantes ou semáforos customizados;
+- código de infraestrutura ou utilitário de baixo nível em libraries internas.
+
+#### Exemplo conceitual
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.locks.LockSupport;
+
+public class ExemploLockSupport {
+
+    public static void demonstrar() {
+        Thread thread = new Thread(() -> {
+            System.out.println("Thread aguardando...");
+            LockSupport.park();
+            System.out.println("Thread retomada.");
+        });
+
+        thread.start();
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        LockSupport.unpark(thread);
+    }
+}
+```
+
+Diferente de `Thread.sleep` ou `Object.wait`, `LockSupport.park` não lança `InterruptedException` — apenas retorna quando interrompido, e o thread deve verificar `Thread.interrupted()` se precisar tratar isso.
+
+### 10.6. Classes atômicas (`java.util.concurrent.atomic`)
+
+O pacote `java.util.concurrent.atomic` oferece tipos que realizam operações de leitura, modificação e escrita de forma atômica, sem necessidade de lock explícito. Internamente, usam instruções CAS (compare-and-swap) da CPU, o que os torna muito eficientes em cenários de baixa a média contução.
+
+#### `AtomicBoolean`
+
+Booleano thread-safe com operações atômicas de leitura e escrita.
+
+Situações de uso:
+
+- flag de estado global acessada por múltiplos threads, como "sistema inicializado" ou "shutdown solicitado";
+- controle de execução única (ex.: garantir que uma inicialização rode apenas uma vez);
+- sinalização entre threads sem overhead de lock.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import org.springframework.stereotype.Component;
+
+@Component
+public class InitializationGuard {
+
+    private final AtomicBoolean inicializado = new AtomicBoolean(false);
+
+    public boolean inicializarSeNecessario() {
+        if (inicializado.compareAndSet(false, true)) {
+            // Apenas o primeiro thread que chegar aqui executa.
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+`compareAndSet(esperado, novo)` é atômico: só muda o valor se ele ainda for `esperado`. Isso evita a janela de race condition que existiria com `get` + `set` separados.
+
+#### `AtomicInteger` e `AtomicLong`
+
+Inteiros thread-safe com operações atômicas de incremento, decremento, adição e CAS. `AtomicLong` é a versão de 64 bits.
+
+Situações de uso:
+
+- contadores de requisições, erros ou eventos acessados por múltiplos threads;
+- geração de IDs sequenciais em memória;
+- métricas internas sem sincronização externa;
+- controle de slots disponíveis em recursos compartilhados.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import org.springframework.stereotype.Component;
+
+@Component
+public class MetricasServico {
+
+    private final AtomicInteger requisicoesAtivas = new AtomicInteger(0);
+    private final AtomicLong totalProcessado = new AtomicLong(0);
+
+    public void iniciarRequisicao() {
+        requisicoesAtivas.incrementAndGet();
+    }
+
+    public void finalizarRequisicao(long bytes) {
+        requisicoesAtivas.decrementAndGet();
+        totalProcessado.addAndGet(bytes);
+    }
+
+    public int ativas() {
+        return requisicoesAtivas.get();
+    }
+
+    public long totalBytes() {
+        return totalProcessado.get();
+    }
+}
+```
+
+#### `AtomicReference<V>`
+
+Referência de objeto thread-safe com suporte a CAS. Permite trocar atomicamente o valor apontado por uma referência.
+
+Situações de uso:
+
+- atualização atômica de snapshots ou configurações em memória;
+- publicação segura de objeto imutável sem lock;
+- substituição atômica de estruturas inteiras (ex.: trocar uma lista inteira de uma vez);
+- implementação de algoritmos lock-free que dependem de CAS em objetos.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SnapshotConfiguracao {
+
+    private final AtomicReference<List<String>> permissoesAtivas =
+            new AtomicReference<>(List.of());
+
+    public void atualizar(List<String> novasPermissoes) {
+        permissoesAtivas.set(List.copyOf(novasPermissoes));
+    }
+
+    public List<String> obter() {
+        return permissoesAtivas.get();
+    }
+}
+```
+
+Como `List.copyOf` cria uma lista imutável, a referência pode ser lida por qualquer thread sem risco — o objeto em si nunca muda, apenas a referência é trocada atomicamente.
+
+#### `LongAdder` e `DoubleAdder`
+
+Especializados para acumulação de alta frequência. Internamente mantêm células separadas por thread para reduzir contenção, agregando o resultado apenas na leitura (`sum()`).
+
+Situações de uso:
+
+- contadores com altíssimo volume de incrementos concorrentes;
+- métricas de throughput em serviços sob carga;
+- acumuladores de valores numéricos em processamento paralelo massivo;
+- cenários onde `AtomicLong` causa contenção visível por CAS frequente.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.atomic.LongAdder;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ThroughputMonitor {
+
+    private final LongAdder requisicoes = new LongAdder();
+
+    public void registrar() {
+        requisicoes.increment();
+    }
+
+    public long total() {
+        return requisicoes.sum();
+    }
+
+    public void reset() {
+        requisicoes.reset();
+    }
+}
+```
+
+Prefira `LongAdder` a `AtomicLong` quando muitos threads incrementam simultaneamente e a leitura do total ocorre com menor frequência.
+
+#### `LongAccumulator` e `DoubleAccumulator`
+
+Generalização de `LongAdder` para qualquer operação binária associativa e comutativa, como `max`, `min` ou `and`.
+
+Situações de uso:
+
+- manter o valor máximo ou mínimo observado entre threads sem lock;
+- acumulação com operação customizada (diferente de soma) em cenários paralelos;
+- cálculo de estatísticas como pico de latência ou menor valor de lote.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.atomic.LongAccumulator;
+import org.springframework.stereotype.Component;
+
+@Component
+public class PicoLatenciaMonitor {
+
+    private final LongAccumulator picoMs = new LongAccumulator(Long::max, 0L);
+
+    public void registrar(long latenciaMs) {
+        picoMs.accumulate(latenciaMs);
+    }
+
+    public long pico() {
+        return picoMs.get();
+    }
+
+    public void reset() {
+        picoMs.reset();
+    }
+}
+```
+
+### 10.7. Coleções concorrentes (`java.util.concurrent`)
+
+O pacote `java.util.concurrent` traz implementações de coleções projetadas para acesso concorrente, sem necessidade de sincronização externa.
+
+#### `ConcurrentHashMap`
+
+Mapa thread-safe com alto grau de paralelismo interno. Ao contrário de `Collections.synchronizedMap`, não bloqueia o mapa inteiro nas operações — usa segmentação interna para permitir leituras e escritas simultâneas em partes diferentes.
+
+Situações de uso:
+
+- cache local compartilhado entre threads sem lock externo;
+- registro de sessões, conexões ou recursos ativos em memória;
+- contagem por chave em cenários de alta concorrência;
+- repositório in-memory de configurações ou estados por tenant ou usuário.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.stereotype.Component;
+
+@Component
+public class SessionRegistry {
+
+    private final Map<String, String> sessoes = new ConcurrentHashMap<>();
+
+    public void registrar(String sessionId, String usuario) {
+        sessoes.put(sessionId, usuario);
+    }
+
+    public String usuario(String sessionId) {
+        return sessoes.get(sessionId);
+    }
+
+    public void remover(String sessionId) {
+        sessoes.remove(sessionId);
+    }
+
+    public int total() {
+        return sessoes.size();
+    }
+}
+```
+
+Operações compostas como "inserir se ausente" e "atualizar se presente" também são atômicas via `putIfAbsent`, `computeIfAbsent`, `computeIfPresent` e `merge`:
+
+```java
+// Incremento de contador por chave, sem lock externo:
+contadores.merge(chave, 1L, Long::sum);
+
+// Criar bucket apenas na primeira vez:
+buckets.computeIfAbsent(clienteId, id -> Bucket.builder().build());
+```
+
+#### `CopyOnWriteArrayList`
+
+Lista thread-safe cujas operações de escrita (add, set, remove) criam internamente uma cópia do array subjacente. As leituras operam sobre o snapshot existente, sem bloqueio.
+
+Situações de uso:
+
+- listas de listeners ou observers registrados em runtime;
+- listas de configuração lidas com alta frequência e alteradas raramente;
+- coleções de filtros, interceptors ou callbacks em memória;
+- caching de resultados de consulta que são substituídos periodicamente.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import org.springframework.stereotype.Component;
+
+@Component
+public class EventListenerRegistry {
+
+    private final List<EventHandler> handlers = new CopyOnWriteArrayList<>();
+
+    public void registrar(EventHandler handler) {
+        handlers.add(handler);
+    }
+
+    public void remover(EventHandler handler) {
+        handlers.remove(handler);
+    }
+
+    public void notificar(String evento) {
+        for (EventHandler handler : handlers) {
+            handler.handle(evento);
+        }
+    }
+}
+```
+
+Cuidado: cada escrita copia o array inteiro. Para listas grandes com escritas frequentes, o custo pode ser alto. Prefira `CopyOnWriteArrayList` apenas quando leituras superam escritas amplamente.
+
+#### `CopyOnWriteArraySet`
+
+Conjunto thread-safe baseado em `CopyOnWriteArrayList`. Garante ausência de duplicatas com as mesmas características de copy-on-write.
+
+Situações de uso:
+
+- conjunto de IPs, usuários ou tokens ativos com leitura frequente;
+- lista de permissões ou bloqueios consultada a cada requisição;
+- conjunto de flags ou features ativas carregadas em memória.
+
+#### `LinkedBlockingQueue` e `ArrayBlockingQueue`
+
+Filas bloqueantes thread-safe. `LinkedBlockingQueue` tem capacidade opcional (padrão ilimitado); `ArrayBlockingQueue` tem capacidade fixa e mantém ordem FIFO estrita.
+
+Situações de uso:
+
+- fila de tarefas entre threads produtoras e consumidoras;
+- buffer entre componentes assíncronos no mesmo processo;
+- limitação de trabalho pendente antes de processar (backpressure simples);
+- fila de eventos internos consumidos por worker threads.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.LinkedBlockingQueue;
+import org.springframework.stereotype.Component;
+
+@Component
+public class TaskQueue {
+
+    private final LinkedBlockingQueue<Runnable> fila = new LinkedBlockingQueue<>(500);
+
+    public boolean enfileirar(Runnable tarefa) {
+        return fila.offer(tarefa);
+    }
+
+    public Runnable proximaTarefa() throws InterruptedException {
+        return fila.take();
+    }
+
+    public int pendentes() {
+        return fila.size();
+    }
+}
+```
+
+`offer` retorna `false` se a fila estiver cheia (não bloqueia). `take` bloqueia até haver um item.
+
+#### `PriorityBlockingQueue`
+
+Fila bloqueante sem limite de capacidade que entrega elementos por ordem de prioridade (via `Comparator` ou `Comparable`).
+
+Situações de uso:
+
+- fila de processamento com prioridade de negócio (ex.: pedidos urgentes primeiro);
+- escalonamento de tarefas por custo ou prazo;
+- fila de reprocessamento onde erros críticos têm precedência.
+
+#### `DelayQueue`
+
+Fila onde cada elemento só fica disponível após seu atraso expirar.
+
+Situações de uso:
+
+- agendamento de tarefas com delay sem precisar de scheduler externo;
+- expiração de cache ou tokens em memória;
+- implementação de retry com backoff em memória.
+
+#### `ConcurrentSkipListMap` e `ConcurrentSkipListSet`
+
+Versões concorrentes de `TreeMap` e `TreeSet` — mantêm os elementos em ordem natural ou por `Comparator`, com acesso thread-safe sem locks globais.
+
+Situações de uso:
+
+- mapa ordenado por chave acessado por múltiplos threads;
+- range queries concorrentes (ex.: eventos em uma janela de tempo);
+- leaderboards ou rankings em memória;
+- índices in-memory ordenados com leitura e escrita simultâneas.
+
+### 10.8. Sincronizadores
+
+O pacote `java.util.concurrent` também inclui sincronizadores de alto nível para coordenação entre threads.
+
+#### `CountDownLatch`
+
+Permite que um ou mais threads esperem até que um conjunto de operações em outros threads seja concluído. O contador só decresce — após chegar a zero, não pode ser reiniciado.
+
+Situações de uso:
+
+- aguardar a inicialização paralela de múltiplos componentes antes de liberar tráfego;
+- esperar o término de um conjunto fixo de tarefas assíncronas;
+- testes de integração que precisam sincronizar threads concorrentes;
+- coordenar startup de serviços dependentes.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import org.springframework.stereotype.Service;
+
+@Service
+public class InicializacaoParalelaService {
+
+    public void inicializar() throws InterruptedException {
+        int tarefas = 3;
+        CountDownLatch latch = new CountDownLatch(tarefas);
+        ExecutorService executor = Executors.newFixedThreadPool(tarefas);
+
+        executor.submit(() -> {
+            try {
+                // Carregar cache de produtos.
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        executor.submit(() -> {
+            try {
+                // Carregar configurações do banco.
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        executor.submit(() -> {
+            try {
+                // Validar conexões externas.
+            } finally {
+                latch.countDown();
+            }
+        });
+
+        latch.await(); // Aguarda as três tarefas terminarem.
+        executor.shutdown();
+    }
+}
+```
+
+#### `CyclicBarrier`
+
+Similar ao `CountDownLatch`, mas reutilizável: após todos os threads chegarem ao ponto de encontro, a barreira se reinicia automaticamente para o próximo ciclo.
+
+Situações de uso:
+
+- processamento paralelo em fases onde todas as threads devem terminar cada fase antes de avançar;
+- simulações ou cálculos iterativos com sincronização a cada rodada;
+- pipelines paralelos com checkpoints entre etapas.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CyclicBarrier;
+
+public class ProcessamentoFasesParalelo {
+
+    private final CyclicBarrier barreira;
+
+    public ProcessamentoFasesParalelo(int threads) {
+        this.barreira = new CyclicBarrier(threads, () ->
+                System.out.println("Fase concluída — todos os threads sincronizados.")
+        );
+    }
+
+    public void executarFase(int idThread) throws InterruptedException, BrokenBarrierException {
+        System.out.println("Thread " + idThread + " processando fase...");
+        barreira.await(); // Espera todos chegarem antes de avançar.
+    }
+}
+```
+
+A ação passada ao construtor (`Runnable`) é executada uma vez quando o último thread chega — útil para consolidar resultados parciais ou registrar métricas por fase.
+
+#### `Semaphore`
+
+Controla o número de threads que podem acessar um recurso simultaneamente. Diferente de um lock, o `Semaphore` pode ter múltiplos "slots" de permissão.
+
+Situações de uso:
+
+- limitar conexões simultâneas a um recurso externo (banco, API, arquivo);
+- controlar grau de paralelismo em pools de recursos não gerenciados pelo framework;
+- implementar rate limiting interno por número de execuções concorrentes;
+- throttle de chamadas a serviços lentos ou com cota de conexões.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.Semaphore;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ConexaoLimitadaService {
+
+    private final Semaphore semaforo = new Semaphore(10);
+
+    public String consultar(String parametro) throws InterruptedException {
+        semaforo.acquire();
+        try {
+            // No máximo 10 threads simultâneas chegam aqui.
+            return "resultado para " + parametro;
+        } finally {
+            semaforo.release();
+        }
+    }
+}
+```
+
+`tryAcquire(timeout, unit)` retorna `false` se não conseguir permissão no tempo definido, permitindo rejeição explícita em vez de bloqueio indefinido.
+
+#### `Exchanger`
+
+Permite que dois threads troquem objetos em um ponto de encontro. Cada thread chama `exchange(valor)` e fica bloqueado até o outro também chamar — os dois recebem o valor do outro.
+
+Situações de uso:
+
+- pipeline com dois estágios onde cada thread preenche um buffer e os troca ao final;
+- protocolo de handshake entre produtor e consumidor;
+- sincronização de estado entre duas threads em testes ou simulações.
+
+#### `Phaser`
+
+Versão mais flexível e reusável de `CyclicBarrier` e `CountDownLatch`. Permite que threads se registrem e cancelem o registro dinamicamente, e suporta múltiplas fases com comportamento customizável ao avançar de fase.
+
+Situações de uso:
+
+- processamento paralelo com número variável de participantes por fase;
+- pipelines onde novos workers podem ser adicionados ou removidos entre fases;
+- coordenação de tarefas recursivas ou com divisão dinâmica de trabalho.
+
+```java
+package br.com.exemplo.concorrencia;
+
+import java.util.concurrent.Phaser;
+
+public class ProcessamentoDinamicoParalelo {
+
+    public void executar(int threads) {
+        Phaser phaser = new Phaser(1); // Registra o thread principal.
+
+        for (int i = 0; i < threads; i++) {
+            final int id = i;
+            phaser.register();
+            new Thread(() -> {
+                System.out.println("Thread " + id + " na fase " + phaser.getPhase());
+                phaser.arriveAndAwaitAdvance(); // Sincroniza com os demais.
+                System.out.println("Thread " + id + " avançou para fase " + phaser.getPhase());
+                phaser.arriveAndDeregister(); // Remove-se do phaser.
+            }).start();
+        }
+
+        phaser.arriveAndDeregister(); // Thread principal se retira.
+    }
+}
+```
+
+### 10.9. Comparação prática
+
+| Cenário | Tipo recomendado |
+| --- | --- |
+| Exclusão mútua com timeout ou interrupção | `ReentrantLock` |
+| Muitas leituras, poucas escritas | `ReentrantReadWriteLock` |
+| Leitura muito frequente, escrita rarissima, performance crítica | `StampedLock` |
+| Coordenação produtor/consumidor com condição de espera | `ReentrantLock` + `Condition` |
+| Infraestrutura de sincronização customizada de baixo nível | `LockSupport` |
+| Contador ou flag compartilhado entre threads | `AtomicInteger` / `AtomicLong` / `AtomicBoolean` |
+| Referência de objeto trocada atomicamente | `AtomicReference` |
+| Contador com altíssimo volume de incrementos concorrentes | `LongAdder` |
+| Acumulação com operação customizada (max, min) | `LongAccumulator` |
+| Mapa compartilhado entre threads | `ConcurrentHashMap` |
+| Lista com muita leitura e pouca escrita (listeners, filtros) | `CopyOnWriteArrayList` |
+| Fila produtor-consumidor com backpressure | `LinkedBlockingQueue` / `ArrayBlockingQueue` |
+| Fila com prioridade de negócio | `PriorityBlockingQueue` |
+| Mapa concorrente com ordenação | `ConcurrentSkipListMap` |
+| Aguardar N operações paralelas concluírem (uso único) | `CountDownLatch` |
+| Sincronizar threads em fases repetidas | `CyclicBarrier` |
+| Limitar conexões ou execuções simultâneas | `Semaphore` |
+| Coordenação com número variável de participantes | `Phaser` |
+| Recurso já thread-safe ou acessado por thread único | Nenhum |
+
+### 10.10. Locks explícitos vs `synchronized`
+
+`synchronized` continua sendo uma boa escolha quando:
+
+- a proteção é simples e não precisa de timeout;
+- não há necessidade de múltiplas condições;
+- o escopo da seção crítica é bem delimitado por um bloco ou método.
+
+Locks explícitos valem mais quando:
+
+- é preciso tentar adquirir sem bloquear indefinidamente;
+- há necessidade de distinguir leitura de escrita;
+- são necessárias múltiplas condições de espera;
+- o lock precisa ser transferido entre métodos (o `synchronized` está preso ao escopo léxico).
+
+### 10.11. Boas práticas
+
+- sempre liberar o lock em bloco `finally`;
+- preferir `tryLock` com timeout quando bloqueio indefinido for inaceitável;
+- não usar `StampedLock` de forma reentrant;
+- manter as seções críticas tão curtas quanto possível;
+- não chamar métodos externos ou de I/O dentro de seções protegidas por lock sempre que possível;
+- preferir tipos atômicos e coleções concorrentes quando o Java já oferece a estrutura adequada — locks explícitos ficam para casos que esses tipos não cobrem;
+- para contadores de alta frequência, preferir `LongAdder` a `AtomicLong`;
+- para mapas compartilhados, preferir `ConcurrentHashMap` a `HashMap` + `synchronized`;
+- usar `computeIfAbsent` e `merge` do `ConcurrentHashMap` em vez de sequências get + put;
+- escolher `CopyOnWriteArrayList` apenas quando leituras superam amplamente as escritas;
+- calibrar capacidade de `ArrayBlockingQueue` e `Semaphore` conforme o recurso que protegem;
+- documentar qual invariante o lock ou sincronizador protege, para facilitar manutenção.
+
+## 11. Sugestão de organização do projeto
 
 ```text
 src/main/java/br/com/exemplo/
@@ -6012,7 +6992,7 @@ src/main/java/br/com/exemplo/
     requestreply/
 ```
 
-## 11. Resumo
+## 12. Resumo
 
 Os tópicos avançados deste documento seguem a mesma ideia de arquitetura:
 
@@ -6023,7 +7003,7 @@ Os tópicos avançados deste documento seguem a mesma ideia de arquitetura:
 
 Esse desenho deixa a aplicação mais flexível em produção, reduz a necessidade de deploy para ajustes operacionais e facilita a evolução para cenários multi-tenant, clusterizados ou orientados a eventos.
 
-## 12. Referencias
+## 13. Referencias
 
 As referências abaixo foram usadas como base oficial ou complementar relevante para a elaboração deste documento:
 

@@ -56,6 +56,12 @@ Documentação consolidada com apoio de agentes de IA (Claude Code).
 
 ---
 
+## Desenvolvimento com Ferramentas de IA
+
+* [Desenvolvimento-com-IA.md](Desenvolvimento-com-IA.md) — Boas práticas, configurações e prompts para Claude Code, Gemini CLI e OpenAI Codex/ChatGPT; conceitos de MCP, vibe coding, spec-driven development e harness engineering
+
+---
+
 # Dicas e boas práticas de desenvolvimento (legado)
 
 Documentações, tutoriais e dicas gerais
