@@ -83,6 +83,7 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
       - [Tipografia](#tipografia)
       - [Animações e Transições](#animações-e-transições)
     - [Padrões de Tela — HTML × Flutter lado a lado](#padrões-de-tela--html--flutter-lado-a-lado)
+    - [Requisições HTTP Assíncronas — Fetch API × Flutter](#requisições-http-assíncronas--fetch-api--flutter)
 
 ---
 
@@ -5177,6 +5178,269 @@ Scaffold(
 ```
 
 > **`NavigationBar` vs `BottomNavigationBar`:** `NavigationBar` é o componente Material 3 recomendado (suporta badges e indicador de seleção animado). `BottomNavigationBar` é o predecessor Material 2, ainda funcional mas legado.
+
+---
+
+---
+
+### Requisições HTTP Assíncronas — Fetch API × Flutter
+
+#### Conceitos equivalentes
+
+| Fetch API (JavaScript) | Flutter (Dart) | Observação |
+|---|---|---|
+| `fetch(url)` | `http.get(Uri.parse(url))` / `dio.get(url)` | Retorna uma `Future` (equivalente a `Promise`) |
+| `Promise` | `Future<T>` | Representação de valor assíncrono futuro |
+| `.then()` / `.catch()` | `await` + `try/catch` | Dart usa async/await nativo; `.then()` também existe |
+| `async function` | `Future<T> nome() async {}` | Toda função assíncrona retorna `Future` |
+| `await fetch(url)` | `await http.get(...)` | Mesma sintaxe de espera |
+| `response.json()` | `jsonDecode(response.body)` | Decodificação manual em Dart |
+| `response.ok` | `response.statusCode >= 200 && < 300` | Verificação manual de status HTTP |
+| `response.status` | `response.statusCode` | Código numérico da resposta |
+| `AbortController` | `CancelToken` (Dio) | Cancelamento de requisição |
+| `Headers` | `Map<String, String>` em `headers:` | Cabeçalhos como mapa Dart |
+| `FormData` | `MultipartRequest` (http) / `FormData` (Dio) | Upload de arquivos e formulários |
+
+---
+
+#### GET — buscar dados
+
+```js
+// JavaScript — Fetch API
+async function buscarProdutos() {
+  const response = await fetch('https://api.exemplo.com/produtos');
+  if (!response.ok) throw new Error(`Erro: ${response.status}`);
+  const dados = await response.json();
+  return dados;
+}
+```
+
+```dart
+// Flutter — pacote http
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+Future<List<Map<String, dynamic>>> buscarProdutos() async {
+  final response = await http.get(
+    Uri.parse('https://api.exemplo.com/produtos'),
+  );
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw Exception('Erro: ${response.statusCode}');
+  }
+  final List<dynamic> dados = jsonDecode(response.body);
+  return dados.cast<Map<String, dynamic>>();
+}
+```
+
+```dart
+// Flutter — Dio (equivalente mais direto ao fetch)
+import 'package:dio/dio.dart';
+
+final dio = Dio();
+
+Future<List<dynamic>> buscarProdutos() async {
+  final response = await dio.get('https://api.exemplo.com/produtos');
+  return response.data as List<dynamic>; // já decodificado
+}
+```
+
+---
+
+#### POST — enviar dados com corpo JSON
+
+```js
+// JavaScript — Fetch API
+async function criarProduto(produto) {
+  const response = await fetch('https://api.exemplo.com/produtos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(produto),
+  });
+  if (!response.ok) throw new Error(`Erro: ${response.status}`);
+  return response.json();
+}
+```
+
+```dart
+// Flutter — pacote http
+Future<Map<String, dynamic>> criarProduto(Map<String, dynamic> produto) async {
+  final response = await http.post(
+    Uri.parse('https://api.exemplo.com/produtos'),
+    headers: {'Content-Type': 'application/json'},
+    body: jsonEncode(produto),
+  );
+  if (response.statusCode < 200 || response.statusCode >= 300) {
+    throw Exception('Erro: ${response.statusCode}');
+  }
+  return jsonDecode(response.body) as Map<String, dynamic>;
+}
+```
+
+```dart
+// Flutter — Dio
+Future<Map<String, dynamic>> criarProduto(Map<String, dynamic> produto) async {
+  final response = await dio.post(
+    'https://api.exemplo.com/produtos',
+    data: produto, // serialização automática
+  );
+  return response.data as Map<String, dynamic>;
+}
+```
+
+---
+
+#### PUT e DELETE
+
+```js
+// JavaScript
+await fetch(`/produtos/${id}`, { method: 'PUT', body: JSON.stringify(dados), headers: {...} });
+await fetch(`/produtos/${id}`, { method: 'DELETE' });
+```
+
+```dart
+// Flutter — Dio
+await dio.put('/produtos/$id', data: dados);
+await dio.delete('/produtos/$id');
+```
+
+---
+
+#### Tratamento de erros
+
+```js
+// JavaScript
+try {
+  const res = await fetch('/produtos');
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const dados = await res.json();
+} catch (e) {
+  console.error('Falha na requisição:', e.message);
+}
+```
+
+```dart
+// Flutter — http
+try {
+  final res = await http.get(Uri.parse('/produtos'));
+  if (res.statusCode != 200) throw Exception('HTTP ${res.statusCode}');
+  final dados = jsonDecode(res.body);
+} on http.ClientException catch (e) {
+  // sem conectividade ou URL inválida
+  debugPrint('Erro de rede: $e');
+} catch (e) {
+  debugPrint('Erro: $e');
+}
+```
+
+```dart
+// Flutter — Dio (exceções tipadas)
+try {
+  final res = await dio.get('/produtos');
+} on DioException catch (e) {
+  switch (e.type) {
+    case DioExceptionType.connectionTimeout:
+    case DioExceptionType.receiveTimeout:
+      debugPrint('Timeout');
+    case DioExceptionType.badResponse:
+      debugPrint('HTTP ${e.response?.statusCode}');
+    case DioExceptionType.connectionError:
+      debugPrint('Sem conexão');
+    default:
+      debugPrint('Erro: ${e.message}');
+  }
+}
+```
+
+---
+
+#### Requisição com cabeçalho de autenticação
+
+```js
+// JavaScript
+const token = localStorage.getItem('token');
+const res = await fetch('/perfil', {
+  headers: { 'Authorization': `Bearer ${token}` },
+});
+```
+
+```dart
+// Flutter — http
+final token = await storage.read(key: 'token'); // flutter_secure_storage
+final res = await http.get(
+  Uri.parse('https://api.exemplo.com/perfil'),
+  headers: {'Authorization': 'Bearer $token'},
+);
+```
+
+```dart
+// Flutter — Dio com interceptor (equivalente a um middleware global)
+dio.interceptors.add(
+  InterceptorsWrapper(
+    onRequest: (options, handler) async {
+      final token = await storage.read(key: 'token');
+      options.headers['Authorization'] = 'Bearer $token';
+      handler.next(options);
+    },
+  ),
+);
+// A partir daqui, todas as requisições do `dio` incluem o token automaticamente.
+```
+
+---
+
+#### Estado de carregamento na UI
+
+```js
+// JavaScript — React
+const [loading, setLoading] = useState(false);
+const [dados, setDados] = useState([]);
+
+async function carregar() {
+  setLoading(true);
+  try {
+    const res = await fetch('/produtos');
+    setDados(await res.json());
+  } finally {
+    setLoading(false);
+  }
+}
+```
+
+```dart
+// Flutter — StatefulWidget
+bool _carregando = false;
+List<dynamic> _dados = [];
+
+Future<void> carregar() async {
+  setState(() => _carregando = true);
+  try {
+    final res = await http.get(Uri.parse('/produtos'));
+    setState(() => _dados = jsonDecode(res.body) as List<dynamic>);
+  } finally {
+    setState(() => _carregando = false);
+  }
+}
+
+// Na build:
+_carregando
+    ? const CircularProgressIndicator()
+    : ListView.builder(itemCount: _dados.length, ...)
+```
+
+```dart
+// Flutter — Riverpod FutureProvider (mais idiomático)
+final produtosProvider = FutureProvider<List<Produto>>((ref) async {
+  final res = await ref.watch(dioProvider).get('/produtos');
+  return (res.data as List).map(Produto.fromJson).toList();
+});
+
+// Na widget (ConsumerWidget):
+ref.watch(produtosProvider).when(
+  loading: () => const CircularProgressIndicator(),
+  error: (e, _) => Text('Erro: $e'),
+  data: (lista) => ListView.builder(itemCount: lista.length, ...),
+)
+```
 
 ---
 
