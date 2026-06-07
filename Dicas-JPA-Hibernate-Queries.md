@@ -54,6 +54,11 @@
 27. [Configuração do PostgreSQL — Performance e Segurança](#27-configuração-do-postgresql-performance-e-segurança)
 28. [Testes de Repositório com @DataJpaTest](#28-testes-de-repositório-com-datajpatest)
 
+**Parte 7 — Tipos Avançados do PostgreSQL**
+
+29. [Queries em Dados JSON/JSONB](#29-queries-em-dados-jsonjsonb)
+30. [Consultas Geográficas com PostGIS](#30-consultas-geográficas-com-postgis)
+
 ---
 
 ## Modelo de Domínio — Entidades Usadas nos Exemplos
@@ -3177,6 +3182,269 @@ List<Aluno> searchSemColunaTsvector(@Param("termo") String termo);
 
 Funcional mas sem índice GIN — performance degrada em tabelas grandes.
 
+### Full-Text Search com `websearch_to_tsquery`
+
+`websearch_to_tsquery` aceita a sintaxe familiar de buscadores: termos separados por espaço viram AND implícito, aspas definem frases exatas, `-` exclui termos e `OR` une alternativas.
+
+```java
+@Query(value = """
+    SELECT * FROM aluno
+    WHERE search_vector @@ websearch_to_tsquery('portuguese', :busca)
+    ORDER BY ts_rank(search_vector, websearch_to_tsquery('portuguese', :busca)) DESC
+    """, nativeQuery = true)
+List<Aluno> buscaWeb(@Param("busca") String busca);
+```
+
+```
+"joão silva"   → frase exata
+java -spring   → java excluindo spring
+java OR python → java ou python
+```
+
+### Highlighting com `ts_headline`
+
+Retorna o trecho do texto com os termos encontrados destacados, sem precisar fazer uma segunda query:
+
+```java
+@Query(value = """
+    SELECT a.id, a.nome,
+           ts_headline('portuguese', a.nome,
+               plainto_tsquery('portuguese', :termo),
+               'StartSel=<mark>, StopSel=</mark>, MaxWords=10, MinWords=5') AS trecho
+    FROM aluno a
+    WHERE a.search_vector @@ plainto_tsquery('portuguese', :termo)
+    """, nativeQuery = true)
+List<Object[]> searchComHighlight(@Param("termo") String termo);
+```
+
+### Busca Facetada
+
+Busca facetada retorna, junto com os resultados paginados, contagens agrupadas por categorias relevantes — o equivalente aos "filtros da lateral" de um e-commerce. O banco computa os totais sobre o mesmo conjunto filtrado pela busca, garantindo consistência entre resultados e facetas.
+
+#### DTOs de resposta
+
+```java
+public record FacetaItem(String valor, long contagem) {}
+
+public record BuscaComFacetas<T>(
+    Page<T>                          resultados,
+    Map<String, List<FacetaItem>>    facetas
+) {}
+```
+
+#### Abordagem 1 — múltiplas queries (simples e legível)
+
+Uma query para os resultados paginados e queries leves para cada faceta, todas compartilhando o mesmo predicado FTS:
+
+```java
+// AlunoRepository
+
+@Query(
+    value = """
+        SELECT * FROM aluno
+        WHERE search_vector @@ plainto_tsquery('portuguese', :termo)
+        ORDER BY ts_rank(search_vector, plainto_tsquery('portuguese', :termo)) DESC
+        """,
+    countQuery = "SELECT COUNT(*) FROM aluno WHERE search_vector @@ plainto_tsquery('portuguese', :termo)",
+    nativeQuery = true
+)
+Page<Aluno> fullTextSearch(@Param("termo") String termo, Pageable pageable);
+
+// Faceta: distribuição por status (ativo/inativo)
+@Query(value = """
+    SELECT CASE WHEN ativo THEN 'Ativo' ELSE 'Inativo' END AS valor,
+           COUNT(*) AS contagem
+    FROM aluno
+    WHERE search_vector @@ plainto_tsquery('portuguese', :termo)
+    GROUP BY ativo
+    ORDER BY contagem DESC
+    """, nativeQuery = true)
+List<Object[]> facetaPorStatus(@Param("termo") String termo);
+
+// Faceta: top cursos nos quais os alunos encontrados estão matriculados
+@Query(value = """
+    SELECT c.nome AS valor, COUNT(DISTINCT a.id) AS contagem
+    FROM aluno a
+    JOIN matricula m ON m.aluno_id = a.id
+    JOIN curso    c  ON c.id       = m.curso_id
+    WHERE a.search_vector @@ plainto_tsquery('portuguese', :termo)
+    GROUP BY c.nome
+    ORDER BY contagem DESC
+    LIMIT 10
+    """, nativeQuery = true)
+List<Object[]> facetaPorCurso(@Param("termo") String termo);
+```
+
+Service que combina os resultados:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class BuscaAlunoService {
+
+    private final AlunoRepository repository;
+
+    public BuscaComFacetas<Aluno> buscar(String termo, Pageable pageable) {
+        Page<Aluno> resultados = repository.fullTextSearch(termo, pageable);
+
+        Map<String, List<FacetaItem>> facetas = new LinkedHashMap<>();
+        facetas.put("status", toFaceta(repository.facetaPorStatus(termo)));
+        facetas.put("curso",  toFaceta(repository.facetaPorCurso(termo)));
+
+        return new BuscaComFacetas<>(resultados, facetas);
+    }
+
+    private List<FacetaItem> toFaceta(List<Object[]> rows) {
+        return rows.stream()
+            .map(r -> new FacetaItem((String) r[0], ((Number) r[1]).longValue()))
+            .toList();
+    }
+}
+```
+
+#### Abordagem 2 — CTE única (uma ida ao banco)
+
+Para evitar múltiplos round-trips, uma única query com CTEs computa resultados e facetas simultaneamente e devolve tudo serializado como JSON:
+
+```java
+@Query(value = """
+    WITH base AS (
+        SELECT a.id, a.nome, a.ra, a.ativo,
+               ts_rank(a.search_vector, plainto_tsquery('portuguese', :termo)) AS rank
+        FROM aluno a
+        WHERE a.search_vector @@ plainto_tsquery('portuguese', :termo)
+    ),
+    pagina AS (
+        SELECT * FROM base ORDER BY rank DESC LIMIT :limite OFFSET :offset
+    ),
+    faceta_status AS (
+        SELECT jsonb_agg(
+            jsonb_build_object('valor', valor, 'contagem', contagem)
+            ORDER BY contagem DESC
+        ) AS items
+        FROM (
+            SELECT CASE WHEN ativo THEN 'Ativo' ELSE 'Inativo' END AS valor,
+                   COUNT(*) AS contagem
+            FROM base GROUP BY ativo
+        ) t
+    ),
+    faceta_curso AS (
+        SELECT jsonb_agg(
+            jsonb_build_object('valor', valor, 'contagem', contagem)
+            ORDER BY contagem DESC
+        ) AS items
+        FROM (
+            SELECT c.nome AS valor, COUNT(DISTINCT b.id) AS contagem
+            FROM base b
+            JOIN matricula m ON m.aluno_id = b.id
+            JOIN curso    c  ON c.id       = m.curso_id
+            GROUP BY c.nome
+            LIMIT 10
+        ) t
+    )
+    SELECT
+        (SELECT COUNT(*) FROM base)                           AS total,
+        (SELECT jsonb_agg(row_to_json(p)) FROM pagina p)      AS itens,
+        jsonb_build_object(
+            'status', (SELECT items FROM faceta_status),
+            'curso',  (SELECT items FROM faceta_curso)
+        )                                                     AS facetas
+    """, nativeQuery = true)
+Object[] buscarComFacetasCte(
+    @Param("termo")  String termo,
+    @Param("limite") int limite,
+    @Param("offset") int offset
+);
+```
+
+Deserialização no serviço com Jackson:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class BuscaAlunoService {
+
+    private final AlunoRepository  repository;
+    private final ObjectMapper      mapper;
+
+    public BuscaComFacetas<Map<String, Object>> buscarCte(
+            String termo, int pagina, int tamanhoPagina) throws Exception {
+
+        int offset = pagina * tamanhoPagina;
+        Object[] row = repository.buscarComFacetasCte(termo, tamanhoPagina, offset);
+
+        long total = ((Number) row[0]).longValue();
+
+        // row[1] e row[2] chegam como String (JSON serializado pelo PostgreSQL)
+        List<Map<String, Object>> itens = mapper.readValue(
+            (String) row[1], new TypeReference<>() {});
+
+        Map<String, List<FacetaItem>> facetas = new LinkedHashMap<>();
+        Map<String, Object> facetasJson = mapper.readValue(
+            (String) row[2], new TypeReference<>() {});
+
+        facetasJson.forEach((dim, items) -> {
+            List<Map<String, Object>> lista = (List<Map<String, Object>>) items;
+            facetas.put(dim, lista.stream()
+                .map(i -> new FacetaItem(
+                    (String) i.get("valor"),
+                    ((Number) i.get("contagem")).longValue()))
+                .toList());
+        });
+
+        Page<Map<String, Object>> page =
+            new PageImpl<>(itens, PageRequest.of(pagina, tamanhoPagina), total);
+
+        return new BuscaComFacetas<>(page, facetas);
+    }
+}
+```
+
+#### Quando usar cada abordagem
+
+| Critério | Múltiplas queries | CTE única |
+|---|---|---|
+| Legibilidade | Alta — queries independentes e simples | Média — SQL mais complexo |
+| Round-trips | Uma por faceta + uma para resultados | Um único |
+| Flexibilidade | Fácil adicionar/remover facetas | Requer reescrever o SQL |
+| Facetas condicionais | Simples — chame só as necessárias | Requer CTEs condicionais ou CASE |
+| Volume de dados | Adequado para a maioria dos casos | Preferível quando latência é crítica |
+
+> Para facetas sobre o conjunto **completo** (sem filtro FTS), substitua o `WHERE search_vector @@` por `WHERE TRUE` nas queries de faceta — útil para mostrar contagens globais nas opções de filtro antes de o usuário digitar.
+
+### FTS com Specification (filtro dinâmico)
+
+Combinar Full-Text Search com outros filtros dinâmicos via Criteria API:
+
+```java
+public static Specification<Aluno> ftsContendo(String termo) {
+    return (root, query, cb) -> {
+        if (termo == null || termo.isBlank()) return cb.conjunction();
+        // jsonb_extract_path_text como função genérica — mesma abordagem funciona para ts_rank
+        return cb.greaterThan(
+            cb.function("ts_rank", Double.class,
+                root.get("searchVector"),
+                cb.function("plainto_tsquery", Object.class,
+                    cb.literal("portuguese"),
+                    cb.literal(termo))
+            ),
+            0.0
+        );
+    };
+}
+```
+
+Composição com outros filtros:
+
+```java
+Specification<Aluno> spec = ftsContendo("engenharia")
+    .and(AlunoSpecs.comStatus(StatusAluno.ATIVO));
+
+Page<Aluno> resultado = repository.findAll(spec, PageRequest.of(0, 20));
+```
+
+> Na prática, FTS dinâmico é mais legível com query nativa diretamente no repository. Reserve Specification para combinar FTS com filtros simples sobre colunas mapeadas.
+
 ---
 
 
@@ -6043,7 +6311,56 @@ O Hibernate não rastreia mudanças nas entidades retornadas. Economia de memór
 
 #### Fetch graph e load graph como hint
 
-Os EntityGraphs podem ser aplicados como hints — é o que o Spring Data faz internamente com `@EntityGraph`:
+Os EntityGraphs podem ser aplicados como hints — é o que o Spring Data faz internamente com `@EntityGraph`.
+
+Os exemplos a seguir assumem que a entidade possui um `@NamedEntityGraph` declarado:
+
+```java
+@NamedEntityGraph(
+    name = "Curso.comModulos",
+    attributeNodes = @NamedAttributeNode("modulos")
+)
+@Entity
+public class Curso {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String nome;
+
+    @OneToMany(mappedBy = "curso", fetch = FetchType.LAZY)
+    private List<Modulo> modulos;
+}
+```
+
+`@NamedAttributeNode("modulos")` não exige nenhuma configuração na classe `Modulo` — apenas instrui o JPA a carregar eagerly a coleção. Para carregar atributos **dentro** de `Modulo` (ex: `modulos.professor`), define-se um `@NamedSubgraph` ainda na entidade raiz, sem tocar em `Modulo`:
+
+```java
+@NamedEntityGraph(
+    name = "Curso.comModulosEProfessor",
+    attributeNodes = @NamedAttributeNode(value = "modulos", subgraph = "modulos-professor"),
+    subgraphs = @NamedSubgraph(
+        name = "modulos-professor",
+        attributeNodes = @NamedAttributeNode("professor")
+    )
+)
+@Entity
+public class Curso { ... }
+```
+
+`@NamedSubgraph` é o equivalente do `addSubgraph("modulos").addAttributeNodes("professor")` do JPA puro — e ainda reside em `Curso`, não em `Modulo`.
+
+O `graph` passado como valor do hint é um objeto `EntityGraph<T>` obtido via `EntityManager`. Pode ser criado dinamicamente ou carregado a partir de um `@NamedEntityGraph` declarado na entidade:
+
+```java
+// Criando o grafo dinamicamente
+EntityGraph<Curso> graph = entityManager.createEntityGraph(Curso.class);
+graph.addAttributeNodes("modulos", "professor");
+
+// Ou carregando um @NamedEntityGraph já declarado na entidade
+EntityGraph<?> graph = entityManager.getEntityGraph("Curso.comModulos");
+```
 
 ```java
 // JPA puro — via hint
@@ -6063,6 +6380,56 @@ entityManager.createQuery("SELECT c FROM Curso c", Curso.class)
 | `jakarta.persistence.fetchgraph` | Atributos no grafo: EAGER. Demais: LAZY. |
 | `jakarta.persistence.loadgraph` | Atributos no grafo: EAGER. Demais: mantém FetchType original. |
 
+No Spring Data JPA, os mesmos hints podem ser aplicados via `@QueryHints` em métodos do Repository — sem precisar do `EntityManager` diretamente:
+
+```java
+public interface CursoRepository extends JpaRepository<Curso, Long> {
+
+    // fetchgraph: carrega só os atributos do grafo; os demais ficam LAZY
+    @QueryHints(@QueryHint(
+        name = "jakarta.persistence.fetchgraph",
+        value = "Curso.comModulos"
+    ))
+    @Query("SELECT c FROM Curso c WHERE c.id = :id")
+    Optional<Curso> findByIdComModulos(@Param("id") Long id);
+
+    // loadgraph: carrega os atributos do grafo; os demais mantêm o FetchType do mapeamento
+    @QueryHints(@QueryHint(
+        name = "jakarta.persistence.loadgraph",
+        value = "Curso.comModulos"
+    ))
+    @Query("SELECT c FROM Curso c WHERE c.ativo = true")
+    List<Curso> findAtivosComModulos();
+}
+```
+
+Com `attributePaths` é possível dispensar o `@NamedEntityGraph` e definir os atributos diretamente no Repository, incluindo caminhos aninhados — equivalente ao grafo dinâmico criado via `EntityManager` no JPA puro:
+
+```java
+// JPA puro equivalente:
+// EntityGraph<Curso> graph = entityManager.createEntityGraph(Curso.class);
+// Subgraph<Modulo> modulos = graph.addSubgraph("modulos");
+// modulos.addAttributeNodes("professor");
+
+@EntityGraph(attributePaths = {"modulos", "modulos.professor"}) // padrão: FETCH
+@Query("SELECT c FROM Curso c WHERE c.id = :id")
+Optional<Curso> findByIdComModulosEProfessor(@Param("id") Long id);
+```
+
+O tipo do hint (`fetchgraph` ou `loadgraph`) é controlado pelo parâmetro `type` da anotação:
+
+```java
+// fetchgraph (padrão): demais atributos ficam LAZY
+@EntityGraph(attributePaths = {"modulos", "modulos.professor"}, type = EntityGraph.EntityGraphType.FETCH)
+Optional<Curso> findById(Long id);
+
+// loadgraph: demais atributos mantêm o FetchType original
+@EntityGraph(attributePaths = {"modulos", "modulos.professor"}, type = EntityGraph.EntityGraphType.LOAD)
+Optional<Curso> findById(Long id);
+```
+
+A diferença prática: use **fetchgraph** quando quiser controle total sobre o que é carregado (os demais atributos EAGER do mapeamento são ignorados). Use **loadgraph** quando quiser apenas acrescentar carregamento eager a atributos que normalmente seriam LAZY, sem alterar o comportamento dos que já são EAGER.
+
 #### Cache mode hint
 
 ```java
@@ -6071,6 +6438,37 @@ entityManager.createQuery("SELECT c FROM Curso c", Curso.class)
     .setHint("jakarta.persistence.cache.storeMode", CacheStoreMode.BYPASS)
     .setHint("jakarta.persistence.cache.retrieveMode", CacheRetrieveMode.BYPASS)
     .getResultList();
+```
+
+**`CacheRetrieveMode`** — controla a **leitura** do cache L2:
+
+| Valor | Comportamento |
+|---|---|
+| `USE` (padrão) | Lê do cache L2 se a entidade estiver disponível; só vai ao banco se não encontrar. |
+| `BYPASS` | Ignora o cache L2 e sempre lê do banco. |
+
+**`CacheStoreMode`** — controla a **escrita** no cache L2:
+
+| Valor | Comportamento |
+|---|---|
+| `USE` (padrão) | Armazena no cache L2 após ler ou persistir. Não substitui entradas já existentes. |
+| `BYPASS` | Não armazena no cache L2. |
+| `REFRESH` | Armazena no cache L2 e **substitui** a entrada existente, forçando atualização. |
+
+No Spring Data JPA, os hints são passados como strings via `@QueryHint`. Os valores dos enums devem ser informados como string no nome completo da constante:
+
+```java
+@QueryHint(name = "jakarta.persistence.cache.retrieveMode", value = "BYPASS")
+@QueryHint(name = "jakarta.persistence.cache.storeMode", value = "BYPASS")
+@Query("SELECT c FROM Curso c WHERE c.ativo = true")
+List<Curso> findAtivosIgnorandoCache();
+```
+
+```java
+// REFRESH: útil após operações que alteram dados fora do contexto JPA (ex: batch SQL nativo)
+@QueryHint(name = "jakarta.persistence.cache.storeMode", value = "REFRESH")
+@Query("SELECT c FROM Curso c WHERE c.id = :id")
+Optional<Curso> findByIdAtualizandoCache(@Param("id") Long id);
 ```
 
 ### Hints Hibernate
@@ -8285,6 +8683,488 @@ void deveListarMatriculasDoBruno() {
 ---
 
 
+## Parte 7 — Tipos Avançados do PostgreSQL
+
+## 29. Queries em Dados JSON/JSONB
+
+PostgreSQL armazena JSON como `json` (texto validado) ou `jsonb` (binário indexável). Para JPA/Hibernate, a biblioteca de referência é o [Hypersistence Utils](https://github.com/vladmihalcea/hypersistence-utils), que mapeia tipos nativos do PostgreSQL com suporte completo a serialização Jackson.
+
+### Dependência
+
+```xml
+<!-- Hypersistence Utils — mapeamento de tipos PostgreSQL no Hibernate 6 -->
+<dependency>
+    <groupId>io.hypersistence</groupId>
+    <artifactId>hypersistence-utils-hibernate-63</artifactId>
+    <version>3.9.0</version>
+</dependency>
+```
+
+> Ajuste o sufixo conforme a versão do Hibernate: `hibernate-62`, `hibernate-63`, `hibernate-60`.
+
+### Entidade com campo JSONB
+
+```java
+import io.hypersistence.utils.hibernate.type.json.JsonBinaryType;
+import org.hibernate.annotations.Type;
+
+@Entity
+@Table(name = "aluno")
+public class Aluno extends BaseEntity {
+
+    // ... campos existentes ...
+
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> metadados;   // estrutura livre
+
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private List<String> tags;
+}
+```
+
+#### Migration Flyway
+
+```sql
+ALTER TABLE aluno ADD COLUMN metadados jsonb;
+ALTER TABLE aluno ADD COLUMN tags      jsonb;
+
+-- Índice GIN para operações @> (contenção) e ? (existência de chave)
+CREATE INDEX idx_aluno_metadados_gin ON aluno USING GIN (metadados);
+CREATE INDEX idx_aluno_tags_gin      ON aluno USING GIN (tags);
+```
+
+### Operadores JSONB essenciais
+
+| Operador | Significado | Exemplo SQL |
+|---|---|---|
+| `->` | extrai campo como JSON | `metadados -> 'endereco'` |
+| `->>` | extrai campo como texto | `metadados ->> 'cidade'` |
+| `#>` | extrai por caminho como JSON | `metadados #> '{endereco,cidade}'` |
+| `#>>` | extrai por caminho como texto | `metadados #>> '{endereco,cidade}'` |
+| `@>` | contém (usa índice GIN) | `metadados @> '{"ativo":true}'` |
+| `?` | chave existe | `metadados ? 'telefone'` |
+| `?|` | qualquer chave existe | `metadados ?| array['a','b']` |
+| `?&` | todas as chaves existem | `metadados ?& array['a','b']` |
+
+### Queries com `@Query` nativa
+
+#### Filtrar por valor de campo JSON
+
+```java
+@Query(value = """
+    SELECT * FROM aluno
+    WHERE metadados ->> 'cidade' = :cidade
+    """, nativeQuery = true)
+List<Aluno> findByCidade(@Param("cidade") String cidade);
+```
+
+#### Filtrar por contenção (`@>`)
+
+```java
+// Alunos cujos metadados contêm exatamente {"turno": "noturno"}
+@Query(value = """
+    SELECT * FROM aluno
+    WHERE metadados @> CAST(:json AS jsonb)
+    """, nativeQuery = true)
+List<Aluno> findByMetadadosContendo(@Param("json") String json);
+
+// Chamada
+List<Aluno> noturnos = repo.findByMetadadosContendo("{\"turno\": \"noturno\"}");
+```
+
+#### Verificar existência de chave
+
+```java
+@Query(value = "SELECT * FROM aluno WHERE metadados ? :chave", nativeQuery = true)
+List<Aluno> findComChave(@Param("chave") String chave);
+```
+
+#### Filtrar por tag (array JSONB)
+
+```java
+@Query(value = """
+    SELECT * FROM aluno
+    WHERE tags @> CAST(:tag AS jsonb)
+    """, nativeQuery = true)
+List<Aluno> findByTag(@Param("tag") String tag);
+
+// O valor precisa ser um array JSON com um elemento
+List<Aluno> bolsistas = repo.findByTag("[\"bolsista\"]");
+```
+
+#### Busca por caminho aninhado com `jsonb_path_exists`
+
+```java
+@Query(value = """
+    SELECT * FROM aluno
+    WHERE jsonb_path_exists(
+        metadados,
+        '$.endereco.cidade ? (@ == $cidade)',
+        jsonb_build_object('cidade', :cidade::text)
+    )
+    """, nativeQuery = true)
+List<Aluno> findByCidadeAninhada(@Param("cidade") String cidade);
+```
+
+### Atualização parcial com `jsonb_set`
+
+Altera um campo dentro do JSON sem sobrescrever o objeto inteiro:
+
+```java
+@Modifying
+@Query(value = """
+    UPDATE aluno
+    SET metadados = jsonb_set(metadados, '{cidade}', CAST(:novaCidade AS jsonb))
+    WHERE id = :id
+    """, nativeQuery = true)
+void atualizarCidade(@Param("id") Long id, @Param("novaCidade") String novaCidade);
+
+// O valor precisa ser JSON válido — strings levam aspas escapadas
+repo.atualizarCidade(1L, "\"Campinas\"");
+```
+
+#### Adicionar ou mesclar campos (`||`)
+
+```java
+@Modifying
+@Query(value = """
+    UPDATE aluno
+    SET metadados = metadados || CAST(:campos AS jsonb)
+    WHERE id = :id
+    """, nativeQuery = true)
+void mesclarMetadados(@Param("id") Long id, @Param("campos") String campos);
+
+repo.mesclarMetadados(1L, "{\"telefone\": \"11999990000\", \"turno\": \"noturno\"}");
+```
+
+#### Remover campo
+
+```java
+@Modifying
+@Query(value = "UPDATE aluno SET metadados = metadados - :chave WHERE id = :id",
+       nativeQuery = true)
+void removerCampo(@Param("id") Long id, @Param("chave") String chave);
+```
+
+### Ordenação por campo JSONB
+
+```java
+@Query(value = """
+    SELECT * FROM aluno
+    ORDER BY metadados ->> 'prioridade' DESC NULLS LAST
+    """, nativeQuery = true)
+List<Aluno> findAllOrdenadosPorPrioridade();
+```
+
+### Objeto tipado com Jackson
+
+Em vez de `Map<String, Object>`, mapeie para um record:
+
+```java
+public record Endereco(String rua, String cidade, String cep) {}
+
+@Entity
+public class Aluno extends BaseEntity {
+
+    @Type(JsonBinaryType.class)
+    @Column(columnDefinition = "jsonb")
+    private Endereco endereco;
+}
+```
+
+O Hypersistence Utils serializa/deserializa via Jackson automaticamente. O banco armazena `{"rua":"Av. Paulista","cidade":"São Paulo","cep":"01310-100"}`.
+
+### Specification com filtro JSONB
+
+```java
+public static Specification<Aluno> comCidade(String cidade) {
+    return (root, query, cb) -> cb.equal(
+        cb.function("jsonb_extract_path_text",   // equivalente ao operador #>>
+            String.class,
+            root.get("metadados"),
+            cb.literal("cidade")),
+        cidade
+    );
+}
+
+// Compor com filtros normais
+Specification<Aluno> spec = Aluno.comCidade("São Paulo")
+    .and(AlunoSpecs.comStatus(StatusAluno.ATIVO));
+```
+
+---
+
+## 30. Consultas Geográficas com PostGIS
+
+PostGIS estende o PostgreSQL com tipos geométricos (`geometry`, `geography`) e funções espaciais. O **Hibernate Spatial** (incluído no Hibernate 6 ORM) mapeia colunas `geometry` diretamente em entidades Java e registra funções espaciais para uso em JPQL e Criteria API.
+
+### Dependências
+
+```xml
+<!-- Hibernate Spatial — incluído no hibernate-core 6.x, mas precisa estar explícito -->
+<dependency>
+    <groupId>org.hibernate.orm</groupId>
+    <artifactId>hibernate-spatial</artifactId>
+</dependency>
+
+<!-- JTS Topology Suite — tipos geométricos em Java -->
+<dependency>
+    <groupId>org.locationtech.jts</groupId>
+    <artifactId>jts-core</artifactId>
+    <version>1.19.0</version>
+</dependency>
+```
+
+> No Spring Boot 3.x, `hibernate-spatial` está no BOM — declare sem `<version>`.
+
+### Setup no banco
+
+```sql
+-- Habilitar a extensão PostGIS
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- Tabela de unidades com localização e área de atendimento
+CREATE TABLE unidade (
+    id               bigserial PRIMARY KEY,
+    nome             varchar(200) NOT NULL,
+    localizacao      geometry(Point,   4326),   -- ponto WGS84 (lon/lat)
+    area_atendimento geometry(Polygon, 4326)
+);
+
+-- Índice GiST — obrigatório para consultas espaciais eficientes
+CREATE INDEX idx_unidade_localizacao ON unidade USING GIST (localizacao);
+CREATE INDEX idx_unidade_area        ON unidade USING GIST (area_atendimento);
+```
+
+### Entidade com `Point`
+
+```java
+import org.locationtech.jts.geom.Point;
+import org.locationtech.jts.geom.Polygon;
+
+@Entity
+@Table(name = "unidade")
+public class Unidade extends BaseEntity {
+
+    private String nome;
+
+    @Column(columnDefinition = "geometry(Point, 4326)")
+    private Point localizacao;
+
+    @Column(columnDefinition = "geometry(Polygon, 4326)")
+    private Polygon areaAtendimento;
+}
+```
+
+> Use `org.locationtech.jts.geom.*` (JTS 1.x). A versão antiga `com.vividsolutions.jts.*` é incompatível com Hibernate 6.
+
+#### Criando um `Point` em Java
+
+```java
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.PrecisionModel;
+
+private static final GeometryFactory GF =
+    new GeometryFactory(new PrecisionModel(), 4326);  // SRID 4326 = WGS84
+
+public static Point criarPonto(double longitude, double latitude) {
+    return GF.createPoint(new Coordinate(longitude, latitude));
+}
+
+// Uso — coordenadas: longitude primeiro, depois latitude
+unidade.setLocalizacao(criarPonto(-46.6333, -23.5505));  // São Paulo
+```
+
+### Repository — queries espaciais
+
+#### Busca por raio com `ST_DWithin` (query nativa com `::geography`)
+
+O cast `::geography` faz o PostgreSQL calcular distâncias em **metros** sobre o elipsoide WGS84, eliminando a necessidade de reprojetar para SRS métrico:
+
+```java
+@Query(value = """
+    SELECT u.*,
+           ST_Distance(u.localizacao::geography,
+                       ST_MakePoint(:lon, :lat)::geography) AS distancia_metros
+    FROM unidade u
+    WHERE ST_DWithin(u.localizacao::geography,
+                     ST_MakePoint(:lon, :lat)::geography, :raioMetros)
+    ORDER BY distancia_metros
+    """, nativeQuery = true)
+List<Object[]> findProximasComDistancia(
+    @Param("lon") double longitude,
+    @Param("lat") double latitude,
+    @Param("raioMetros") double raioMetros
+);
+```
+
+#### Com projeção tipada
+
+```java
+public interface UnidadeProximidade {
+    Long getId();
+    String getNome();
+    Double getDistanciaMetros();
+}
+
+@Query(value = """
+    SELECT u.id, u.nome,
+           ST_Distance(u.localizacao::geography,
+                       ST_MakePoint(:lon, :lat)::geography) AS distancia_metros
+    FROM unidade u
+    WHERE ST_DWithin(u.localizacao::geography,
+                     ST_MakePoint(:lon, :lat)::geography, :raioMetros)
+    ORDER BY distancia_metros
+    """, nativeQuery = true)
+List<UnidadeProximidade> findProximas(
+    @Param("lon") double longitude,
+    @Param("lat") double latitude,
+    @Param("raioMetros") double raioMetros
+);
+```
+
+#### K vizinhos mais próximos com `<->` (KNN)
+
+O operador `<->` usa o índice GiST diretamente — sem varredura completa:
+
+```java
+@Query(value = """
+    SELECT u.*
+    FROM unidade u
+    ORDER BY u.localizacao <-> ST_MakePoint(:lon, :lat)::geometry
+    LIMIT :n
+    """, nativeQuery = true)
+List<Unidade> findNMaisProximas(
+    @Param("lon") double longitude,
+    @Param("lat") double latitude,
+    @Param("n") int n
+);
+```
+
+#### Ponto dentro de polígono (`ST_Within`)
+
+```java
+@Query(value = """
+    SELECT u.* FROM unidade u
+    WHERE ST_Within(ST_MakePoint(:lon, :lat), u.area_atendimento)
+    """, nativeQuery = true)
+List<Unidade> findQueAtende(
+    @Param("lon") double longitude,
+    @Param("lat") double latitude
+);
+```
+
+#### Geometrias que se intersectam
+
+```java
+@Query(value = """
+    SELECT u.* FROM unidade u
+    WHERE ST_Intersects(u.area_atendimento, ST_GeomFromText(:wkt, 4326))
+    """, nativeQuery = true)
+List<Unidade> findNaRegiao(@Param("wkt") String wkt);
+
+// Chamada com polígono WKT
+List<Unidade> unidades = repo.findNaRegiao(
+    "POLYGON((-47.0 -24.0, -46.0 -24.0, -46.0 -23.0, -47.0 -23.0, -47.0 -24.0))"
+);
+```
+
+### Funções PostGIS mais usadas
+
+| Função | Descrição |
+|---|---|
+| `ST_Distance(a, b)` | Distância (metros com `::geography`, graus com `geometry`) |
+| `ST_DWithin(a, b, d)` | Verdadeiro se distância ≤ `d`; usa índice GiST |
+| `ST_Within(a, b)` | `a` está completamente dentro de `b` |
+| `ST_Contains(a, b)` | `a` contém completamente `b` |
+| `ST_Intersects(a, b)` | As geometrias se intersectam |
+| `ST_MakePoint(lon, lat)` | Cria um `Point` a partir de coordenadas |
+| `ST_Transform(geom, srid)` | Reprojecta para outro sistema de referência |
+| `ST_AsText(geom)` | Retorna representação WKT |
+| `ST_AsGeoJSON(geom)` | Retorna representação GeoJSON |
+| `ST_GeomFromText(wkt, srid)` | Cria geometria a partir de WKT |
+| `<->` | Distância KNN — usa índice GiST sem varredura |
+
+### Retornando GeoJSON diretamente
+
+```java
+@Query(value = """
+    SELECT json_build_object(
+        'type', 'FeatureCollection',
+        'features', json_agg(
+            json_build_object(
+                'type', 'Feature',
+                'geometry', ST_AsGeoJSON(u.localizacao)::json,
+                'properties', json_build_object('id', u.id, 'nome', u.nome)
+            )
+        )
+    )::text
+    FROM unidade u
+    WHERE ST_DWithin(u.localizacao::geography,
+                     ST_MakePoint(:lon, :lat)::geography, :raioMetros)
+    """, nativeQuery = true)
+String findGeoJsonProximas(
+    @Param("lon") double longitude,
+    @Param("lat") double latitude,
+    @Param("raioMetros") double raioMetros
+);
+```
+
+### Specification com filtro espacial
+
+```java
+public static Specification<Unidade> dentroDoRaio(double lon, double lat, double metros) {
+    return (root, query, cb) -> cb.isTrue(
+        cb.function("ST_DWithin", Boolean.class,
+            cb.function("ST_Transform",
+                Object.class,
+                root.get("localizacao"),
+                cb.literal(3857)),   // Web Mercator — metros
+            cb.function("ST_Transform",
+                Object.class,
+                cb.function("ST_MakePoint", Object.class,
+                    cb.literal(lon), cb.literal(lat)),
+                cb.literal(3857)),
+            cb.literal(metros))
+    );
+}
+```
+
+### Testes com Testcontainers e PostGIS
+
+```java
+@Container
+@ServiceConnection
+static PostgreSQLContainer<?> postgres =
+    new PostgreSQLContainer<>("postgis/postgis:16-3.4-alpine");
+//                              ↑ imagem com PostGIS pré-instalado
+```
+
+Use a imagem `postgis/postgis` em vez da `postgres` padrão. A extensão ainda precisa ser habilitada via migration:
+
+```sql
+-- src/main/resources/db/migration/V0__extensions.sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+```
+
+### Configuração do Hibernate Spatial
+
+```yaml
+# application.yml — Hibernate 6 detecta funções espaciais automaticamente
+# quando hibernate-spatial está no classpath; nenhuma configuração extra necessária
+spring:
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+```
+
+---
+
+
 ## Referências
 
 - [Spring Data JPA Reference — Query Methods](https://docs.spring.io/spring-data/jpa/reference/jpa/query-methods.html)
@@ -8294,3 +9174,8 @@ void deveListarMatriculasDoBruno() {
 - [Thorben Janssen — Thoughts on Java / JPA & Hibernate](https://thorben-janssen.com/)
 - [PostgreSQL Full-Text Search Documentation](https://www.postgresql.org/docs/current/textsearch.html)
 - [Jakarta Persistence Specification — Query Language](https://jakarta.ee/specifications/persistence/)
+- [PostgreSQL JSONB Documentation](https://www.postgresql.org/docs/current/datatype-json.html)
+- [Hypersistence Utils — Mapeamento de tipos PostgreSQL no Hibernate](https://github.com/vladmihaldera/hypersistence-utils)
+- [PostGIS Documentation](https://postgis.net/documentation/)
+- [Hibernate Spatial — Tipos e Funções Geográficas](https://docs.jboss.org/hibernate/orm/6.6/userguide/html_single/Hibernate_User_Guide.html#spatial)
+- [JTS Topology Suite](https://locationtech.github.io/jts/)

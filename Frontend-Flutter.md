@@ -8,7 +8,14 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
 
 1. [Fundamentos do Flutter](#1-fundamentos-do-flutter)
    - [Configuração do Projeto](#configuração-do-projeto)
+     - [Instalação no Windows](#instalação-no-windows)
+     - [Instalação no macOS](#instalação-no-macos)
+   - [Gerenciamento de Versões — FVM](#gerenciamento-de-versões--fvm)
+     - [Instalação do FVM no Windows](#instalação-do-fvm-no-windows)
+     - [Instalação do FVM no macOS / Linux](#instalação-do-fvm-no-macos--linux)
+   - [Configuração das IDEs](#configuração-das-ides)
    - [Estrutura de Pastas](#estrutura-de-pastas)
+   - [Arquivos de Configuração](#arquivos-de-configuração)
    - [Widgets Essenciais](#widgets-essenciais)
      - [Estrutura de Tela](#estrutura-de-tela) — Scaffold, AppBar, SafeArea, Drawer
      - [Layout e Posicionamento](#layout-e-posicionamento) — Column, Row, Stack, Container, Padding, SizedBox, Center, Align, Wrap
@@ -93,8 +100,111 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
 
 Flutter exige a instalação do Flutter SDK e, para iOS, do Xcode (macOS obrigatório).
 
+#### Instalação no Windows
+
+**Pré-requisitos:**
+- Windows 10 (versão 1903+) ou Windows 11, 64 bits
+- [Git for Windows](https://git-scm.com/download/win) 2.x+
+- PowerShell 5.0+ (já incluído no Windows 10/11)
+- ~2,5 GB para o Flutter SDK + ~8 GB para o Android Studio e Android SDK
+
+**Opção 1 — via `winget` (recomendado):**
+
+```powershell
+# Instalar Flutter SDK
+winget install Google.Flutter
+
+# Instalar Android Studio (inclui o Android SDK)
+winget install Google.AndroidStudio
+```
+
+Após a instalação, feche e reabra o terminal para que o `PATH` seja atualizado.
+
+**Opção 2 — instalação manual:**
+
+1. Baixe o SDK em [flutter.dev/install/windows](https://flutter.dev/install/windows).
+2. Extraia o `.zip` em `C:\dev\flutter` — evite caminhos com espaços ou caracteres especiais (ex.: não use `C:\Program Files`).
+3. Adicione `C:\dev\flutter\bin` ao `PATH`:
+   - *Painel de Controle > Sistema > Configurações avançadas do sistema > Variáveis de Ambiente*
+   - Em *Variáveis do usuário*, edite `Path` e adicione a entrada `C:\dev\flutter\bin`
+
+   Ou via PowerShell (permanente para o usuário atual):
+
+   ```powershell
+   $novo = "C:\dev\flutter\bin"
+   $atual = [System.Environment]::GetEnvironmentVariable("Path", "User")
+   [System.Environment]::SetEnvironmentVariable("Path", "$atual;$novo", "User")
+   ```
+
+**Configurar o Android SDK:**
+
+1. Instale o [Android Studio](https://developer.android.com/studio).
+2. No primeiro lançamento, conclua o assistente de configuração (baixa o Android SDK automaticamente).
+3. Instale os plugins **Flutter** e **Dart**: *File > Settings > Plugins > Marketplace*.
+4. Aceite as licenças do Android:
+
+```powershell
+flutter doctor --android-licenses
+```
+
+**Habilitar suporte a Windows Desktop (opcional):**
+
+```powershell
+flutter config --enable-windows-desktop
+
+# Criar projeto com suporte a Windows
+flutter create --platforms=windows meu_app
+
+# Rodar no Windows
+flutter run -d windows
+```
+
+**Verificar a instalação:**
+
+```powershell
+flutter doctor -v
+```
+
+Resultado esperado após configuração completa:
+
+```
+[✓] Flutter (Channel stable, 3.x.x, on Microsoft Windows 11)
+[✓] Windows Version (Windows 10 ou superior)
+[✓] Android toolchain - develop for Android devices
+[✓] Android Studio (version 2024.x)
+[✓] VS Code (version 1.x.x)
+[✓] Connected device (x available)
+```
+
+> **Atenção:** iOS **não pode** ser compilado no Windows. Para publicar na App Store é obrigatório macOS com Xcode.
+
+---
+
+#### Instalação no macOS
+
 ```bash
+# Via Homebrew (recomendado)
+brew install --cask flutter
+
+# Instalar CocoaPods (necessário para compilar iOS)
+sudo gem install cocoapods
+
+# Ativar ferramentas de linha de comando do Xcode (instale o Xcode pela App Store antes)
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+
 # Verificar instalação
+flutter doctor -v
+```
+
+> **Dica:** em vez de instalar o Flutter SDK diretamente, prefira o FVM (seção seguinte) para gerenciar versões por projeto.
+
+---
+
+#### Verificação e Primeiro Projeto
+
+```bash
+# Verificar instalação e dependências
 flutter doctor
 
 # Criar novo projeto
@@ -118,6 +228,234 @@ flutter run
 ```
 
 > **Dica:** use `flutter pub get` após editar `pubspec.yaml` manualmente. Use `dart run build_runner watch` em paralelo ao desenvolvimento para regenerar código do Riverpod automaticamente.
+
+---
+
+### Gerenciamento de Versões — FVM
+
+FVM (Flutter Version Manager) permite instalar e alternar entre versões do Flutter SDK, tanto globalmente quanto por projeto — útil quando diferentes projetos exigem versões distintas do SDK.
+
+**Pré-requisitos:**
+
+| Plataforma | Requisito mínimo |
+|---|---|
+| Windows | Git for Windows 2.x+ · um dos métodos: Chocolatey, Scoop **ou** Dart SDK no `PATH` |
+| macOS | Homebrew **ou** Dart SDK no `PATH` |
+| Linux | Homebrew (Linuxbrew) **ou** Dart SDK no `PATH` |
+
+O Dart SDK já vem incluído no Flutter SDK. Se o Flutter ainda não estiver instalado, use Chocolatey/Scoop/Homebrew (sem pré-requisito adicional) ou instale o [Dart SDK standalone](https://dart.dev/get-dart) antes de usar `dart pub global`.
+
+---
+
+#### Instalação do FVM no Windows
+
+**Opção 1 — via Chocolatey (não exige Dart pré-instalado):**
+
+```powershell
+# 1. Instalar Chocolatey — execute o PowerShell como Administrador
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = `
+  [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+# 2. Instalar FVM
+choco install fvm
+
+# 3. Verificar
+fvm --version
+```
+
+**Opção 2 — via Scoop (não exige Dart pré-instalado, sem necessidade de Administrador):**
+
+```powershell
+# 1. Instalar Scoop (se ainda não tiver)
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+irm get.scoop.sh | iex
+
+# 2. Adicionar o bucket extras e instalar FVM
+scoop bucket add extras
+scoop install fvm
+
+# 3. Verificar
+fvm --version
+```
+
+**Opção 3 — via `dart pub global` (requer Dart ou Flutter já instalado):**
+
+```powershell
+dart pub global activate fvm
+```
+
+O executável `fvm.bat` é instalado em `%LOCALAPPDATA%\Pub\Cache\bin`. Esse diretório precisa estar no `PATH`:
+
+```powershell
+# Verificar se já está no PATH
+$env:Path -split ";" | Where-Object { $_ -like "*Pub\Cache\bin*" }
+
+# Se não estiver, adicionar permanentemente para o usuário atual
+$pubBin = "$env:LOCALAPPDATA\Pub\Cache\bin"
+$atual = [System.Environment]::GetEnvironmentVariable("Path", "User")
+[System.Environment]::SetEnvironmentVariable("Path", "$atual;$pubBin", "User")
+
+# Reabrir o terminal e verificar
+fvm --version
+```
+
+> **Nota:** ao instalar o Flutter via `winget install Google.Flutter`, o `flutter doctor` costuma adicionar `%LOCALAPPDATA%\Pub\Cache\bin` ao `PATH` automaticamente. Nesse caso, `dart pub global activate fvm` já deixa o `fvm` disponível sem configuração manual.
+
+---
+
+#### Instalação do FVM no macOS / Linux
+
+**Via Homebrew (recomendado — não exige Dart pré-instalado):**
+
+```bash
+brew tap leoafarias/fvm
+brew install fvm
+
+# Verificar
+fvm --version
+```
+
+**Via `dart pub global` (requer Dart ou Flutter instalado):**
+
+```bash
+dart pub global activate fvm
+
+# Verificar se ~/.pub-cache/bin está no PATH
+echo $PATH | tr ':' '\n' | grep pub-cache
+
+# Se não estiver, adicionar ao shell (zsh)
+echo 'export PATH="$PATH:$HOME/.pub-cache/bin"' >> ~/.zshrc
+source ~/.zshrc
+
+# Para bash
+echo 'export PATH="$PATH:$HOME/.pub-cache/bin"' >> ~/.bashrc
+source ~/.bashrc
+
+# Verificar
+fvm --version
+```
+
+---
+
+**Versão global (padrão para o sistema):**
+
+```bash
+# Listar todas as versões disponíveis para download
+fvm releases
+
+# Instalar uma versão específica
+fvm install 3.32.0
+
+# Definir a versão global padrão do sistema
+fvm global 3.32.0
+
+# Listar versões já instaladas localmente
+fvm list
+```
+
+**Versão local (fixada por projeto):**
+
+Execute dentro do diretório do projeto. O FVM cria o arquivo `.fvm/fvm_config.json` com a versão fixada — commite esse arquivo para que toda a equipe use a mesma versão.
+
+```bash
+# Usar a versão estável mais recente
+fvm use stable
+
+# Usar uma versão específica
+fvm use 3.32.0
+
+# Usar o canal beta
+fvm use beta
+```
+
+**Comandos úteis:**
+
+```bash
+# Verificar diagnóstico do FVM no projeto atual
+fvm doctor
+
+# Remover uma versão instalada
+fvm remove 3.24.0
+
+# Ver versão do Flutter gerenciada pelo FVM no projeto
+fvm flutter --version
+fvm dart --version
+```
+
+**Rodar o app com FVM:**
+
+Em projetos com versão fixada, use sempre o prefixo `fvm` para garantir o SDK correto:
+
+```bash
+fvm flutter pub get
+fvm flutter run                                              # dispositivo padrão
+fvm flutter run -d chrome                                    # Web
+fvm flutter run -d emulator-5554                            # emulador Android específico
+fvm flutter build apk --release
+fvm flutter build appbundle --release
+fvm flutter build ipa --release
+fvm flutter test
+fvm dart run build_runner build --delete-conflicting-outputs
+fvm dart run build_runner watch
+```
+
+**Integração com VS Code** — adicionar em `.vscode/settings.json`:
+
+```json
+{
+  "dart.flutterSdkPath": ".fvm/flutter_sdk"
+}
+```
+
+> **Dica:** adicione `.fvm/flutter_sdk` ao `.gitignore` (o link simbólico do SDK não deve ser commitado) e commite `.fvm/fvm_config.json` para que todos no time usem a mesma versão do Flutter.
+
+---
+
+### Configuração das IDEs
+
+#### Android Studio
+
+1. Instale os plugins **Flutter** e **Dart**: *File > Settings > Plugins > Marketplace*.
+2. Para abrir um projeto Flutter: *File > Open* — selecione a **raiz do projeto** (onde está o `pubspec.yaml`). Não abra a subpasta `android/`.
+3. Se o Flutter SDK não for detectado automaticamente, configure o caminho em:
+   *File > Settings > Languages & Frameworks > Flutter > Flutter SDK path*
+   - **Sem FVM:** caminho global do SDK (ex.: `~/flutter` ou `C:\flutter`)
+   - **Com FVM:** `.fvm/flutter_sdk` na raiz do projeto
+4. Para criar e gerenciar emuladores Android: *Tools > Device Manager > +*.
+
+#### VS Code
+
+1. Instale a extensão **Flutter** (inclui a extensão Dart automaticamente).
+2. Abra a **pasta raiz** do projeto: *File > Open Folder*.
+3. Com FVM, configure `.vscode/settings.json`:
+   ```json
+   { "dart.flutterSdkPath": ".fvm/flutter_sdk" }
+   ```
+4. Atalhos úteis:
+   - `F5` — iniciar debug
+   - `Ctrl+F5` — rodar sem debug
+   - `Ctrl+Shift+P > Flutter: Select Device` — trocar dispositivo alvo
+
+#### Xcode (iOS — macOS obrigatório)
+
+> **Importante:** abra sempre o arquivo `.xcworkspace`, **nunca** o `.xcodeproj`. O `.xcworkspace` carrega as dependências CocoaPods.
+
+```bash
+# Abrir o workspace correto
+open ios/Runner.xcworkspace
+
+# Se os pods não estiverem instalados ou estiverem desatualizados
+cd ios && pod install && cd ..
+```
+
+Após abrir no Xcode:
+
+1. Selecione o target **Runner** na barra lateral esquerda.
+2. Em *Signing & Capabilities*, defina o **Team** (conta Apple Developer).
+3. Confirme o **Bundle Identifier** (ex.: `com.empresa.meuapp`).
+4. Em *General > Minimum Deployments*, verifique a versão mínima do iOS.
 
 ---
 
@@ -158,6 +496,59 @@ lib/
 └── routes/
     └── app_router.dart
 ```
+
+---
+
+### Arquivos de Configuração
+
+Principais arquivos de configuração de um projeto Flutter:
+
+**Raiz do projeto:**
+
+| Arquivo | Função |
+|---|---|
+| `pubspec.yaml` | Metadados, dependências, assets e fontes — equivalente ao `package.json` |
+| `pubspec.lock` | Versões exatas das dependências resolvidas (commitar no git) |
+| `analysis_options.yaml` | Regras do analisador Dart (lint) |
+| `.fvm/fvm_config.json` | Versão do Flutter fixada por projeto — commitar no git |
+| `.fvm/flutter_sdk/` | Link simbólico para o SDK gerenciado pelo FVM — **não commitar** |
+| `.flutter-plugins` | Plugins nativos registrados (gerado automaticamente) |
+| `.flutter-plugins-dependencies` | Grafo de dependências entre plugins (gerado automaticamente) |
+| `.gitignore` | Arquivos ignorados pelo git |
+| `.vscode/settings.json` | Configurações do projeto para o VS Code (SDK path) |
+
+**Android (`android/`):**
+
+| Arquivo | Função |
+|---|---|
+| `app/build.gradle` | Build config: versão mínima do Android, compileSdk, assinatura, minificação |
+| `app/src/main/AndroidManifest.xml` | Permissões, activities, deep links, metadados do app |
+| `gradle/wrapper/gradle-wrapper.properties` | Versão do Gradle |
+| `local.properties` | Caminhos locais do SDK Android — **não commitar** |
+| `key.properties` | Credenciais de assinatura (keystore) — **não commitar** |
+
+**iOS (`ios/`):**
+
+| Arquivo | Função |
+|---|---|
+| `Runner.xcworkspace` | Projeto Xcode com CocoaPods integrados — **sempre abra este arquivo** |
+| `Runner/Info.plist` | Permissões, Bundle ID, nome do app, configurações do sistema |
+| `Podfile` | Dependências CocoaPods e versão mínima do iOS |
+| `Podfile.lock` | Versões exatas dos pods — commitar no git |
+
+**Web (`web/`):**
+
+| Arquivo | Função |
+|---|---|
+| `index.html` | Ponto de entrada HTML |
+| `manifest.json` | Configuração do PWA (ícone, nome, cor de tema) |
+
+**CI/CD:**
+
+| Arquivo | Função |
+|---|---|
+| `.github/workflows/*.yml` | Pipelines GitHub Actions |
+| `fastlane/Fastfile` | Automação de build e publicação com Fastlane |
 
 ---
 

@@ -18,6 +18,9 @@ Referência consolidada sobre usabilidade, acessibilidade, HTML, CSS e SCSS para
 7. [CSS — Seletores e Propriedades](#7-css--seletores-e-propriedades)
 8. [CSS Moderno](#8-css-moderno)
 9. [SCSS](#9-scss)
+10. [Recursos Avançados de CSS](#recursos-avançados-de-css)
+    - [Transitions e Animações CSS](#transitions-e-animações-css)
+    - [View Transitions API](#view-transitions-api--animações-entre-páginas)
 
 ---
 
@@ -1764,6 +1767,212 @@ el.addEventListener('transitionend', (e) => {
   }
 }
 ```
+
+---
+
+### View Transitions API — Animações entre Páginas
+
+> MDN: [View Transitions API](https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API) · [CSS @starting-style](https://developer.mozilla.org/en-US/docs/Web/CSS/@starting-style)
+
+A **View Transitions API** permite criar animações fluidas entre mudanças de estado de página — tanto em SPAs (Single Page Applications) quanto entre páginas distintas (navegação de documento a documento). Elimina a necessidade de bibliotecas de animação externas para transições de navegação.
+
+#### Como funciona
+
+A API faz um "snapshot" da tela antes e depois da mudança de conteúdo, depois cria uma animação automaticamente entre os dois estados usando pseudo-elementos CSS.
+
+```
+Snapshot "before"  →  [mudança de DOM]  →  Snapshot "after"
+       ↓                                          ↓
+  ::view-transition-old(root)     ::view-transition-new(root)
+                    ↓
+          Animação CSS entre eles
+```
+
+#### Same-Document Transitions (SPA)
+
+Para transições dentro da mesma página (SPA, troca de conteúdo dinâmico):
+
+```js
+// Sem verificação de suporte
+document.querySelector('#nav a').addEventListener('click', async (e) => {
+  e.preventDefault();
+
+  // Verifica suporte
+  if (!document.startViewTransition) {
+    atualizarConteudo();
+    return;
+  }
+
+  // Envolve a atualização de DOM na API
+  const transicao = document.startViewTransition(() => {
+    atualizarConteudo(); // qualquer mudança de DOM aqui
+  });
+
+  await transicao.finished; // opcional: aguarda o fim da animação
+});
+
+function atualizarConteudo() {
+  document.querySelector('main').innerHTML = novoConteudo;
+}
+```
+
+**Animação padrão:** cross-fade suave. Para personalizar, use CSS com os pseudo-elementos gerados:
+
+```css
+/* Pseudo-elementos da transição */
+::view-transition-old(root) {
+  animation: 300ms ease-out sair;
+}
+
+::view-transition-new(root) {
+  animation: 300ms ease-in entrar;
+}
+
+@keyframes sair {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-30px); }
+}
+
+@keyframes entrar {
+  from { opacity: 0; transform: translateX(30px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+```
+
+#### Elementos com transição individual (`view-transition-name`)
+
+Ao nomear elementos, eles são animados de forma independente do restante da página — como um "hero animation" automático.
+
+```css
+/* Atribui um nome único ao elemento que deve ser rastreado individualmente */
+.card-selecionado {
+  view-transition-name: card-hero;
+}
+
+.detalhe-imagem {
+  view-transition-name: card-hero; /* mesmo nome = o browser anima entre os dois */
+}
+
+/* Personaliza a animação apenas deste elemento */
+::view-transition-old(card-hero),
+::view-transition-new(card-hero) {
+  animation-duration: 500ms;
+  animation-timing-function: ease-in-out;
+}
+```
+
+> **Regra:** cada `view-transition-name` deve ser único na página no momento da transição. Dois elementos com o mesmo nome ao mesmo tempo causam erro.
+
+#### Cross-Document Transitions (MPA — entre páginas)
+
+A partir do Chrome 126 e Safari 18, é possível animar transições entre páginas distintas sem JavaScript, apenas com CSS:
+
+```css
+/* Ativa a transição entre documentos — em ambas as páginas */
+@view-transition {
+  navigation: auto;
+}
+
+/* Personalização da animação de saída */
+::view-transition-old(root) {
+  animation: 250ms ease-out fade-out;
+}
+
+/* Personalização da animação de entrada */
+::view-transition-new(root) {
+  animation: 250ms ease-in fade-in;
+}
+
+@keyframes fade-out {
+  to { opacity: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+```
+
+```css
+/* Elementos rastreados entre páginas — mesmo view-transition-name nas duas páginas */
+/* página-lista.css */
+.produto-card[data-id="42"] {
+  view-transition-name: produto-42;
+}
+
+/* página-detalhe.css */
+.produto-hero {
+  view-transition-name: produto-42; /* browser anima de um para o outro */
+}
+```
+
+#### Direcionar animação por tipo de navegação
+
+```js
+// Armazena a direção antes de navegar
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[data-direction]');
+  if (!link) return;
+
+  sessionStorage.setItem('nav-direction', link.dataset.direction);
+});
+
+// Na nova página, lê a direção e adiciona classe ao documento
+const direction = sessionStorage.getItem('nav-direction');
+if (direction) {
+  document.documentElement.dataset.navDirection = direction;
+  sessionStorage.removeItem('nav-direction');
+}
+```
+
+```css
+/* Slide para a direita ao navegar "para frente" */
+[data-nav-direction="forward"]::view-transition-old(root) {
+  animation: slide-out-left 300ms ease;
+}
+[data-nav-direction="forward"]::view-transition-new(root) {
+  animation: slide-in-right 300ms ease;
+}
+
+/* Slide para a esquerda ao "voltar" */
+[data-nav-direction="back"]::view-transition-old(root) {
+  animation: slide-out-right 300ms ease;
+}
+[data-nav-direction="back"]::view-transition-new(root) {
+  animation: slide-in-left 300ms ease;
+}
+```
+
+#### Acessibilidade
+
+Sempre respeitar a preferência do usuário por menos movimento:
+
+```css
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+```
+
+#### Suporte e verificação
+
+| Recurso | Chrome | Firefox | Safari |
+|---|---|---|---|
+| Same-document transitions | 111+ | 🚫 (em desenvolvimento) | 18+ |
+| Cross-document (`@view-transition`) | 126+ | 🚫 | 18+ |
+| `view-transition-name` em CSS | 111+ | 🚫 | 18+ |
+
+```js
+// Verificação de suporte
+if (document.startViewTransition) {
+  // API disponível
+} else {
+  // fallback sem animação
+}
+```
+
+> **Dica:** Por ser uma melhoria progressiva, sempre forneça o caminho sem animação como fallback. A experiência funciona normalmente em navegadores sem suporte — apenas sem a transição animada.
 
 ---
 

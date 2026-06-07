@@ -186,6 +186,7 @@ public class EmailTemplateService {
         context.setVariables(variaveis);
 
         String html = templateEngine.process("boas-vindas", context); // Arquvo  src/main/templates/email/boas-vindas.html
+                                                                      // pasta "email" já foi configurada no emailTemplateEngine
 
         MimeMessage mimeMessage = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(

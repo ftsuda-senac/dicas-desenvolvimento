@@ -4614,6 +4614,189 @@ zona.addEventListener('drop', (e) => {
 
 ---
 
+### Page Visibility API
+
+> MDN: [Page Visibility API](https://developer.mozilla.org/pt-BR/docs/Web/API/Page_Visibility_API)
+
+A **Page Visibility API** permite detectar quando uma página está visível ou oculta para o usuário — por exemplo, ao trocar de aba, minimizar a janela ou bloquear a tela. Evita processamento desnecessário quando o usuário não está interagindo com a página.
+
+**Casos de uso comuns:**
+- Pausar vídeos, animações ou timers quando a aba está inativa
+- Suspender polling de dados e reduzir requisições à rede
+- Economizar bateria em dispositivos móveis
+- Contabilizar tempo real de visualização para analytics
+
+#### Propriedades e evento
+
+```js
+// document.visibilityState — estado atual da página
+document.visibilityState; // 'visible' | 'hidden'
+
+// document.hidden — atalho booleano (true quando visibilityState === 'hidden')
+document.hidden; // false | true
+
+// Evento disparado sempre que o estado muda
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    console.log('Página oculta');
+  } else {
+    console.log('Página visível');
+  }
+});
+```
+
+**Valores de `visibilityState`:**
+
+| Valor | Quando ocorre |
+|---|---|
+| `'visible'` | A aba está ativa e visível para o usuário |
+| `'hidden'` | A aba está em segundo plano, a janela está minimizada, ou a tela do dispositivo está bloqueada |
+
+#### Pausar e retomar um timer
+
+```js
+let intervaloId = null;
+let contagem = 0;
+
+function iniciarTimer() {
+  intervaloId = setInterval(() => {
+    contagem++;
+    console.log('Tick:', contagem);
+  }, 1000);
+}
+
+function pararTimer() {
+  clearInterval(intervaloId);
+  intervaloId = null;
+}
+
+// Inicia ao carregar
+iniciarTimer();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    pararTimer();
+  } else {
+    iniciarTimer();
+  }
+});
+```
+
+#### Pausar e retomar um vídeo automaticamente
+
+```js
+const video = document.querySelector('video');
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    video.pause();
+  } else {
+    video.play();
+  }
+});
+```
+
+#### Pausar animações com requestAnimationFrame
+
+```js
+let rafId = null;
+
+function animar(timestamp) {
+  // lógica da animação
+  rafId = requestAnimationFrame(animar);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  } else {
+    rafId = requestAnimationFrame(animar);
+  }
+});
+
+// Inicia a animação
+rafId = requestAnimationFrame(animar);
+```
+
+#### Suspender polling de dados
+
+```js
+let pollingId = null;
+
+async function buscarDados() {
+  const dados = await fetch('/api/status').then(r => r.json());
+  atualizarUI(dados);
+}
+
+function iniciarPolling() {
+  buscarDados(); // busca imediatamente ao iniciar
+  pollingId = setInterval(buscarDados, 30_000);
+}
+
+function pararPolling() {
+  clearInterval(pollingId);
+  pollingId = null;
+}
+
+iniciarPolling();
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    pararPolling();
+  } else {
+    iniciarPolling(); // retoma e busca dados atualizados imediatamente
+  }
+});
+```
+
+#### Medir tempo ativo na página (analytics)
+
+```js
+let inicioVisivel = Date.now();
+let tempoTotalMs = 0;
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    // acumula o tempo desde a última vez que ficou visível
+    tempoTotalMs += Date.now() - inicioVisivel;
+    console.log('Tempo ativo acumulado:', (tempoTotalMs / 1000).toFixed(1), 's');
+  } else {
+    inicioVisivel = Date.now();
+  }
+});
+
+// Registrar ao sair da página
+window.addEventListener('beforeunload', () => {
+  if (!document.hidden) {
+    tempoTotalMs += Date.now() - inicioVisivel;
+  }
+  // navigator.sendBeacon('/api/analytics', JSON.stringify({ tempoMs: tempoTotalMs }));
+});
+```
+
+#### Combinando com Page Lifecycle (freeze/resume)
+
+Navegadores modernos podem "congelar" abas inativas para economizar recursos. Os eventos `freeze` e `resume` do **Page Lifecycle API** complementam a Page Visibility API:
+
+```js
+// Disparado quando a aba é congelada (mais agressivo que "hidden")
+document.addEventListener('freeze', () => {
+  // salvar estado crítico — o processo pode ser terminado a qualquer momento
+  localStorage.setItem('rascunho', obterConteudoAtual());
+});
+
+// Disparado quando a aba é retomada do estado congelado
+document.addEventListener('resume', () => {
+  console.log('Aba retomada do estado congelado');
+  sincronizarDados();
+});
+```
+
+> **Suporte:** `visibilitychange` e `document.hidden` têm suporte amplo em todos os navegadores modernos. Os eventos `freeze`/`resume` são mais recentes — verificar suporte com `'onfreeze' in document` antes de usar.
+
+---
+
 ## Comparativo de Frameworks Frontend — Angular, React e Vue
 
 Referências detalhadas de cada framework:
