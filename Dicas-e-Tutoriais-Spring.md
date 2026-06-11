@@ -12,6 +12,7 @@
 * [Cenários comuns](#cenários-comuns)
 * [Ecossistema, testes e operação](#ecossistema-testes-e-operação)
 * [Java complementar](#java-complementar)
+* [Erros frequentes](#erros-frequentes)
 * [Troubleshooting](#troubleshooting)
 
 ## Como ler este documento
@@ -21,12 +22,21 @@
 * `[Exemplo]` indica snippet mínimo para começar ou lembrar da sintaxe.
 * `[Versão]` indica item que pode variar conforme a versão do Spring Boot, Spring Security, Spring Cloud ou da infraestrutura adotada.
 
+## Versão-alvo
+
+Este guia foi escrito com base no **Spring Boot 4.0.x**, **Spring Framework 7.0**, **Java 17** (mínimo) e **Java 25** (recomendado).
+
+* [Atenção] Projetos que ainda usam Spring Boot 2.x ou 3.x podem encontrar diferenças de comportamento, especialmente nas seções Security, Data JPA e Ecossistema/Testes.
+* [Atenção] A partir do Spring Boot 3.x (Jakarta EE 9+), todos os imports `javax.*` foram renomeados para `jakarta.*` (ex: `javax.persistence` → `jakarta.persistence`, `javax.validation` → `jakarta.validation`). Tutoriais antigos com `javax.*` precisam ter os imports atualizados.
+* Ao consultar a documentação oficial do Spring, substitua `/current/` pela versão concreta do seu projeto (ex: `/4.0/`).
+
 ## Arquitetura
 
 * 3-tier (Domain, Services, Presentation) -> Ver DDD ou Onion Architecture
     * https://blog.avenuecode.com/domain-driven-design-and-onion-architecture#:~:text=Onion%20Architecture%20is%20based%20on,but%20rather%20on%20domain%20models.
     * https://www.infoq.com/br/articles/onion-architecture/
     * https://www.javaguides.net/2020/07/three-tier-three-layer-architecture-in-spring-mvc-web-application.html
+* **Fundamentos obrigatórios:** anotações e injeção de dependências (seções abaixo). **Aprofundamento opcional:** DDD, Onion Architecture e Clean Architecture (links acima) — relevante após dominar os fundamentos.
 * Anotações `@Component`, `@Controller`, `@Service`, `@Repository`
     * ```mermaid
       ---
@@ -100,11 +110,35 @@
 ## MVC
 
 * `@Controller` e `@RestController`
+    * [Exemplo] Endpoint básico com `@RestController`:
+    ```java
+    @RestController
+    @RequestMapping("/pedidos")
+    public class PedidoController {
+
+        private final PedidoService pedidoService;
+
+        public PedidoController(PedidoService pedidoService) {
+            this.pedidoService = pedidoService;
+        }
+
+        @GetMapping("/{id}")
+        ResponseEntity<PedidoDto> buscar(@PathVariable Long id) {
+            return ResponseEntity.ok(pedidoService.buscar(id));
+        }
+
+        @PostMapping
+        ResponseEntity<PedidoDto> criar(@Valid @RequestBody NovoPedidoDto dto) {
+            PedidoDto criado = pedidoService.criar(dto);
+            return ResponseEntity.status(HttpStatus.CREATED).body(criado);
+        }
+    }
+    ```
 * Informações do Spring MVC Auto-configuration - https://docs.spring.io/spring-boot/reference/web/servlet.html#web.servlet.spring-mvc.auto-configuration
     * [Atenção] **NÃO** criar classe `@Configuration` + `@EnableWebMvc` - isso desabilita a auto-configuration - Basta criar classe que implementa `WebMvcConfigurer` **SEM** `@EnableWebMvc`
         ```java
         @Configuration
-        // @WebMvcConfig /* NÃO INCLUIR ESSA ANOTAÇÃO */
+        // @EnableWebMvc /* NÃO INCLUIR ESSA ANOTAÇÃO */
         public class CustomWebMvcConfig implements WebMvcConfigurer {
 
         }
@@ -116,6 +150,8 @@
 
         }
         ```
+* Versionamento de API (Spring MVC 7 / Spring Boot 4.0)
+    * Suporte nativo com `@GetMapping(version = "1.1+")` e propriedades `spring.mvc.apiversion.*`
 * Tratamento de erros com `@ControllerAdvice` + `@ExceptionHandler`+ Problem Details for HTTP APIs (RFC 7807) (+ `@ResponseStatus`)
     * [Exemplo]
     ```java
@@ -145,6 +181,16 @@
     * Integração com serviços externos (ex: AWS S3)
 * Utilitários
     * Dicas Bean Validation do JEE - https://reflectoring.io/bean-validation-with-spring-boot/
+    * [Exemplo] Validação em DTO e controller:
+    ```java
+    public record NovoPedidoDto(
+        @NotBlank String descricao,
+        @NotNull @Positive BigDecimal valor
+    ) {}
+
+    @PostMapping
+    ResponseEntity<PedidoDto> criar(@Valid @RequestBody NovoPedidoDto dto) { ... }
+    ```
     * Conversor de erros do Bean Validation do JEE para Spring Validator - Útil quando validação é feita no `@Service` mas precisa apresentar erros via `@Controller`
     ```java
     import java.util.Set;
@@ -230,6 +276,14 @@ JpaRepository <|-- MeuRepository
          Optional<Person> findSomethingNative(@Param("nameParam") String nameParam);
          ```
         
+        * Queries de escrita (UPDATE/DELETE) com `@Modifying`:
+        ```java
+        @Modifying
+        @Transactional
+        @Query("UPDATE Pedido p SET p.status = :status WHERE p.id = :id")
+        void atualizarStatus(@Param("id") Long id, @Param("status") String status);
+        ```
+        
         * Exemplo para concatenar parâmetros às funções e wildcards
         ```java
         // JPQL
@@ -258,7 +312,8 @@ JpaRepository <|-- MeuRepository
 ### Mapeamento, transações e desempenho
 
 * Outras dicas e pontos de atenção
-    * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`/ antigo `javax.persistence`) e evitar usar anotações específicas do Hibernate.
+    * Na criação das Entities, sempre que possível usar as anotações padrão do JPA puro (pacote `jakarta.persistence`) e evitar usar anotações específicas do Hibernate.
+        * [Atenção] Se encontrar tutoriais usando `javax.persistence`, esses são para Spring Boot 2.x. A partir do Spring Boot 3.x (Jakarta EE 9), o pacote correto é `jakarta.persistence`.
     * [Recomendado] Uso da configuração `spring.jpa.open-in-view=false` - recomendado para evitar o padrão Open Session/EntityManager in View e deixar explícitos os pontos de carregamento de dados e relacionamentos.
     * Uso do `@Transactional` (importado de `org.springframework.transaction.annotation.Transactional`) na camada `@Service`
         * Em projetos Spring, preferir `org.springframework.transaction.annotation.Transactional` quando for necessário usar recursos específicos como `propagation`, `isolation`, `readOnly` e `timeout`.
@@ -274,8 +329,14 @@ JpaRepository <|-- MeuRepository
                 // validacoes e regras de negocio
                 return pedidoRepository.save(pedido);
             }
+
+            @Transactional(readOnly = true)
+            public List<Pedido> listar() {
+                return pedidoRepository.findAll();
+            }
         }
         ```
+        * [Recomendado] Usar `@Transactional(readOnly = true)` em métodos de leitura: evita flush do Hibernate e permite otimizações do banco de dados.
     * Mapeamento das entidades com annotations do JPA
         * Fetchs EAGER, LAZY e como configurar fetch nas consultas usando Entity Graph
             * Por padrão, são adotados as seguintes configurações:
@@ -312,11 +373,13 @@ JpaRepository <|-- MeuRepository
         ```
         * Facilita a inclusão de anotações do Jackson2 para serialização/desserialização (https://www.baeldung.com/jackson-annotations)
         * Ferramentas para mapeamento automático
-            * ModelMapper (http://modelmapper.org/)
-            * Mapstruct (https://mapstruct.org/)
+            * [Recomendado] MapStruct (https://mapstruct.org/) — geração de código em tempo de compilação, sem reflexão em runtime, mais seguro e mais fácil de depurar
+            * ModelMapper (http://modelmapper.org/) — usa reflexão em runtime, mais flexível mas pode dificultar debug
             * Apache Commons BeanUtils (https://commons.apache.org/proper/commons-beanutils/)
             * OBS: Dependendo da complexidade das Entities e DTOs, uso das ferramentas pode dificultar processo de debug
     * Uso de @QueryHint para melhorar desempenhos das queries JPA - https://medium.com/javaguides/boost-performance-in-spring-data-jpa-with-query-hints-7628b37be857
+    * [Atenção] **Hibernate 7** (usado no Spring Boot 4.0) removeu os métodos `session.save()`, `session.update()` e `session.saveOrUpdate()`. Usar apenas a API padrão JPA: `entityManager.persist()` e `entityManager.merge()`.
+    * AOT Repositories (Spring Boot 4.0): query methods são compilados em código-fonte na build para suporte a GraalVM native image — sem impacto na escrita do código, mas relevante para projetos que geram native executables.
 
 ### Migrações de banco de dados
 
@@ -403,17 +466,25 @@ JpaRepository <|-- MeuRepository
         * https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html
         * https://stackoverflow.com/a/73489680
         * https://stackoverflow.com/a/69290726
+    * [Atenção] `WebSecurityConfigurerAdapter` foi **removido** no Spring Security 7 (não apenas depreciado). A configuração deve ser feita exclusivamente via beans `SecurityFilterChain`.
+    * [Atenção] Os métodos `authorizeRequests()` e `antMatchers()` foram **removidos** no Spring Security 7. Usar `authorizeHttpRequests()` e `requestMatchers()`.
+    * [Atenção] No Spring Security 7, a proteção CSRF está habilitada por padrão para **todos** os endpoints, inclusive APIs REST. APIs stateless devem desabilitar explicitamente: `.csrf(csrf -> csrf.disable())`.
     * [Exemplo]
     ```java
-    @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        return http
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/login", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .anyRequest().authenticated()
-            )
-            .formLogin(Customizer.withDefaults())
-            .build();
+    @Configuration
+    @EnableWebSecurity
+    public class SecurityConfig {
+
+        @Bean
+        SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+            return http
+                .authorizeHttpRequests(auth -> auth
+                    .requestMatchers("/login", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
+                    .anyRequest().authenticated()
+                )
+                .formLogin(Customizer.withDefaults())
+                .build();
+        }
     }
     ```
         
@@ -436,7 +507,7 @@ JpaRepository <|-- MeuRepository
 
 ## Configuração e Properties
 
-[Versão] Sempre conferir a documentação da versão do Spring Boot usada no projeto antes de copiar propriedades ou defaults.
+[Versão] Sempre conferir a documentação da versão do Spring Boot usada no projeto antes de copiar propriedades ou defaults. Nas URLs da documentação Spring, substituir `/current/` pela versão concreta do projeto (ex: `/4.0/`).
 
 Ver https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html#appendix.application-properties . Se necessário, trocar "current" pela versão desejada.
 
@@ -471,6 +542,10 @@ spring.jackson.deserialization.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT=true
 spring.jackson.deserialization.FAIL_ON_IGNORED_PROPERTIES=false
 spring.jackson.deserialization.FAIL_ON_UNKNOWN_PROPERTIES=false
 
+#========== THREADS ==========
+# Virtual Threads (Java 21+ / Spring Boot 3.2+) - aumenta throughput em aplicações MVC bloqueantes
+spring.threads.virtual.enabled=true
+
 #========== OUTROS ==========
 # USO DE VARIÁVEIS DE AMBIENTE
 app.some-directory=${HOME}/directory
@@ -478,6 +553,14 @@ app.some-directory=${HOME}/directory
 # PROPRIEDADES COM FALLBACK
 app.some-text=${SOME_ENV_VAR:Texto fallback caso variável não exista}
 ```
+
+> **[Versão] Mudanças notáveis no Spring Boot 4.0:**
+> * `spring.devtools.livereload.enabled` agora é `false` por padrão (era `true`).
+> * `management.endpoint.health.probes.enabled` agora é `true` por padrão — útil para deploys em Kubernetes.
+> * `management.tracing.enabled` foi renomeado para `management.tracing.export.enabled`.
+> * **Jackson 3** (Spring Boot 4.0) mudou o group ID das dependências de `com.fasterxml.jackson` para `tools.jackson`. As propriedades `spring.jackson.*` seguem válidas, mas customizações via `Jackson2ObjectMapperBuilderCustomizer` devem ser migradas para `JsonMapperBuilderCustomizer`.
+
+> **Alternativa ao `application.properties`:** o formato `application.yml` é equivalente e bastante comum em projetos Spring Boot. Ambos os formatos coexistem e você encontrará os dois em tutoriais e projetos open source.
 
 ### Exemplo de profile no `pom.xml`
 
@@ -591,7 +674,9 @@ Se necessário, trocar "current" pela versão desejada
     * BDD + Cucumber
     * Unitários
         * Mockito
+            * [Atenção] `@MockBean` e `@SpyBean` foram **removidos** no Spring Boot 4.0. Substituir por `@MockitoBean` e `@MockitoSpyBean`.
     * Integração
+        * [Atenção] No Spring Boot 4.0, `@AutoConfigureMockMvc` deve ser declarado explicitamente. O `@SpringBootTest` sozinho não auto-configura MockMvc por padrão.
     * End-to-end (E2E)
         * Selenium Webdriver
         * Cypress
@@ -630,6 +715,7 @@ Se necessário, trocar "current" pela versão desejada
     * Spring Boot Actuator + Micrometer
     * Prometheus TSDB / InfluxDB
     * Open Telemetry (OTEL)
+        * [Versão] Spring Boot 4.0 introduz `spring-boot-starter-opentelemetry` como starter dedicado para OTEL.
     * Grafana -> Visualização dos dados coletados
     * Loki -> Observabilidade de logs estruturados
 * Cloud
@@ -662,6 +748,12 @@ Se necessário, trocar "current" pela versão desejada
 ## Java complementar
 
 * Consumer/Supplier/Predicate/Function: https://medium.com/swlh/understanding-java-8s-consumer-supplier-predicate-and-function-c1889b9423d
+* **Virtual Threads** (Java 21, melhorias de pinning e throughput no Java 25): habilitação via `spring.threads.virtual.enabled=true` — alternativa mais simples ao WebFlux para aumentar escalabilidade em aplicações MVC bloqueantes.
+* **Recursos do Java 25 relevantes para código Spring:**
+    * **Flexible Constructor Bodies** (JEP 495): `super()` / `this()` não precisa mais ser o primeiro statement — útil em construtores de beans com herança.
+    * **Scoped Values** (JEP 506): alternativa imutável e mais segura ao `ThreadLocal` para propagação de contexto (relevante para `SecurityContextHolder` e rastreamento distribuído).
+    * **Compact Object Headers** (JEP 519): redução do cabeçalho de objetos de 96/128 bits para 64 bits — melhora de uso de memória em aplicações com muitos beans e entidades.
+    * **Module Import Declarations** (JEP 511): `import module java.sql` importa todos os pacotes de um módulo de uma vez — simplifica exemplos com muitos imports Jakarta.
 
 ## Erros frequentes
 
@@ -680,6 +772,14 @@ Se necessário, trocar "current" pela versão desejada
 * [Atenção] Criar filtros customizados sem entender a ordem da `SecurityFilterChain`, causando comportamento inconsistente.
 * [Atenção] Salvar senha sem encoder forte ou tratar hash de senha como detalhe de implementação tardio.
 * [Atenção] Adotar JWT sem pensar em expiração, renovação, revogação e rotação de chaves.
+* [Atenção] Usar `authorizeRequests()` / `antMatchers()` — **removidos** no Spring Security 7. Usar `authorizeHttpRequests()` e `requestMatchers()`.
+* [Atenção] Esperar que APIs REST funcionem sem CSRF token no Spring Boot 4.0 — proteção CSRF está habilitada por padrão para todos os endpoints. APIs stateless devem desabilitar explicitamente.
+* [Atenção] Usar `WebSecurityConfigurerAdapter` — **removido** no Spring Security 7.
+
+### Testes
+
+* [Atenção] Usar `@MockBean` / `@SpyBean` (removidos no Spring Boot 4.0) em vez de `@MockitoBean` / `@MockitoSpyBean`.
+* [Atenção] Assumir que `@SpringBootTest` configura MockMvc automaticamente no Spring Boot 4.0 — `@AutoConfigureMockMvc` é obrigatório explicitamente.
 
 ### Configuração e operação
 
@@ -688,6 +788,8 @@ Se necessário, trocar "current" pela versão desejada
 * [Atenção] Depender de comportamento implícito da auto-configuration e depois quebrá-lo com `@EnableWebMvc` ou beans sobrescrevendo defaults sem necessidade.
 * [Atenção] Não separar configurações por profile desde o início e acabar acoplando ambiente local, teste e produção.
 * [Atenção] Deixar logs, tracing e métricas para o fim do projeto, reduzindo visibilidade justamente quando os problemas aparecem.
+* [Atenção] Usar `javax.*` em projetos Spring Boot 3.x/4.x — a partir do Spring Boot 3.x apenas `jakarta.*` é suportado (Jakarta EE 9+).
+* [Atenção] Configurar Jackson 3 com `Jackson2ObjectMapperBuilderCustomizer` (API do Spring Boot 3.x) — no Spring Boot 4.0 substituída por `JsonMapperBuilderCustomizer`.
 
 ## Troubleshooting
 

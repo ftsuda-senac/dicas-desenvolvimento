@@ -36,16 +36,26 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
      - [Tela de Perfil](#tela-de-perfil)
      - [Dashboard com Métricas](#dashboard-com-métricas)
      - [Navegação por Abas — TabBar](#navegação-por-abas--tabbar)
-2. [Navegação com GoRouter](#2-navegação-com-gorouter)
-   - [Configuração do GoRouter](#configuração-do-gorouter)
-   - [Rotas Aninhadas e Parâmetros](#rotas-aninhadas-e-parâmetros)
-   - [Rotas Protegidas](#rotas-protegidas)
-   - [Navegação Programática](#navegação-programática)
+2. [Navegação](#2-navegação)
+   - [GoRouter](#gorouter)
+     - [Configuração do GoRouter](#configuração-do-gorouter)
+     - [Rotas Aninhadas e Parâmetros](#rotas-aninhadas-e-parâmetros)
+     - [Rotas Protegidas](#rotas-protegidas)
+     - [Navegação Programática](#navegação-programática)
+     - [Deep Linking](#deep-linking)
+   - [flutter_modular](#flutter_modular)
+     - [Configuração do flutter_modular](#configuração-do-flutter_modular)
+     - [Módulos e Rotas](#módulos-e-rotas)
+     - [Guards — Rotas Protegidas](#guards--rotas-protegidas)
+     - [Injeção de Dependências](#injeção-de-dependências)
+     - [Navegação Programática — flutter_modular](#navegação-programática--flutter_modular)
+     - [Deep Linking — flutter_modular](#deep-linking--flutter_modular)
 3. [Estado Global com Riverpod](#3-estado-global-com-riverpod)
    - [Conceitos Básicos](#conceitos-básicos)
    - [Providers Principais](#providers-principais)
    - [AsyncNotifier para Estado Assíncrono](#asyncnotifier-para-estado-assíncrono)
 4. [Integração com Backend](#4-integração-com-backend)
+   - [Separação de Responsabilidades](#separação-de-responsabilidades)
    - [Configuração do Dio](#configuração-do-dio)
    - [Interceptors e Tratamento de Erros](#interceptors-e-tratamento-de-erros)
    - [Repository Pattern](#repository-pattern)
@@ -2840,11 +2850,31 @@ class _ListaAba extends ConsumerWidget {
 
 ---
 
-## 2. Navegação com GoRouter
+## 2. Navegação
 
-GoRouter é a solução de roteamento oficial recomendada pelo Flutter team. Suporta deep linking, navegação declarativa, guards e rotas aninhadas.
+O Flutter não tem uma solução única de navegação — a escolha depende do tamanho do projeto e das necessidades de injeção de dependências:
 
-### Configuração do GoRouter
+| | GoRouter | flutter_modular |
+|---|---|---|
+| Mantenedor | Flutter team (Google) | Flutterando (comunidade) |
+| Escopo | Somente navegação | Navegação + injeção de dependências |
+| Integração oficial | Sim | Não |
+| Estado global | Via Riverpod / Bloc externo | DI embutido (+ Bloc / MobX) |
+| Modularização | Manual por feature | `Module` nativo |
+| Curva de aprendizado | Baixa | Média |
+| Indicado para | Apps novos, equipes já com Riverpod | Apps grandes com DI centralizada |
+
+---
+
+### GoRouter
+
+Solução de roteamento oficial recomendada pelo Flutter team. Suporta deep linking, navegação declarativa, guards e rotas aninhadas. Integra diretamente com Riverpod (ver [seção 3](#3-estado-global-com-riverpod)).
+
+```bash
+flutter pub add go_router
+```
+
+#### Configuração do GoRouter
 
 ```dart
 // lib/routes/app_router.dart
@@ -2962,7 +2992,7 @@ void main() {
 
 ---
 
-### Rotas Aninhadas e Parâmetros
+#### Rotas Aninhadas e Parâmetros
 
 ```dart
 // Navegação para rota com parâmetro
@@ -2986,13 +3016,13 @@ class ProdutoDetalheScreen extends StatelessWidget {
 
 ---
 
-### Rotas Protegidas
+#### Rotas Protegidas
 
 O `redirect` no GoRouter (veja seção anterior) já protege rotas globalmente. Para proteção por role, veja a [seção 7](#7-autenticação-jwt-e-controle-de-acesso-por-role).
 
 ---
 
-### Navegação Programática
+#### Navegação Programática
 
 ```dart
 // Ir para rota (substitui o histórico)
@@ -3008,6 +3038,615 @@ context.pop(resultado);
 final router = ref.read(appRouterProvider);
 router.go('/login');
 ```
+
+---
+
+#### Deep Linking
+
+Deep linking permite abrir o app diretamente em uma tela específica a partir de uma URL externa — seja por um link em e-mail, notificação push, QR code ou outro app. O GoRouter trata deep links nativamente: basta que o path da URL corresponda a uma rota registrada.
+
+Existem dois tipos de deep link:
+
+| Tipo | Exemplo de URL | Quando usar |
+|---|---|---|
+| **Custom scheme** | `meuapp://produtos/42` | Links internos, testes, integrações simples |
+| **App Links (Android) / Universal Links (iOS)** | `https://meuapp.com/produtos/42` | Links compartilháveis, SEO, fallback para web |
+
+---
+
+**Configuração no Android**
+
+Edite `android/app/src/main/AndroidManifest.xml` e adicione um `<intent-filter>` dentro da `<activity>` principal:
+
+```xml
+<!-- android/app/src/main/AndroidManifest.xml -->
+<activity
+    android:name=".MainActivity"
+    android:exported="true"
+    ...>
+
+    <!-- Custom scheme: meuapp://... -->
+    <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="meuapp" />
+    </intent-filter>
+
+    <!-- App Links (HTTPS): https://meuapp.com/... -->
+    <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data
+            android:scheme="https"
+            android:host="meuapp.com" />
+    </intent-filter>
+</activity>
+```
+
+> **App Links (HTTPS):** exige que o arquivo `/.well-known/assetlinks.json` esteja publicado no seu domínio com o fingerprint SHA-256 do certificado de assinatura do app. Sem isso, o Android abre o navegador em vez do app.
+
+---
+
+**Configuração no iOS**
+
+Edite `ios/Runner/Info.plist` para registrar o custom scheme:
+
+```xml
+<!-- ios/Runner/Info.plist -->
+<key>CFBundleURLTypes</key>
+<array>
+    <dict>
+        <key>CFBundleTypeRole</key>
+        <string>Editor</string>
+        <key>CFBundleURLSchemes</key>
+        <array>
+            <string>meuapp</string>
+        </array>
+    </dict>
+</array>
+```
+
+Para Universal Links (HTTPS), adicione o domínio associado em *Xcode > Runner > Signing & Capabilities > Associated Domains*:
+
+```
+applinks:meuapp.com
+```
+
+E publique o arquivo `/.well-known/apple-app-site-association` no seu servidor:
+
+```json
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAM_ID.com.empresa.meuapp",
+        "paths": ["/produtos/*", "/pedidos/*"]
+      }
+    ]
+  }
+}
+```
+
+---
+
+**Configuração no GoRouter**
+
+O GoRouter já intercepta deep links automaticamente quando `MaterialApp.router` é usado — nenhuma configuração adicional é necessária no Dart. Basta garantir que os paths das rotas coincidam com o path da URL recebida:
+
+```dart
+// lib/routes/app_router.dart
+GoRouter(
+  initialLocation: '/produtos',
+  // deepLinkBuilder é opcional — útil para transformar a URL antes do roteamento
+  redirect: (context, state) {
+    final logado = authState.valueOrNull?.token != null;
+    final naLogin = state.matchedLocation == '/login';
+    if (!logado && !naLogin) return '/login?redirect=${state.uri}';
+    if (logado && naLogin) return '/produtos';
+    return null;
+  },
+  routes: [
+    GoRoute(
+      path: '/produtos',
+      name: 'produtos',
+      builder: (_, __) => const ProdutosListScreen(),
+      routes: [
+        GoRoute(
+          path: ':id',
+          name: 'produto-detalhe',
+          builder: (_, state) {
+            final id = state.pathParameters['id']!;
+            return ProdutoDetalheScreen(id: id);
+          },
+        ),
+      ],
+    ),
+    GoRoute(
+      path: '/pedidos/:numero',
+      name: 'pedido-detalhe',
+      builder: (_, state) {
+        final numero = state.pathParameters['numero']!;
+        // Query parameters opcionais: ?origem=notificacao
+        final origem = state.uri.queryParameters['origem'];
+        return PedidoDetalheScreen(numero: numero, origem: origem);
+      },
+    ),
+  ],
+)
+```
+
+**Mapeamento de URLs para rotas:**
+
+| URL recebida | Rota ativada | Parâmetros |
+|---|---|---|
+| `meuapp://produtos` | `/produtos` | — |
+| `meuapp://produtos/42` | `/produtos/:id` | `id = "42"` |
+| `https://meuapp.com/pedidos/PED-001?origem=email` | `/pedidos/:numero` | `numero = "PED-001"`, `origem = "email"` |
+
+---
+
+**Redirecionamento pós-autenticação**
+
+Quando um deep link chega para uma rota protegida e o usuário não está autenticado, salve a URL alvo para redirecionar após o login:
+
+```dart
+// lib/routes/app_router.dart
+redirect: (context, state) {
+  final logado = authState.valueOrNull?.token != null;
+  final naLogin = state.matchedLocation == '/login';
+
+  if (!logado && !naLogin) {
+    // preserva a URL de destino como query parameter
+    final destino = Uri.encodeComponent(state.uri.toString());
+    return '/login?redirect=$destino';
+  }
+  if (logado && naLogin) {
+    // após login, redireciona para a URL original ou para /produtos
+    final redirect = state.uri.queryParameters['redirect'];
+    return redirect != null ? Uri.decodeComponent(redirect) : '/produtos';
+  }
+  return null;
+},
+```
+
+---
+
+**Testando Deep Links**
+
+**Android — via ADB:**
+
+```bash
+# Custom scheme
+adb shell am start \
+  -a android.intent.action.VIEW \
+  -d "meuapp://produtos/42" \
+  com.empresa.meuapp
+
+# HTTPS (App Link)
+adb shell am start \
+  -a android.intent.action.VIEW \
+  -d "https://meuapp.com/produtos/42" \
+  com.empresa.meuapp
+```
+
+**iOS — via xcrun:**
+
+```bash
+# Custom scheme (simulador)
+xcrun simctl openurl booted "meuapp://produtos/42"
+
+# Universal Link (simulador)
+xcrun simctl openurl booted "https://meuapp.com/produtos/42"
+```
+
+**Flutter — durante o desenvolvimento:**
+
+```bash
+# Acionar deep link no dispositivo/emulador conectado
+flutter run
+# Em outro terminal:
+flutter attach  # se já estiver rodando
+```
+
+> **Dica:** use o pacote `uni_links` ou `app_links` se precisar capturar deep links de forma programática (ex.: para analytics) ou processar links recebidos enquanto o app já está em primeiro plano.
+
+---
+
+### flutter_modular
+
+Pacote da comunidade (Flutterando) que combina **navegação declarativa** e **injeção de dependências** em um único sistema modular. Cada feature é encapsulada em um `Module` que registra suas próprias rotas e binds, tornando o app naturalmente extensível e com acoplamento reduzido entre features.
+
+```bash
+flutter pub add flutter_modular
+```
+
+#### Configuração do flutter_modular
+
+O ponto de entrada usa `ModularApp`, que injeta o sistema de módulos acima do `MaterialApp`:
+
+```dart
+// lib/main.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
+import 'app_module.dart';
+import 'app_widget.dart';
+
+void main() {
+  runApp(ModularApp(module: AppModule(), child: const AppWidget()));
+}
+```
+
+```dart
+// lib/app_widget.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
+
+class AppWidget extends StatelessWidget {
+  const AppWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Meu App',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        useMaterial3: true,
+      ),
+      routerConfig: Modular.routerConfig,
+    );
+  }
+}
+```
+
+O módulo raiz (`AppModule`) registra as rotas de primeiro nível, delega features para submódulos e expõe binds globais:
+
+```dart
+// lib/app_module.dart
+import 'package:flutter_modular/flutter_modular.dart';
+import 'core/network/dio_client.dart';
+import 'core/guards/auth_guard.dart';
+import 'features/auth/auth_module.dart';
+import 'features/produtos/produtos_module.dart';
+import 'features/admin/admin_module.dart';
+
+class AppModule extends Module {
+  @override
+  void exportedBinds(Injector i) {
+    // binds disponíveis em todos os submódulos
+    i.addSingleton<DioClient>(DioClient.new);
+  }
+
+  @override
+  void routes(RouteManager r) {
+    r.module('/auth', module: AuthModule());
+    r.module('/produtos', module: ProdutosModule(), guards: [AuthGuard()]);
+    r.module('/admin', module: AdminModule(), guards: [AuthGuard(), AdminGuard()]);
+    r.redirect('/', to: '/produtos/');
+  }
+}
+```
+
+#### Módulos e Rotas
+
+Cada feature tem seu próprio `Module` com rotas e dependências encapsuladas. O módulo não sabe de nada fora de si — apenas recebe binds exportados do pai via `exportedBinds`.
+
+```dart
+// lib/features/produtos/produtos_module.dart
+import 'package:flutter_modular/flutter_modular.dart';
+import 'data/produto_repository.dart';
+import 'presentation/produtos_list_screen.dart';
+import 'presentation/produto_detalhe_screen.dart';
+import 'presentation/produto_form_screen.dart';
+
+class ProdutosModule extends Module {
+  @override
+  void binds(Injector i) {
+    // singleton scoped ao módulo — destruído quando o módulo for descarregado
+    i.addSingleton<ProdutoRepository>(ProdutoRepository.new);
+  }
+
+  @override
+  void routes(RouteManager r) {
+    r.child('/', child: (_) => const ProdutosListScreen());
+    r.child('/:id', child: (_) => ProdutoDetalheScreen(
+      id: Modular.args.params['id']!,
+    ));
+    r.child('/novo', child: (_) => const ProdutoFormScreen());
+    r.child('/:id/editar', child: (_) => ProdutoFormScreen(
+      id: Modular.args.params['id'],
+    ));
+  }
+}
+```
+
+```dart
+// lib/features/auth/auth_module.dart
+import 'package:flutter_modular/flutter_modular.dart';
+import 'data/auth_repository.dart';
+import 'presentation/login_screen.dart';
+
+class AuthModule extends Module {
+  @override
+  void binds(Injector i) {
+    i.addSingleton<AuthRepository>(AuthRepository.new);
+  }
+
+  @override
+  void routes(RouteManager r) {
+    r.child('/', child: (_) => const LoginScreen());
+  }
+}
+```
+
+**Lendo parâmetros e query strings na tela de destino:**
+
+```dart
+// path parameter — /produtos/:id
+final id = Modular.args.params['id'];
+
+// query parameter — /produtos?categoria=eletronicos
+final categoria = Modular.args.queryParams['categoria'];
+
+// dados passados programaticamente (não visíveis na URL)
+final dados = Modular.args.data as MeuObjeto?;
+```
+
+#### Guards — Rotas Protegidas
+
+`RouteGuard` intercepta a navegação antes de ativar a rota. Se `canActivate` retornar `false`, redireciona para `redirectTo`:
+
+```dart
+// lib/core/guards/auth_guard.dart
+import 'package:flutter_modular/flutter_modular.dart';
+import '../storage/secure_storage.dart';
+
+class AuthGuard extends RouteGuard {
+  AuthGuard() : super(redirectTo: '/auth/');
+
+  @override
+  Future<bool> canActivate(String path, ModularRoute route) async {
+    final storage = Modular.get<SecureStorage>();
+    final token = await storage.lerToken();
+    return token != null;
+  }
+}
+```
+
+```dart
+// Guard de role — verifica permissão de admin
+class AdminGuard extends RouteGuard {
+  AdminGuard() : super(redirectTo: '/produtos/');
+
+  @override
+  Future<bool> canActivate(String path, ModularRoute route) async {
+    final repo = Modular.get<AuthRepository>();
+    final roles = await repo.obterRoles();
+    return roles.contains('ROLE_ADMIN');
+  }
+}
+```
+
+Guards podem ser aplicados no `AppModule` (para módulos inteiros) ou em rotas individuais dentro de um módulo:
+
+```dart
+// AppModule — guard no módulo inteiro
+r.module('/admin', module: AdminModule(), guards: [AuthGuard(), AdminGuard()]);
+
+// Dentro de um módulo — guard em rota específica
+r.child('/configuracoes', child: (_) => const ConfigScreen(), guards: [AdminGuard()]);
+```
+
+#### Injeção de Dependências
+
+O sistema de DI do flutter_modular gerencia o ciclo de vida das dependências por módulo, eliminando a necessidade de providers externos para infraestrutura:
+
+```dart
+// Tipos de registro disponíveis no Injector
+@override
+void binds(Injector i) {
+  i.addSingleton<DioClient>(DioClient.new);               // instância única, vive enquanto o módulo existir
+  i.addLazySingleton<RelatorioService>(RelatorioService.new); // singleton criado na primeira chamada
+  i.add<ProdutoBloc>(ProdutoBloc.new);                    // nova instância a cada Modular.get<>()
+}
+```
+
+```dart
+// Obtendo dependências em qualquer ponto do app
+final repo = Modular.get<ProdutoRepository>();
+
+// Em um widget StatelessWidget
+class ProdutosListScreen extends StatelessWidget {
+  ProdutoRepository get _repo => Modular.get();
+
+  @override
+  Widget build(BuildContext context) { ... }
+}
+
+// Em um StatefulWidget ou serviço
+class ProdutoBloc {
+  final _repo = Modular.get<ProdutoRepository>();
+}
+```
+
+> **flutter_modular + Riverpod:** é possível usar ambos juntos — flutter_modular gerencia DI de infraestrutura (repositórios, clientes HTTP) e Riverpod gerencia o estado reativo de UI. No entanto, em muitos projetos o flutter_modular é combinado com **Bloc** ou **MobX** para estado local, dispensando o Riverpod.
+
+#### Navegação Programática — flutter_modular
+
+```dart
+// Navegar substituindo o histórico (equivalente a context.go no GoRouter)
+Modular.to.navigate('/produtos/');
+
+// Empilhar rota — mantém botão voltar (equivalente a context.push)
+Modular.to.pushNamed('/produtos/42');
+
+// Empilhar e aguardar resultado
+final resultado = await Modular.to.pushNamed<bool>('/produtos/novo');
+
+// Voltar
+Modular.to.pop();
+
+// Voltar com resultado
+Modular.to.pop(true);
+
+// Voltar até uma rota específica
+Modular.to.popUntil(ModalRoute.withName('/produtos/'));
+
+// Passar dados sem expor na URL
+Modular.to.pushNamed('/confirmacao', arguments: pedido);
+// Na tela de destino:
+final pedido = Modular.args.data as Pedido;
+```
+
+#### Deep Linking — flutter_modular
+
+O flutter_modular integra com `MaterialApp.router` via `Modular.routerConfig` e trata automaticamente os deep links recebidos **na inicialização** do app. A configuração nativa no Android e iOS é idêntica à descrita na [seção de Deep Linking do GoRouter](#deep-linking).
+
+Para capturar deep links enquanto o app já está aberto (foreground / background), o flutter_modular não fornece esse mecanismo por conta própria — é necessário combinar com o pacote **`app_links`**.
+
+| Cenário | Quem trata |
+|---|---|
+| App **fechado**, aberto via link | `Modular.routerConfig` (automático) |
+| App **aberto/retomado**, link chegando | `app_links` (listener manual) |
+
+**Instalação do app_links:**
+
+```bash
+flutter pub add app_links
+```
+
+```yaml
+# pubspec.yaml
+dependencies:
+  app_links: ^6.3.3
+```
+
+---
+
+**Integração com AppWidget**
+
+O padrão recomendado é transformar `AppWidget` em `StatefulWidget` e inicializar o listener de deep links em `initState`:
+
+```dart
+// lib/app_widget.dart
+import 'dart:async';
+import 'package:app_links/app_links.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_modular/flutter_modular.dart';
+
+class AppWidget extends StatefulWidget {
+  const AppWidget({super.key});
+
+  @override
+  State<AppWidget> createState() => _AppWidgetState();
+}
+
+class _AppWidgetState extends State<AppWidget> {
+  final _appLinks = AppLinks();
+  StreamSubscription<Uri>? _linkSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initDeepLinks();
+  }
+
+  Future<void> _initDeepLinks() async {
+    // 1. Link inicial — app foi ABERTO via deep link (executado uma única vez)
+    final initialUri = await _appLinks.getInitialLink();
+    if (initialUri != null) {
+      _navegarParaUri(initialUri);
+    }
+
+    // 2. Links chegando com o app já em execução (foreground / background)
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+      _navegarParaUri,
+      onError: (err) => debugPrint('Erro ao processar deep link: $err'),
+    );
+  }
+
+  void _navegarParaUri(Uri uri) {
+    // Custom scheme: meuapp://produtos/42
+    //   uri.host = "produtos", uri.path = "/42"  →  /produtos/42
+    // HTTPS: https://meuapp.com/produtos/42
+    //   uri.path = "/produtos/42"                 →  /produtos/42
+    final basePath = uri.scheme.startsWith('http')
+        ? uri.path
+        : '/${uri.host}${uri.path}';
+
+    final pathFinal = uri.queryParameters.isNotEmpty
+        ? '$basePath?${uri.query}'
+        : basePath;
+
+    Modular.to.navigate(pathFinal);
+  }
+
+  @override
+  void dispose() {
+    _linkSubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Meu App',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        useMaterial3: true,
+      ),
+      routerConfig: Modular.routerConfig,
+    );
+  }
+}
+```
+
+> **Por que cancelar o subscription em `dispose`?** O `AppWidget` vive durante toda a sessão do app, mas em testes ou hot restart o `dispose` é chamado — deixar o stream aberto causaria múltiplos listeners ativos e navegações duplicadas.
+
+---
+
+**Tratamento de deep link com autenticação**
+
+Quando o link aponta para uma rota protegida e o usuário não está autenticado, o `AuthGuard` do flutter_modular já intercepta e redireciona para o login. Para redirecionar de volta após o login, passe o path original como dado:
+
+```dart
+void _navegarParaUri(Uri uri) {
+  final path = uri.scheme.startsWith('http')
+      ? uri.path
+      : '/${uri.host}${uri.path}';
+
+  final estaLogado = Modular.get<AuthRepository>().isAuthenticated();
+
+  if (!estaLogado) {
+    // redireciona para login passando o destino original como dado
+    Modular.to.navigate('/auth/', arguments: path);
+    return;
+  }
+
+  Modular.to.navigate(path);
+}
+```
+
+```dart
+// lib/features/auth/presentation/login_screen.dart
+// após login bem-sucedido:
+final destino = Modular.args.data as String?;
+Modular.to.navigate(destino ?? '/produtos/');
+```
+
+---
+
+**Mapeamento de URLs para módulos e rotas:**
+
+| URL recebida | Módulo ativado | Rota no módulo |
+|---|---|---|
+| `meuapp://produtos/` | `ProdutosModule` | `/` |
+| `meuapp://produtos/42` | `ProdutosModule` | `/:id` (id = "42") |
+| `meuapp://produtos/42?origem=email` | `ProdutosModule` | `/:id` + query `origem` |
+| `meuapp://admin/` | `AdminModule` (passa pelo `AdminGuard`) | `/` |
+| `https://meuapp.com/produtos/42` | `ProdutosModule` | `/:id` (id = "42") |
 
 ---
 
@@ -3187,6 +3826,76 @@ class ProdutosListScreen extends ConsumerWidget {
 ---
 
 ## 4. Integração com Backend
+
+### Separação de Responsabilidades
+
+O padrão consolidado no ecossistema Flutter é a **arquitetura em três camadas por feature**, refletida diretamente na estrutura de pastas adotada neste guia:
+
+```
+feature/produtos/
+├── data/           ← integração com backend
+│   └── produto_repository.dart
+├── domain/         ← modelos e contratos
+│   └── produto_model.dart
+└── presentation/   ← tela e estado de UI
+    ├── produtos_list_screen.dart
+    └── produtos_provider.dart
+```
+
+**`data/`** contém o `Repository`. Responsabilidades: fazer a chamada HTTP, converter JSON → modelo e traduzir exceções de rede para erros de domínio. Nunca conhece widgets, `BuildContext` ou `SnackBar`.
+
+**`domain/`** contém modelos de dados e, opcionalmente, interfaces abstratas do repositório. Apenas Dart puro — sem dependência de `dio` ou `flutter`. Isso permite trocar a implementação HTTP sem alterar nada acima.
+
+**`presentation/`** divide-se em dois arquivos com papéis distintos:
+
+- **Provider** (`produtos_provider.dart`) — ponte entre repository e tela: chama o repository, gerencia os estados `loading / data / error` via `AsyncNotifier`. Não constrói widgets nem chama `showSnackBar` diretamente.
+- **Screen** (`produtos_list_screen.dart`) — renderiza o estado lido do provider via `ref.watch`, exibe `SnackBar`, `AlertDialog` e navega com `context.go`. Não instancia Dio nem faz chamadas HTTP diretamente.
+
+**Tabela de responsabilidades:**
+
+| Responsabilidade | Camada | Justificativa |
+|---|---|---|
+| Chamada HTTP | `data/repository` | Isolada e testável com mock |
+| Conversão JSON ↔ modelo | `domain/model` | Sem dependência de framework |
+| Tratamento de erro de rede | `data/repository` + `core/errors` | Centralizado no interceptor |
+| Estado de carregamento/erro | `presentation/provider` | Riverpod gerencia `AsyncValue` |
+| Exibir SnackBar / Dialog | `presentation/screen` | Requer `BuildContext` |
+| Navegação após ação | `presentation/screen` | Requer `context.go` |
+| Regra de negócio complexa | `domain/` (use case separado) | Testável sem UI e sem rede |
+
+---
+
+**O erro mais comum: efeito colateral de UI dentro do provider.** A violação mais frequente é chamar `showSnackBar` ou `context.go` de dentro do `AsyncNotifier`. O padrão correto é: o provider expõe o estado de erro; a tela observa com `ref.listen` e exibe o feedback.
+
+```dart
+// ❌ errado — provider conhece SnackBar
+Future<void> salvar(Produto p) async {
+  await repo.criar(p);
+  ScaffoldMessenger.of(context).showSnackBar(...); // context não pertence aqui
+}
+
+// ✅ correto — provider expõe estado; tela reage
+// No provider:
+Future<void> salvar(Produto p) async {
+  state = const AsyncLoading();
+  state = await AsyncValue.guard(() => repo.criar(p));
+}
+
+// Na tela:
+ref.listen(produtosListProvider, (_, next) {
+  if (next is AsyncError) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(next.error.toString())),
+    );
+  }
+});
+```
+
+---
+
+**Quando adicionar uma camada `domain/use_case`:** a estrutura de três camadas é suficiente para a maioria dos casos. Use cases valem a pena quando a mesma lógica de negócio é compartilhada entre features, quando há orquestração entre dois ou mais repositories (ex.: criar pedido + atualizar estoque + enviar notificação) ou quando a regra é complexa o suficiente para justificar testes unitários próprios. Fora desses cenários, extrair use cases prematuramente só aumenta o número de arquivos sem benefício real.
+
+---
 
 ### Configuração do Dio
 
