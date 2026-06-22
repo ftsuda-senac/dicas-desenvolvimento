@@ -6,6 +6,7 @@
 
 ## Sumário
 
+- [@NoRepositoryBean — Hierarquia de Repositórios](#norepositorybean--hierarquia-de-repositórios)
 
 **Parte 1 — Formas de Consulta**
 
@@ -58,6 +59,10 @@
 
 29. [Queries em Dados JSON/JSONB](#29-queries-em-dados-jsonjsonb)
 30. [Consultas Geográficas com PostGIS](#30-consultas-geográficas-com-postgis)
+
+**Parte 8 — Replicação e Roteamento**
+
+31. [PostgreSQL Streaming Replication + Roteamento Read/Write no Spring Boot](#31-postgresql-streaming-replication--roteamento-readwrite-no-spring-boot)
 
 ---
 
@@ -435,6 +440,242 @@ public class PagamentoBoleto extends Pagamento {
     private LocalDate vencimento;
 }
 ```
+
+---
+
+## @NoRepositoryBean — Hierarquia de Repositórios
+
+`@NoRepositoryBean` instrui o Spring Data a **não instanciar** a interface anotada como um bean gerenciado. Use-a em interfaces intermediárias — bases ou fragmentos — que outras interfaces de repositório irão estender.
+
+Sem a anotação, o Spring Data tentaria criar um bean para a interface e falharia no startup (não consegue determinar a entidade gerenciada).
+
+```mermaid
+classDiagram
+    direction TB
+    class JpaRepository {
+        <<interface>>
+    }
+    class BaseAcademicoRepository {
+        <<interface>>
+        @NoRepositoryBean
+        + findAtivos() List~T~
+        + findByTenantId(Long) List~T~
+    }
+    class AlunoRepository {
+        <<interface>>
+        + findByRa(String) Optional~Aluno~
+    }
+    class CursoRepository {
+        <<interface>>
+        + findByCodigoCurso(String) Optional~Curso~
+    }
+    JpaRepository <|-- BaseAcademicoRepository
+    BaseAcademicoRepository <|-- AlunoRepository
+    BaseAcademicoRepository <|-- CursoRepository
+```
+
+### Situação 1 — Base com Métodos Comuns a Todos os Repositórios
+
+Quando vários repositórios compartilham métodos de negócio (ex: `findAtivos`, filtro por tenant), centralize na base.
+
+```java
+@NoRepositoryBean
+public interface BaseAcademicoRepository<T, ID> extends JpaRepository<T, ID> {
+
+    @Query("SELECT e FROM #{#entityName} e WHERE e.ativo = true")
+    List<T> findAtivos();
+
+    @Query("SELECT e FROM #{#entityName} e WHERE e.ativo = true AND e.tenantId = :tenantId")
+    List<T> findAtivosByTenant(@Param("tenantId") Long tenantId);
+}
+```
+
+> `#{#entityName}` é um SpEL resolvido para o nome da entidade gerenciada pelo repositório concreto. Funciona apenas em JPQL dentro de `@Query` em interfaces que estendem a base.
+
+Os repositórios concretos herdam os métodos sem repetição:
+
+```java
+public interface AlunoRepository extends BaseAcademicoRepository<Aluno, Long> {
+    Optional<Aluno> findByRa(String ra);
+}
+
+public interface CursoRepository extends BaseAcademicoRepository<Curso, Long> {
+    Optional<Curso> findByCodigoCurso(String codigo);
+}
+```
+
+```java
+// Uso no service
+List<Aluno> ativos   = alunoRepository.findAtivos();
+List<Curso>  cursos  = cursoRepository.findAtivosByTenant(tenantId);
+```
+
+---
+
+### Situação 2 — Repositório Somente Leitura
+
+Remova operações de escrita para entidades que nunca devem ser modificadas via repositório (ex: tabelas de audit log, dados legados, views).
+
+```java
+@NoRepositoryBean
+public interface ReadOnlyRepository<T, ID> extends Repository<T, ID> {
+
+    Optional<T> findById(ID id);
+    List<T> findAll();
+    Page<T> findAll(Pageable pageable);
+    boolean existsById(ID id);
+    long count();
+}
+```
+
+```java
+// Nenhum save(), delete() ou deleteAll() disponível
+public interface LogAcessoRepository extends ReadOnlyRepository<LogAcesso, Long> {
+
+    List<LogAcesso> findByUsuarioIdOrderByOcorridoEmDesc(Long usuarioId);
+
+    @Query("SELECT l FROM LogAcesso l WHERE l.ocorridoEm BETWEEN :inicio AND :fim")
+    List<LogAcesso> findByPeriodo(
+        @Param("inicio") OffsetDateTime inicio,
+        @Param("fim")    OffsetDateTime fim
+    );
+}
+```
+
+> Estender `Repository<T, ID>` (e não `JpaRepository`) é o ponto de partida: é a interface raiz sem nenhum método, o que permite expor exatamente o que a base define.
+
+---
+
+### Situação 3 — Repositório Base com Implementação Customizada
+
+Quando o comportamento padrão do Spring Data não é suficiente (ex: `save()` deve disparar um evento de domínio, ou `delete()` deve ser soft delete), crie uma implementação base.
+
+**1. Interface base anotada:**
+
+```java
+@NoRepositoryBean
+public interface SoftDeleteRepository<T, ID> extends JpaRepository<T, ID> {
+
+    // Sobrescreve o delete para fazer soft delete
+    @Override
+    void deleteById(ID id);
+
+    @Override
+    void delete(T entity);
+
+    @Query("SELECT e FROM #{#entityName} e WHERE e.deletadoEm IS NULL")
+    List<T> findAllAtivos();
+}
+```
+
+**2. Implementação genérica:**
+
+```java
+public class SoftDeleteRepositoryImpl<T extends EntidadeBase, ID>
+        extends SimpleJpaRepository<T, ID>
+        implements SoftDeleteRepository<T, ID> {
+
+    private final EntityManager em;
+
+    public SoftDeleteRepositoryImpl(JpaEntityInformation<T, ?> info, EntityManager em) {
+        super(info, em);
+        this.em = em;
+    }
+
+    @Override
+    @Transactional
+    public void deleteById(ID id) {
+        findById(id).ifPresent(this::delete);
+    }
+
+    @Override
+    @Transactional
+    public void delete(T entity) {
+        entity.setDeletadoEm(OffsetDateTime.now());
+        em.merge(entity);
+    }
+
+    @Override
+    public List<T> findAllAtivos() {
+        // Query via criteria para evitar @Query com #{#entityName} na impl
+        var cb = em.getCriteriaBuilder();
+        var cq = cb.createQuery(getDomainClass());
+        var root = cq.from(getDomainClass());
+        cq.where(cb.isNull(root.get("deletadoEm")));
+        return em.createQuery(cq).getResultList();
+    }
+}
+```
+
+**3. Registro da implementação base no `@EnableJpaRepositories`:**
+
+```java
+@Configuration
+@EnableJpaRepositories(
+    repositoryBaseClass = SoftDeleteRepositoryImpl.class
+)
+public class JpaConfig { }
+```
+
+**4. Repositórios concretos herdam soft delete automaticamente:**
+
+```java
+public interface MatriculaRepository extends SoftDeleteRepository<Matricula, Long> {
+    List<Matricula> findByAlunoId(Long alunoId);
+}
+
+public interface PagamentoRepository extends SoftDeleteRepository<Pagamento, Long> {
+    List<Pagamento> findByStatus(StatusPagamento status);
+}
+```
+
+```java
+// delete() agora faz soft delete sem nenhum código extra nos services
+matriculaRepository.deleteById(id);        // seta deletadoEm, não remove a linha
+matriculaRepository.findAllAtivos();       // retorna só registros não deletados
+```
+
+---
+
+### Situação 4 — Restringindo Operações por Perfil de Uso
+
+Diferentes contextos de acesso precisam de contratos diferentes sobre a mesma entidade. Em vez de um repositório monolítico, crie bases específicas.
+
+```java
+// Acesso completo — usado pelo admin/service interno
+@NoRepositoryBean
+public interface FullAccessRepository<T, ID> extends JpaRepository<T, ID> { }
+
+// Acesso restrito — usado em endpoints públicos ou contextos externos
+@NoRepositoryBean
+public interface RestrictedRepository<T, ID> extends Repository<T, ID> {
+    Optional<T> findById(ID id);
+    Page<T> findAll(Pageable pageable);
+}
+```
+
+```java
+// Service administrativo usa o contrato completo
+public interface CursoAdminRepository extends FullAccessRepository<Curso, Long> {
+    List<Curso> findByAtivoFalse();
+}
+
+// Controller público usa o contrato restrito — imposssível chamar save() ou delete() por engano
+public interface CursoPublicoRepository extends RestrictedRepository<Curso, Long> {
+    List<Curso> findByAtivoTrue();
+}
+```
+
+---
+
+### Resumo de Decisão
+
+| Cenário | Abordagem |
+|---|---|
+| Métodos compartilhados entre repositórios | Base com `@NoRepositoryBean` + `#{#entityName}` |
+| Entidade somente leitura | Estender `Repository` (não `JpaRepository`) na base |
+| Comportamento customizado em `save`/`delete` | Base + implementação via `SimpleJpaRepository` + `repositoryBaseClass` |
+| Contratos diferentes por contexto de uso | Bases separadas por perfil (`FullAccess`, `Restricted`) |
 
 ---
 
@@ -5218,6 +5459,61 @@ int atualizarStatus(
 int limparCanceladas(@Param("limite") OffsetDateTime limite);
 ```
 
+### Por que esses atributos existem
+
+Bulk operations (`UPDATE`/`DELETE` via JPQL ou SQL nativo) **bypassam o persistence context**: elas vão direto ao banco sem passar pelo ciclo de vida das entidades gerenciadas. Isso cria dois riscos:
+
+1. **Dados sujos na memória não chegam ao banco antes do bulk** → `flushAutomatically`
+2. **Cache L1 fica desatualizado depois do bulk** → `clearAutomatically`
+
+### flushAutomatically
+
+Controla se o persistence context deve ser **flushed antes** de executar a operação bulk.
+
+| Valor | Comportamento |
+|---|---|
+| `false` (padrão) | Não faz flush. Mudanças pendentes em memória ainda não foram enviadas ao banco. |
+| `true` | Faz flush antes do bulk. Garante que alterações feitas na transação atual cheguem ao banco primeiro. |
+
+**Quando usar `true`:** sempre que você modificar entidades gerenciadas *antes* de chamar o bulk na mesma transação. Sem o flush, o banco pode estar num estado diferente do que o persistence context "acha" — e o bulk pode sobrescrever ou ignorar essas mudanças.
+
+```java
+// Cenário problemático sem flushAutomatically = true:
+matricula.setStatus(StatusMatricula.ATIVA);   // dirty no PC, não foi ao banco ainda
+// O bulk UPDATE roda no banco SEM ver essa alteração
+repository.atualizarStatus(ATIVA, EXPIRADA, limite); // risco de inconsistência
+```
+
+**Quando pode ficar `false`:** quando o bulk é a *primeira* operação da transação, ou quando você tem certeza de que não há entidades sujas no persistence context.
+
+### clearAutomatically
+
+Controla se o persistence context deve ser **limpo (clear) depois** de executar a operação bulk.
+
+| Valor | Comportamento |
+|---|---|
+| `false` (padrão) | Cache L1 permanece intacto. Entidades já carregadas continuam com os valores antigos. |
+| `true` | Executa `em.clear()` após o bulk. Próximas leituras vão ao banco e retornam dados atualizados. |
+
+**Quando usar `true`:** sempre que você precisar ler as entidades afetadas *depois* do bulk na mesma transação. O cache L1 não sabe que o banco foi alterado em massa — sem o clear, você recebe dados obsoletos.
+
+```java
+// Cenário problemático sem clearAutomatically = true:
+repository.atualizarStatus(ATIVA, EXPIRADA, limite); // banco atualizado
+Matricula m = repository.findById(id).get();         // lê do cache L1 → status ainda ATIVA (stale!)
+```
+
+**Quando pode ficar `false`:** quando o bulk é a *última* operação da transação e você não vai ler as entidades afetadas depois.
+
+### Regra prática
+
+```
+flushAutomatically = true  → você modificou entidades ANTES do bulk
+clearAutomatically = true  → você vai ler entidades DEPOIS do bulk
+```
+
+Na dúvida, ative ambos. O custo de um flush + clear extra é menor do que depurar inconsistências silenciosas.
+
 ### Bulk nativo para operações complexas
 
 ```java
@@ -5430,7 +5726,7 @@ public class SpringContext implements ApplicationContextAware {
 }
 ```
 
-#### Abordagem 3: Spring Events no service (recomendada)
+#### Abordagem 3: Spring Events no service + @TransactionalEventListener (*** RECOMENDADA ***)
 
 Em vez de usar EntityListener para notificações, use `ApplicationEventPublisher` diretamente no service:
 
@@ -7045,11 +7341,453 @@ public class CursoSecurityService {
 
 ### Multi-tenancy via Spring Security + Spring Data
 
-#### Hibernate @Filter ativado pelo tenant do SecurityContext
+Multi-tenancy é o padrão onde uma única instância da aplicação serve múltiplos clientes (tenants), mantendo os dados de cada um isolados. Há três estratégias principais de isolamento, com trade-offs diferentes de custo, complexidade e segurança.
+
+---
+
+#### Integração com Spring Security — como o tenant chega ao SecurityContext
+
+Todas as abordagens de multi-tenancy dependem de um ponto central: o tenant do usuário autenticado precisa estar disponível no `SecurityContext` para que o roteamento de banco, de schema ou os filtros de linha funcionem. Essa integração acontece em duas camadas:
+
+1. **`TenantUserDetails`** — extensão de `UserDetails` que carrega os dados do tenant junto ao usuário
+2. **Fonte do tenant** — de onde o identificador de tenant vem (JWT, header HTTP ou subdomínio)
+
+##### A interface `TenantUserDetails`
+
+Estende `UserDetails` para transportar `tenantId` e `tenantSlug` junto ao principal do Spring Security:
+
+```java
+public interface TenantUserDetails extends UserDetails {
+    Long getTenantId();
+    String getTenantSlug(); // ex: "acme", usado como nome de schema
+}
+```
+
+```java
+@Getter
+@RequiredArgsConstructor
+public class TenantAwarePrincipal implements TenantUserDetails {
+
+    private final Long tenantId;
+    private final String tenantSlug;
+    private final String username;
+    private final Collection<? extends GrantedAuthority> authorities;
+
+    // UserDetails — conta sempre ativa/desbloqueada neste exemplo
+    @Override public boolean isAccountNonExpired()  { return true; }
+    @Override public boolean isAccountNonLocked()   { return true; }
+    @Override public boolean isCredentialsNonExpired() { return true; }
+    @Override public boolean isEnabled()            { return true; }
+    @Override public String getPassword()           { return null; } // stateless JWT
+}
+```
+
+##### Fonte 1 — JWT com claim de tenant (Keycloak, Auth0, OIDC)
+
+O provedor de identidade emite um JWT com claims customizadas. Um `JwtAuthenticationConverter` lê esses claims e constrói o `TenantAwarePrincipal` antes de o token ser aceito:
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        return http
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .oauth2ResourceServer(oauth2 -> oauth2
+                .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtTenantConverter())))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/public/**").permitAll()
+                .anyRequest().authenticated())
+            .build();
+    }
+
+    @Bean
+    public JwtAuthenticationConverter jwtTenantConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter() {
+            @Override
+            protected AbstractAuthenticationToken convert(Jwt jwt) {
+                // Lê claims customizadas emitidas pelo Keycloak/Auth0
+                Long tenantId   = ((Number) jwt.getClaim("tenant_id")).longValue();
+                String tenantSlug = jwt.getClaim("tenant_slug");  // ex: "acme"
+                String username   = jwt.getSubject();
+
+                Collection<GrantedAuthority> authorities =
+                    new JwtGrantedAuthoritiesConverter().convert(jwt);
+
+                TenantAwarePrincipal principal =
+                    new TenantAwarePrincipal(tenantId, tenantSlug, username, authorities);
+
+                // O principal é o TenantAwarePrincipal — disponível via
+                // SecurityContextHolder.getContext().getAuthentication().getPrincipal()
+                return new UsernamePasswordAuthenticationToken(
+                    principal, jwt, authorities);
+            }
+        };
+        return converter;
+    }
+}
+```
+
+Exemplo de payload JWT com as claims esperadas:
+
+```json
+{
+  "sub": "joao.silva",
+  "tenant_id": 42,
+  "tenant_slug": "acme",
+  "roles": ["ROLE_USER"],
+  "exp": 1750000000
+}
+```
+
+##### Fonte 2 — Header HTTP `X-Tenant-ID`
+
+Útil em APIs internas ou microsserviços onde o tenant é passado como cabeçalho pelo API Gateway. Um `OncePerRequestFilter` lê o header e enriquece o `Authentication` já existente no `SecurityContext`:
+
+```java
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 10) // roda logo após autenticação JWT
+public class TenantHeaderFilter extends OncePerRequestFilter {
+
+    private final TenantRepository tenantRepository;
+
+    public TenantHeaderFilter(TenantRepository tenantRepository) {
+        this.tenantRepository = tenantRepository;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+            HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+
+        String tenantSlug = request.getHeader("X-Tenant-ID");
+
+        if (tenantSlug != null && !tenantSlug.isBlank()) {
+            Authentication existing = SecurityContextHolder.getContext().getAuthentication();
+
+            if (existing != null && existing.isAuthenticated()
+                    && !(existing instanceof AnonymousAuthenticationToken)) {
+
+                Tenant tenant = tenantRepository.findBySlug(tenantSlug)
+                    .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Tenant desconhecido: " + tenantSlug));
+
+                TenantAwarePrincipal principal = new TenantAwarePrincipal(
+                    tenant.getId(), tenant.getSlug(),
+                    existing.getName(), existing.getAuthorities());
+
+                SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(
+                        principal, existing.getCredentials(), existing.getAuthorities()));
+            }
+        }
+
+        chain.doFilter(request, response);
+    }
+}
+```
+
+Registrando o filtro na cadeia do Spring Security:
+
+```java
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http,
+        TenantHeaderFilter tenantFilter) throws Exception {
+    return http
+        // ... configuração base ...
+        .addFilterAfter(tenantFilter, BearerTokenAuthenticationFilter.class)
+        .build();
+}
+```
+
+##### Fonte 3 — Subdomínio (`acme.myapp.com`)
+
+Cada tenant acessa a API por um subdomínio próprio. O filter extrai o slug do `Host` da requisição:
+
+```java
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE + 10)
+public class SubdomainTenantFilter extends OncePerRequestFilter {
+
+    private final TenantRepository tenantRepository;
+
+    public SubdomainTenantFilter(TenantRepository tenantRepository) {
+        this.tenantRepository = tenantRepository;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+            HttpServletResponse response, FilterChain chain)
+            throws ServletException, IOException {
+
+        String host = request.getServerName(); // "acme.myapp.com"
+        String[] parts = host.split("\\.");
+
+        // Só processa se parecer subdomínio (mínimo 3 partes: sub.dominio.tld)
+        if (parts.length >= 3) {
+            String tenantSlug = parts[0]; // "acme"
+
+            Authentication existing = SecurityContextHolder.getContext().getAuthentication();
+            if (existing != null && existing.isAuthenticated()
+                    && !(existing instanceof AnonymousAuthenticationToken)) {
+
+                Tenant tenant = tenantRepository.findBySlug(tenantSlug)
+                    .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.FORBIDDEN, "Tenant desconhecido: " + tenantSlug));
+
+                TenantAwarePrincipal principal = new TenantAwarePrincipal(
+                    tenant.getId(), tenantSlug,
+                    existing.getName(), existing.getAuthorities());
+
+                SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(
+                        principal, existing.getCredentials(), existing.getAuthorities()));
+            }
+        }
+
+        chain.doFilter(request, response);
+    }
+}
+```
+
+##### Comparativo das fontes de tenant
+
+| Fonte | Quando usar | Ponto de atenção |
+|-------|-------------|------------------|
+| JWT claim | SSO/OIDC com Keycloak ou Auth0 | O provedor de identidade precisa emitir as claims |
+| Header `X-Tenant-ID` | API Gateway ou microsserviços internos | Nunca expor ao cliente final sem validação |
+| Subdomínio | SaaS com domínio por tenant | Requer wildcard DNS e certificado TLS wildcard |
+
+##### Testes — anotação customizada `@WithTenantUser`
+
+`@WithMockUser` não suporta `TenantUserDetails`. Crie uma anotação própria que popula o `SecurityContext` com o principal correto:
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@WithSecurityContext(factory = WithTenantUserFactory.class)
+public @interface WithTenantUser {
+    String username()   default "usuario";
+    long   tenantId()   default 1L;
+    String tenantSlug() default "acme";
+    String[] roles()    default {"ROLE_USER"};
+}
+```
+
+```java
+public class WithTenantUserFactory
+        implements WithSecurityContextFactory<WithTenantUser> {
+
+    @Override
+    public SecurityContext createSecurityContext(WithTenantUser annotation) {
+        List<GrantedAuthority> authorities = Arrays.stream(annotation.roles())
+            .map(SimpleGrantedAuthority::new)
+            .collect(toList());
+
+        TenantAwarePrincipal principal = new TenantAwarePrincipal(
+            annotation.tenantId(),
+            annotation.tenantSlug(),
+            annotation.username(),
+            authorities);
+
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+            principal, null, authorities);
+
+        SecurityContext ctx = SecurityContextHolder.createEmptyContext();
+        ctx.setAuthentication(auth);
+        return ctx;
+    }
+}
+```
+
+```java
+@SpringBootTest
+class DocumentoServiceTest {
+
+    @Autowired DocumentoService documentoService;
+
+    @Test
+    @WithTenantUser(username = "joao", tenantId = 42L, tenantSlug = "acme")
+    void deveBuscarApenasDocumentosDoTenant() {
+        List<Documento> docs = documentoService.findAll();
+        assertThat(docs).allMatch(d -> d.getTenantId().equals(42L));
+    }
+
+    @Test
+    @WithTenantUser(username = "maria", tenantId = 99L, tenantSlug = "globo",
+                    roles = {"ROLE_ADMIN"})
+    void adminDeveVerTodosOsDocumentosDoSeuTenant() {
+        List<Documento> docs = documentoService.findAll();
+        assertThat(docs).allMatch(d -> d.getTenantId().equals(99L));
+    }
+}
+```
+
+---
+
+#### Comparativo das três abordagens
+
+| Critério | Database per Tenant | Schema per Tenant | Column Discriminator |
+|----------|---------------------|-------------------|----------------------|
+| Isolamento | Máximo | Alto | Médio |
+| Custo de infra | Alto (1 DB por tenant) | Médio (1 schema por tenant) | Baixo (tabelas compartilhadas) |
+| Risco de vazamento | Mínimo | Baixo | Maior (filtro pode ser esquecido) |
+| Migrations | 1 Flyway por banco | 1 Flyway por schema | 1 Flyway para todos |
+| Escala de tenants | Dezenas | Centenas | Milhares |
+| Compliance (LGPD/GDPR) | Facilita | Adequado | Requer cuidado extra |
+| Complexidade Spring | Alta | Média | Baixa |
+
+---
+
+#### Abordagem 1 — Database per Tenant
+
+Cada tenant tem seu próprio banco de dados. O Spring roteia a conexão com base no tenant do usuário autenticado via `AbstractRoutingDataSource`.
+
+```java
+// Resolves qual DataSource usar a partir do SecurityContext
+public class TenantRoutingDataSource extends AbstractRoutingDataSource {
+
+    @Override
+    protected Object determineCurrentLookupKey() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof TenantUserDetails user) {
+            return user.getTenantId(); // chave do mapa de DataSources
+        }
+        return "default";
+    }
+}
+```
+
+```java
+@Configuration
+public class MultiDatabaseConfig {
+
+    @Bean
+    public DataSource dataSource() {
+        Map<Object, Object> dataSources = new HashMap<>();
+        dataSources.put("tenant-1", buildDataSource("jdbc:postgresql://host/db_tenant1"));
+        dataSources.put("tenant-2", buildDataSource("jdbc:postgresql://host/db_tenant2"));
+
+        TenantRoutingDataSource routing = new TenantRoutingDataSource();
+        routing.setTargetDataSources(dataSources);
+        routing.setDefaultTargetDataSource(dataSources.get("tenant-1"));
+        return routing;
+    }
+
+    private DataSource buildDataSource(String url) {
+        return DataSourceBuilder.create()
+                .url(url).username("app_user").password("secret").build();
+    }
+}
+```
+
+**Quando usar:** poucos tenants grandes (ex: clientes corporativos), exigência de backup ou restore independente por cliente, ou requisito de localização geográfica de dados distinta.
+
+---
+
+#### Abordagem 2 — Schema per Tenant
+
+Banco único, um schema PostgreSQL por tenant. O Hibernate troca de schema via `MultiTenantConnectionProvider` e `CurrentTenantIdentifierResolver`.
+
+```java
+// Informa ao Hibernate qual tenant está ativo
+@Component
+public class TenantIdentifierResolver implements CurrentTenantIdentifierResolver<String> {
+
+    @Override
+    public String resolveCurrentTenantIdentifier() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getPrincipal() instanceof TenantUserDetails user) {
+            return user.getTenantSlug(); // ex: "acme", "globo"
+        }
+        return "public"; // schema padrão (fallback)
+    }
+
+    @Override
+    public boolean validateExistingCurrentSessions() {
+        return true;
+    }
+}
+```
+
+```java
+// Troca o search_path do PostgreSQL para o schema do tenant
+@Component
+public class SchemaBasedConnectionProvider
+        implements MultiTenantConnectionProvider<String> {
+
+    private final DataSource dataSource;
+
+    public SchemaBasedConnectionProvider(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    @Override
+    public Connection getConnection(String tenantIdentifier) throws SQLException {
+        Connection conn = dataSource.getConnection();
+        conn.createStatement()
+            .execute("SET search_path TO " + tenantIdentifier + ", public");
+        return conn;
+    }
+
+    @Override
+    public void releaseConnection(String tenantIdentifier, Connection conn)
+            throws SQLException {
+        conn.createStatement().execute("SET search_path TO public");
+        conn.close();
+    }
+
+    @Override
+    public Connection getAnyConnection() throws SQLException {
+        return dataSource.getConnection();
+    }
+
+    @Override
+    public void releaseAnyConnection(Connection conn) throws SQLException {
+        conn.close();
+    }
+}
+```
+
+```java
+@Configuration
+public class HibernateMultiTenantConfig {
+
+    @Bean
+    public HibernatePropertiesCustomizer hibernateMultiTenancy(
+            SchemaBasedConnectionProvider provider,
+            TenantIdentifierResolver resolver) {
+        return props -> {
+            props.put(AvailableSettings.MULTI_TENANT_CONNECTION_PROVIDER, provider);
+            props.put(AvailableSettings.MULTI_TENANT_IDENTIFIER_RESOLVER, resolver);
+        };
+    }
+}
+```
+
+**Quando usar:** dezenas a algumas centenas de tenants, migrations gerenciáveis por schema (Flyway com `schemas` configurado), e necessidade de isolamento físico sem múltiplos bancos.
+
+---
+
+#### Abordagem 3 — Column Discriminator (tabelas compartilhadas)
+
+Todas as entidades compartilham as mesmas tabelas; cada linha tem uma coluna `tenant_id`. O isolamento é garantido filtrando sempre por esse campo — via `@Filter` do Hibernate, SpEL em `@Query` ou RLS no banco.
+
+Esta é a abordagem mais simples de implementar e a de menor custo operacional, mas exige disciplina: **esquecer o filtro** expõe dados de todos os tenants.
+
+---
+
+#### Hibernate `@Filter` — como funciona internamente
+
+`@FilterDef` declara um template de filtro com nome e parâmetros. `@Filter` aplica esse template como uma cláusula `AND` adicional no SQL gerado para aquela entidade.
 
 ```java
 @Entity
+// Declara o filtro com seu nome e o tipo do parâmetro que ele espera
 @FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = Long.class))
+// Aplica o filtro: Hibernate injetará "AND tenant_id = :tenantId" nas queries desta entidade
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class Documento extends BaseEntity {
 
@@ -7059,6 +7797,29 @@ public class Documento extends BaseEntity {
     // ... demais campos
 }
 ```
+
+**O que acontece internamente no Hibernate:**
+
+Quando o filtro está habilitado na `Session`, toda query JPQL que envolva `Documento` recebe automaticamente a condição adicional no SQL gerado:
+
+```sql
+-- Query JPQL: FROM Documento d WHERE d.status = 'ATIVO'
+-- SQL gerado pelo Hibernate com filtro ativo:
+SELECT d.* FROM documento d
+WHERE d.status = 'ATIVO'
+  AND d.tenant_id = ?   -- ← injetado pelo @Filter
+```
+
+O filtro é **desabilitado por padrão** em cada `Session`. Deve ser ativado explicitamente chamando `session.enableFilter(name)`. Isso evita surpresas — você sabe exatamente quando ele está ativo.
+
+**Limitações do `@Filter`:**
+- Não se aplica a queries nativas (`@Query(nativeQuery = true)`) — nessas, o `WHERE` deve ser escrito manualmente
+- Não protege acesso direto ao banco (psql, ferramentas de BI) — para isso, use RLS
+- O filtro dura o ciclo de vida da `Session`; com Open Session in View (OSIV), a Session abrange toda a requisição HTTP, então ativado uma vez no aspecto vale para todo o request
+
+---
+
+#### Como o `TenantFilterAspect` funciona — passo a passo
 
 ```java
 @Component
@@ -7070,19 +7831,74 @@ public class TenantFilterAspect {
         this.entityManager = entityManager;
     }
 
+    // 1. Intercepta TODA chamada a qualquer método de qualquer repository
     @Before("execution(* com.exemplo.repository.*.*(..))")
     public void ativarFiltroTenant() {
+
+        // 2. Lê o usuário autenticado do SecurityContext (thread-local do Spring Security)
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+
+        // 3. Verifica se é um TenantUserDetails (pattern matching de instanceof do Java 16+)
         if (auth != null && auth.getPrincipal() instanceof TenantUserDetails user) {
+
+            // 4. Obtém a Session do Hibernate a partir do EntityManager JPA
+            //    EntityManager é a abstração JPA; Session é a implementação Hibernate
+            //    com recursos adicionais como filtros dinâmicos
             entityManager.unwrap(Session.class)
+                // 5. Habilita o filtro pelo nome declarado em @FilterDef
+                //    Retorna um objeto Filter para encadeamento de parâmetros
                 .enableFilter("tenantFilter")
+                // 6. Vincula o valor do parâmetro :tenantId ao tenant do usuário logado
+                //    A partir daqui, todas as queries na Session incluem AND tenant_id = ?
                 .setParameter("tenantId", user.getTenantId());
         }
+        // Se não houver usuário autenticado (ex: endpoints públicos),
+        // o filtro não é ativado e as queries retornam normalmente (sem restrição de tenant)
     }
 }
 ```
 
+**Fluxo por requisição com OSIV ativo (padrão Spring Boot):**
+
+```
+HTTP Request
+  └─ Spring Security verifica JWT → popula SecurityContext com TenantUserDetails
+       └─ Controller chama Service
+            └─ Service chama Repository.findAll()  ← @Before dispara
+                 ├─ TenantFilterAspect.ativarFiltroTenant()
+                 │    └─ session.enableFilter("tenantFilter").setParameter("tenantId", 42L)
+                 └─ Hibernate gera: SELECT * FROM documento WHERE tenant_id = 42
+```
+
+**Cuidado com múltiplas chamadas ao repository no mesmo request:** o filtro já estará ativo na segunda chamada (mesma Session com OSIV), então o aspecto chamará `enableFilter` novamente — isso é seguro, o Hibernate simplesmente atualiza o parâmetro.
+
+**Cuidado com repositórios de entidades sem `@Filter`:** o aspecto tenta ativar `"tenantFilter"` em toda chamada; se a entidade não tiver a anotação, o Hibernate lança `HibernateException`. Proteja com verificação:
+
+```java
+@Before("execution(* com.exemplo.repository.*.*(..))")
+public void ativarFiltroTenant() {
+    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+    if (!(auth != null && auth.getPrincipal() instanceof TenantUserDetails user)) {
+        return;
+    }
+
+    Session session = entityManager.unwrap(Session.class);
+    // Só ativa se a entidade alvo tiver o filtro declarado
+    org.hibernate.Filter filtro = session.getEnabledFilter("tenantFilter");
+    if (filtro == null) {
+        session.enableFilter("tenantFilter")
+               .setParameter("tenantId", user.getTenantId());
+    } else {
+        filtro.setParameter("tenantId", user.getTenantId());
+    }
+}
+```
+
+---
+
 #### SpEL com tenant ID na query
+
+Alternativa ao `@Filter` quando se quer filtro explícito no JPQL, útil para queries que já têm cláusulas complexas ou para entidades que não usam `@FilterDef`.
 
 ```java
 public interface DocumentoRepository extends JpaRepository<Documento, Long> {
@@ -7102,6 +7918,426 @@ public interface DocumentoRepository extends JpaRepository<Documento, Long> {
     List<Documento> findMeusNoTenantAtual();
 }
 ```
+
+### Row-Level Security (RLS) no banco de dados
+
+Row-Level Security (RLS) é um recurso nativo do PostgreSQL (e outros SGBDs) que restringe quais linhas cada usuário pode ver ou modificar **diretamente no banco**, independentemente da aplicação. Ao contrário de filtros na camada ORM (como `@Filter` do Hibernate), a restrição ocorre no nível do SGBD, garantindo isolamento mesmo em acesso direto ao banco — via psql, ferramentas de BI ou outros serviços.
+
+#### Como o RLS funciona
+
+1. Ativa-se RLS na tabela com `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`
+2. Criam-se políticas (`POLICY`) que definem quais linhas são acessíveis, com base em variáveis de sessão ou funções do banco
+3. A aplicação define a variável de sessão com o contexto do usuário atual antes de executar queries
+
+#### Configuração no PostgreSQL
+
+```sql
+-- Ativa RLS na tabela
+ALTER TABLE documento ENABLE ROW LEVEL SECURITY;
+
+-- Política de leitura: cada usuário vê apenas linhas do seu tenant
+CREATE POLICY tenant_isolation_select ON documento
+    FOR SELECT
+    USING (tenant_id = current_setting('app.tenant_id')::bigint);
+
+-- Política de escrita: só pode inserir/atualizar no próprio tenant
+CREATE POLICY tenant_isolation_write ON documento
+    FOR ALL
+    USING (tenant_id = current_setting('app.tenant_id')::bigint)
+    WITH CHECK (tenant_id = current_setting('app.tenant_id')::bigint);
+
+-- O usuário da aplicação NÃO é superuser (superusers bypassam RLS por padrão)
+-- Confirmar que app_user está sujeito às políticas:
+ALTER TABLE documento FORCE ROW LEVEL SECURITY;
+```
+
+#### Migration Flyway — DDL completo com GRANTs
+
+Na prática, as migrations Flyway criam a tabela, os GRANTs e as policies em um único script. O usuário de migração deve ser superuser ou ter `BYPASSRLS`; o usuário de runtime (`app_user`) não deve ter esse privilégio.
+
+```sql
+-- V1__create_documents_with_rls.sql
+
+CREATE TABLE documents (
+    id       BIGSERIAL PRIMARY KEY,
+    owner_id TEXT        NOT NULL,
+    title    TEXT        NOT NULL,
+    content  TEXT
+);
+
+-- Role da aplicação não deve ser superuser
+GRANT SELECT, INSERT, UPDATE, DELETE ON documents       TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE documents_id_seq        TO app_user;
+
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documents FORCE ROW LEVEL SECURITY; -- força mesmo para o dono da tabela
+
+CREATE POLICY document_user_isolation ON documents
+    USING      (owner_id = current_setting('app.current_user_id', true))
+    WITH CHECK (owner_id = current_setting('app.current_user_id', true));
+```
+
+Configuração das credenciais separadas no `application.yml`:
+
+```yaml
+spring:
+  flyway:
+    url: jdbc:postgresql://localhost:5432/mydb
+    user: migration_user     # superuser ou BYPASSRLS — só usado nas migrations
+    password: ${FLYWAY_PASSWORD}
+  datasource:
+    url: jdbc:postgresql://localhost:5432/mydb
+    username: app_user       # sem privilégio especial; sujeito ao RLS
+    password: ${APP_PASSWORD}
+```
+
+#### Entidade e Repository — sem filtros explícitos
+
+A maior vantagem do RLS é que **a entidade e o repositório ficam limpos** — o `WHERE owner_id = ?` deixa de existir no código Java. O banco filtra silenciosamente.
+
+```java
+@Entity
+@Table(name = "documents")
+public class Document {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "owner_id", nullable = false)
+    private String ownerId;
+
+    @Column(nullable = false)
+    private String title;
+
+    private String content;
+}
+```
+
+```java
+public interface DocumentRepository extends JpaRepository<Document, Long> {
+    // Sem @Query com "WHERE owner_id = ?" — o RLS faz isso no banco.
+}
+```
+
+#### Integração com Spring — via AOP antes das operações do repositório
+
+O aspecto executa `set_config` **dentro** de cada transação ativa usando `Session.doWork()` (JDBC puro, sem overhead do parser do Hibernate). O pointcut aponta para métodos ou classes anotados com `@Transactional`, garantindo que a variável de sessão seja sempre definida antes das queries.
+
+```java
+@Aspect
+@Component
+@Order(1) // deve rodar DEPOIS que @EnableTransactionManagement abre a TX (ver config abaixo)
+public class RlsDatabaseAspect {
+
+    @PersistenceContext
+    private EntityManager em;
+
+    @Before("""
+        @annotation(org.springframework.transaction.annotation.Transactional)
+        || @within(org.springframework.transaction.annotation.Transactional)
+        """)
+    public void applyRlsContext() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()
+                || auth instanceof AnonymousAuthenticationToken) {
+            return; // sem usuário logado: RLS bloqueará tudo via NULL
+        }
+
+        String userId = auth.getName(); // subject do JWT (Keycloak, Auth0, etc.)
+
+        em.unwrap(Session.class).doWork(conn -> {
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "SELECT set_config('app.current_user_id', ?, true)")) {
+                ps.setString(1, userId);
+                ps.execute(); // true = LOCAL → resetado ao fim da transação
+            }
+        });
+    }
+}
+```
+
+#### Ordem das transações — garantindo que o aspecto execute dentro da TX
+
+Para que o aspecto RLS rode **dentro** da transação (e não antes dela abrir), o `TransactionInterceptor` precisa ter prioridade mais alta que o aspecto RLS — número `order` menor significa mais externo:
+
+```java
+@Configuration
+@EnableTransactionManagement(order = 0) // abre a transação primeiro (mais externo)
+public class TransactionConfig {
+    // sem beans adicionais necessários
+}
+```
+
+A cadeia de chamada resultante:
+
+```
+[TransactionInterceptor order=0]  → abre TX
+  [RlsDatabaseAspect order=1]     → set_config LOCAL (dentro da TX)
+    [ServiceMethod]               → JPA queries com RLS ativo
+  [RlsDatabaseAspect]             ← (nada no after)
+[TransactionInterceptor]          ← commit / rollback → parâmetro resetado automaticamente
+```
+
+> **Importante:** `set_config(key, value, true)` com o terceiro argumento `true` equivale a `SET LOCAL`: o valor é descartado quando a transação encerra. Nunca use `false` aqui — o parâmetro vazaria para a próxima requisição no pool de conexões.
+
+#### Integração com Spring — via DataSource customizado
+
+Para garantir a configuração sem depender de AOP, é possível envolver o `DataSource` em um proxy que injeta o `SET LOCAL` automaticamente ao obter uma conexão:
+
+```java
+@Configuration
+public class RlsDataSourceConfig {
+
+    @Bean
+    @Primary
+    public DataSource rlsDataSource(DataSourceProperties props) {
+        DataSource base = props.initializeDataSourceBuilder().build();
+
+        return new DelegatingDataSource(base) {
+            @Override
+            public Connection getConnection() throws SQLException {
+                Connection conn = super.getConnection();
+                aplicarTenant(conn);
+                return conn;
+            }
+
+            private void aplicarTenant(Connection conn) throws SQLException {
+                Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                if (auth != null && auth.getPrincipal() instanceof TenantUserDetails user) {
+                    try (PreparedStatement stmt = conn.prepareStatement(
+                            "SET LOCAL app.tenant_id = ?")) {
+                        stmt.setLong(1, user.getTenantId());
+                        stmt.execute();
+                    }
+                }
+            }
+        };
+    }
+}
+```
+
+#### Serviço de exemplo — sem filtros no código
+
+```java
+@Service
+@Transactional   // @Before do aspecto dispara; RLS filtra tudo abaixo
+@RequiredArgsConstructor
+public class DocumentService {
+
+    private final DocumentRepository repository;
+
+    public List<Document> findAll() {
+        // O banco retorna APENAS as linhas cujo owner_id == usuário atual.
+        // Nenhum filtro explícito no código Java.
+        return repository.findAll();
+    }
+
+    public Document create(String title, String content) {
+        String userId = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+
+        Document doc = new Document();
+        doc.setOwnerId(userId);   // necessário para o WITH CHECK da policy
+        doc.setTitle(title);
+        doc.setContent(content);
+        return repository.save(doc);
+    }
+
+    public Optional<Document> findById(Long id) {
+        // Se o id pertencer a outro usuário, o RLS filtra → retorna empty()
+        return repository.findById(id);
+    }
+}
+```
+
+#### Políticas diferenciadas por papel — admin vs. usuário normal
+
+O PostgreSQL avalia políticas `AS PERMISSIVE` com **OR lógico**: se qualquer política liberar a linha, ela é retornada. Isso permite criar uma política para admin (que vê tudo) e outra para usuário normal (restrita ao tenant), sem condicional no lado Java.
+
+**Variáveis de sessão utilizadas:**
+
+| Variável | Tipo | Quem preenche |
+|----------|------|---------------|
+| `app.tenant_id` | `bigint` | Aspecto/DataSource da aplicação |
+| `app.user_role` | `text` | Aspecto/DataSource da aplicação |
+
+**Configuração no PostgreSQL:**
+
+```sql
+ALTER TABLE documento ENABLE ROW LEVEL SECURITY;
+ALTER TABLE documento FORCE ROW LEVEL SECURITY;
+
+-- Admin: acesso irrestrito a todas as linhas
+CREATE POLICY admin_full_access ON documento
+    AS PERMISSIVE
+    FOR ALL
+    USING (current_setting('app.user_role', true) = 'ADMIN');
+
+-- Usuário normal: apenas linhas do próprio tenant
+CREATE POLICY user_tenant_isolation ON documento
+    AS PERMISSIVE
+    FOR SELECT
+    USING (
+        current_setting('app.user_role', true) <> 'ADMIN'
+        AND tenant_id = current_setting('app.tenant_id', true)::bigint
+    );
+
+-- Usuário normal: só grava no próprio tenant
+CREATE POLICY user_tenant_write ON documento
+    AS PERMISSIVE
+    FOR ALL
+    USING (
+        current_setting('app.user_role', true) <> 'ADMIN'
+        AND tenant_id = current_setting('app.tenant_id', true)::bigint
+    )
+    WITH CHECK (
+        tenant_id = current_setting('app.tenant_id', true)::bigint
+    );
+```
+
+> O segundo argumento `true` em `current_setting('var', true)` faz a função retornar `NULL` em vez de lançar erro quando a variável ainda não foi definida na sessão — útil para conexões de sistema ou ferramentas de migração.
+
+**Três níveis de acesso — exemplo com proprietário, admin do tenant e superadmin:**
+
+```sql
+-- Superadmin: vê absolutamente tudo
+CREATE POLICY superadmin_all ON documento
+    AS PERMISSIVE
+    USING (current_setting('app.user_role', true) = 'SUPERADMIN');
+
+-- Admin do tenant: vê todas as linhas do próprio tenant
+CREATE POLICY tenant_admin_access ON documento
+    AS PERMISSIVE
+    USING (
+        current_setting('app.user_role', true) = 'ADMIN'
+        AND tenant_id = current_setting('app.tenant_id', true)::bigint
+    );
+
+-- Usuário normal: vê apenas suas próprias linhas dentro do tenant
+CREATE POLICY user_own_rows ON documento
+    AS PERMISSIVE
+    USING (
+        current_setting('app.user_role', true) = 'USER'
+        AND tenant_id = current_setting('app.tenant_id', true)::bigint
+        AND proprietario_id = current_setting('app.user_id', true)::bigint
+    );
+```
+
+**Interface `TenantUserDetails` para transportar os dados de sessão:**
+
+```java
+public interface TenantUserDetails extends UserDetails {
+    Long getTenantId();
+    Long getUserId();
+    String getRolePrincipal(); // "SUPERADMIN", "ADMIN" ou "USER"
+}
+```
+
+**Aspecto atualizado — propaga tenant, role e user_id:**
+
+```java
+@Aspect
+@Component
+public class RlsContextAspect {
+
+    private final EntityManager entityManager;
+
+    public RlsContextAspect(EntityManager entityManager) {
+        this.entityManager = entityManager;
+    }
+
+    @Before("execution(* com.exemplo.repository.*.*(..))")
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void configurarContextoRls() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof TenantUserDetails user)) {
+            throw new IllegalStateException("SecurityContext sem TenantUserDetails");
+        }
+
+        entityManager.unwrap(Session.class).doWork(conn -> {
+            try (PreparedStatement stmt = conn.prepareStatement("""
+                    SELECT set_config('app.tenant_id', ?, true),
+                           set_config('app.user_id',   ?, true),
+                           set_config('app.user_role',  ?, true)
+                    """)) {
+                stmt.setString(1, String.valueOf(user.getTenantId()));
+                stmt.setString(2, String.valueOf(user.getUserId()));
+                stmt.setString(3, user.getRolePrincipal());
+                stmt.execute();
+            }
+        });
+    }
+}
+```
+
+> `set_config(key, value, is_local)` com `is_local = true` tem o mesmo efeito que `SET LOCAL`: a variável é revertida ao fim da transação. Usar um único `SELECT` com múltiplos `set_config` é mais eficiente que três statements separados.
+
+**Verificação no psql — como confirmar que as políticas estão ativas:**
+
+```sql
+-- Lista as políticas definidas na tabela
+SELECT polname, polcmd, polpermissive, pg_get_expr(polqual, polrelid) AS using_expr
+FROM pg_policy
+WHERE polrelid = 'documento'::regclass;
+
+-- Simula a sessão de um usuário normal para testar
+SET LOCAL app.tenant_id = '42';
+SET LOCAL app.user_id   = '7';
+SET LOCAL app.user_role = 'USER';
+SELECT * FROM documento;  -- deve retornar apenas linhas de tenant_id=42 e proprietario_id=7
+
+-- Simula admin do tenant
+SET LOCAL app.user_role = 'ADMIN';
+SELECT * FROM documento;  -- deve retornar todas as linhas de tenant_id=42
+```
+
+#### Cuidados essenciais
+
+**`FORCE ROW LEVEL SECURITY`** — obrigatório se o `app_user` for o dono da tabela; sem ele, o dono bypassa todas as policies e vê tudo.
+
+**Credenciais separadas para Flyway e runtime** — as migrations precisam de um usuário com `BYPASSRLS` (ou superuser) para criar policies. O usuário de runtime não deve ter esse privilégio. Nunca use o mesmo role para os dois.
+
+**`set_config(name, value, true)` é obrigatório com `true`** — o terceiro argumento torna o valor local à transação. Com `false`, o parâmetro persiste na conexão e contamina a próxima requisição do pool.
+
+**Virtual Threads (Java 21+)** — `SecurityContextHolder` usa `ThreadLocal` por padrão. Com virtual threads (Project Loom), o contexto pode não ser herdado corretamente. Ative o modo herdável:
+
+```java
+// Em algum @Configuration ou no main:
+SecurityContextHolder.setStrategyName(SecurityContextHolder.MODE_INHERITABLETHREADLOCAL);
+```
+
+**Testes de integração** — em testes sem Spring Security configurado, `auth` será `null` e o aspecto faz `return` antecipado (o RLS bloqueará via `NULL`). Para testar com usuário específico, use `@WithMockUser` ou popule o `SecurityContext` manualmente:
+
+```java
+@Test
+@WithMockUser(username = "user-42")
+void deveBuscarApenasDocumentosDoUsuario() {
+    // aspecto injeta set_config com "user-42"; RLS filtra no banco
+    List<Document> docs = documentService.findAll();
+    assertThat(docs).allMatch(d -> d.getOwnerId().equals("user-42"));
+}
+```
+
+**Verificar as policies ativas no psql:**
+
+```sql
+SELECT polname, polcmd, pg_get_expr(polqual, polrelid) AS using_expr
+FROM pg_policy
+WHERE polrelid = 'documents'::regclass;
+```
+
+#### Comparativo: RLS vs. filtros na camada de aplicação
+
+| Critério | RLS (banco) | `@Filter` Hibernate | SpEL em `@Query` |
+|----------|-------------|---------------------|------------------|
+| Onde filtra | SGBD | ORM (JPQL) | SQL gerado |
+| Protege acesso direto ao banco | Sim | Não | Não |
+| Visível no schema do banco | Sim (`POLICY`) | Não | Não |
+| Overhead de configuração | Alto | Médio | Baixo |
+| Risco de esquecer o filtro | Muito baixo | Médio | Alto |
+| Melhor para | Compliance estrito, múltiplos clientes | Multi-tenancy na aplicação | Filtragem simples por usuário |
+
+> **Quando usar RLS:** exigências regulatórias (LGPD, GDPR, SOC 2) que requerem isolamento de dados garantido pelo banco, ou cenários onde múltiplos serviços acessam o mesmo banco sem passar pela API Spring.
 
 ### Auditoria com Spring Security — quem criou e quem alterou
 
@@ -9164,6 +10400,681 @@ spring:
 
 ---
 
+
+## 31. PostgreSQL Streaming Replication + Roteamento Read/Write no Spring Boot
+
+Em aplicações com leitura intensiva, é comum separar o tráfego de escrita e de leitura em instâncias distintas do PostgreSQL. A instância **primary** aceita leitura e escrita; a instância **replica** recebe as alterações via WAL streaming e atende apenas consultas.
+
+No Spring Boot, o roteamento automático é implementado com `AbstractRoutingDataSource` e `LazyConnectionDataSourceProxy`. A escolha do datasource ocorre com base no flag `readOnly` da transação corrente: `@Transactional(readOnly = true)` vai para a replica; `@Transactional` (sem `readOnly`) vai para o primary.
+
+### 31.1. Visão Geral da Arquitetura
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Spring Boot Application                        │
+│                                                                      │
+│  @Transactional            →  DataSourceType.PRIMARY  → :5432        │
+│  @Transactional(readOnly=true) → DataSourceType.REPLICA → :5433      │
+│                                                                      │
+│  LazyConnectionDataSourceProxy  (bean @Primary)                      │
+│    └── RoutingDataSource  (AbstractRoutingDataSource)                │
+│          ├── primaryDataSource  (HikariCP)  → :5432                  │
+│          └── replicaDataSource  (HikariCP)  → :5433                  │
+└──────────────────────────────────────────────────────────────────────┘
+                              │ WAL streaming
+                              ▼
+┌─────────────────────────┐       ┌───────────────────────────┐
+│  PostgreSQL PRIMARY      │ ─────►│  PostgreSQL REPLICA        │
+│  :5432  (leitura/escrita)│  WAL  │  :5433  (somente leitura) │
+└─────────────────────────┘       └───────────────────────────┘
+```
+
+**Por que `LazyConnectionDataSourceProxy` é essencial**
+
+Sem ela, o Spring adquire a conexão **antes** de definir o flag `readOnly` no `TransactionSynchronizationManager`, e o `RoutingDataSource` não consegue distinguir o tipo da transação no momento certo. Com `LazyConnectionDataSourceProxy`, a conexão real só é obtida no **primeiro statement SQL**, quando o contexto transacional já está completamente configurado.
+
+### 31.2. Configuração do PostgreSQL — Instância Primary
+
+**`postgresql.conf`** — alterações mínimas:
+
+```ini
+# Replicação
+wal_level = replica           # Habilita WAL streaming
+max_wal_senders = 10          # Processos WAL sender simultâneos
+wal_keep_size = 512MB         # WAL retido para replicas lentas
+hot_standby = on              # Consultas permitidas na standby
+
+# Conexões
+listen_addresses = '*'
+max_connections = 200
+
+# Performance (ajustar conforme RAM disponível)
+shared_buffers = 256MB
+work_mem = 4MB
+maintenance_work_mem = 64MB
+checkpoint_completion_target = 0.9
+random_page_cost = 1.1        # SSD: 1.1 | HDD: 4.0
+
+# Monitoramento de replicação
+track_commit_timestamp = on
+```
+
+**`pg_hba.conf`** — ao final do arquivo:
+
+```
+# TYPE  DATABASE     USER         ADDRESS             METHOD
+host    mydb         app_user     0.0.0.0/0           scram-sha-256
+host    replication  replicator   <IP_DA_REPLICA>/32  scram-sha-256
+```
+
+**Criar usuários e banco** (executar no primary como superusuário):
+
+```sql
+-- Usuário de replicação
+CREATE USER replicator WITH REPLICATION LOGIN PASSWORD 'Rep@ssw0rd!';
+
+-- Usuário da aplicação
+CREATE USER app_user WITH LOGIN PASSWORD 'App@ssw0rd!';
+CREATE DATABASE mydb OWNER app_user;
+\c mydb
+GRANT ALL PRIVILEGES ON SCHEMA public TO app_user;
+
+-- Usuário somente-leitura dedicado para a replica (opcional)
+CREATE USER app_user_ro WITH LOGIN PASSWORD 'ReadOnly@ssw0rd!';
+GRANT CONNECT ON DATABASE mydb TO app_user_ro;
+GRANT USAGE ON SCHEMA public TO app_user_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO app_user_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO app_user_ro;
+```
+
+**Restart do primary:**
+
+```bash
+sudo systemctl restart postgresql@18-main
+```
+
+### 31.3. Configuração do PostgreSQL — Instância Replica
+
+**Passo 1 — Clonar o primary via `pg_basebackup`:**
+
+```bash
+sudo systemctl stop postgresql@18-replica
+rm -rf /var/lib/postgresql/18/replica/*
+
+pg_basebackup \
+  --host=<IP_DO_PRIMARY> \
+  --port=5432 \
+  --username=replicator \
+  --pgdata=/var/lib/postgresql/18/replica \
+  --format=plain \
+  --wal-method=stream \
+  --write-recovery-conf \
+  --progress \
+  --verbose
+```
+
+A flag `--write-recovery-conf` cria automaticamente o arquivo `standby.signal` e popula `primary_conninfo` em `postgresql.auto.conf`.
+
+**Passo 2 — `postgresql.conf`** da replica (ajustes pós-clonagem):
+
+```ini
+port = 5433
+hot_standby = on
+hot_standby_feedback = on   # Evita conflitos de vacuum com queries longas
+max_connections = 100
+```
+
+**Passo 3 — Iniciar a replica:**
+
+```bash
+sudo chown -R postgres:postgres /var/lib/postgresql/18/replica
+sudo systemctl start postgresql@18-replica
+```
+
+### 31.4. Docker Compose — Ambiente de Desenvolvimento
+
+Para o ambiente local, a imagem `bitnami/postgresql` configura a replicação via variáveis de ambiente sem necessidade de scripts manuais:
+
+```yaml
+# docker-compose.yml
+services:
+  postgres-primary:
+    image: bitnami/postgresql:18
+    container_name: postgres-primary
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: replicator
+      POSTGRESQL_REPLICATION_PASSWORD: rep_password
+      POSTGRESQL_USERNAME: app_user
+      POSTGRESQL_PASSWORD: app_password
+      POSTGRESQL_DATABASE: mydb
+      POSTGRESQL_WAL_LEVEL: replica
+      POSTGRESQL_MAX_WAL_SENDERS: "10"
+    volumes:
+      - pg_primary_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app_user", "-d", "mydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres-replica:
+    image: bitnami/postgresql:18
+    container_name: postgres-replica
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_MASTER_HOST: postgres-primary
+      POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      POSTGRESQL_REPLICATION_USER: replicator
+      POSTGRESQL_REPLICATION_PASSWORD: rep_password
+      POSTGRESQL_USERNAME: app_user
+      POSTGRESQL_PASSWORD: app_password
+    depends_on:
+      postgres-primary:
+        condition: service_healthy
+    volumes:
+      - pg_replica_data:/bitnami/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "app_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  pg_primary_data:
+  pg_replica_data:
+```
+
+### 31.5. Verificação da Replicação
+
+```sql
+-- === NO PRIMARY ===
+-- Verificar WAL senders ativos (deve mostrar a replica conectada)
+SELECT pid, usename, client_addr, state,
+       (sent_lsn - replay_lsn) AS replication_lag_bytes
+FROM pg_stat_replication;
+
+-- === NA REPLICA ===
+-- Confirmar que está em modo hot standby (somente leitura)
+SELECT pg_is_in_recovery();  -- deve retornar TRUE
+
+-- Calcular lag de replicação em segundos
+SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) AS lag_seconds;
+
+-- Tentar escrever na replica (deve falhar)
+INSERT INTO produtos (nome, preco) VALUES ('Teste', 1);
+-- ERROR: cannot execute INSERT in a read-only transaction
+```
+
+### 31.6. Spring Boot — Dependências
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.postgresql</groupId>
+        <artifactId>postgresql</artifactId>
+        <scope>runtime</scope>
+    </dependency>
+    <dependency>
+        <groupId>org.flywaydb</groupId>
+        <artifactId>flyway-database-postgresql</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-prometheus</artifactId>
+    </dependency>
+</dependencies>
+```
+
+### 31.7. Spring Boot — `application.yml`
+
+O ponto crítico é usar o prefixo `app.datasource.*` em vez de `spring.datasource.*` para evitar conflito com a auto-configuração do Spring Boot. Como a aplicação declara um bean `DataSource` com `@Primary`, o Spring Boot não tenta criar o próprio:
+
+```yaml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false   # CRÍTICO: desabilitar OSIV
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+  # Flyway aponta diretamente ao primary, nunca ao routing datasource
+  flyway:
+    url: jdbc:postgresql://${DB_PRIMARY_HOST:localhost}:${DB_PRIMARY_PORT:5432}/${DB_NAME:mydb}
+    user: ${DB_USERNAME:app_user}
+    password: ${DB_PASSWORD:app_password}
+    locations: classpath:db/migration
+
+app:
+  datasource:
+    primary:
+      hikari:
+        jdbc-url: jdbc:postgresql://${DB_PRIMARY_HOST:localhost}:${DB_PRIMARY_PORT:5432}/${DB_NAME:mydb}
+        username: ${DB_USERNAME:app_user}
+        password: ${DB_PASSWORD:app_password}
+        driver-class-name: org.postgresql.Driver
+        pool-name: HikariPrimary
+        maximum-pool-size: ${DB_PRIMARY_POOL_SIZE:10}
+        minimum-idle: 2
+        auto-commit: false
+    replica:
+      hikari:
+        jdbc-url: jdbc:postgresql://${DB_REPLICA_HOST:localhost}:${DB_REPLICA_PORT:5433}/${DB_NAME:mydb}
+        username: ${DB_USERNAME:app_user}
+        password: ${DB_PASSWORD:app_password}
+        driver-class-name: org.postgresql.Driver
+        pool-name: HikariReplica
+        maximum-pool-size: ${DB_REPLICA_POOL_SIZE:5}
+        minimum-idle: 1
+        read-only: true   # HikariCP marca a conexão como read-only
+        auto-commit: false
+```
+
+### 31.8. Spring Boot — Classes de Configuração
+
+**`DataSourceType.java`** — enum que identifica cada datasource:
+
+```java
+package com.example.config.datasource;
+
+public enum DataSourceType {
+    PRIMARY,
+    REPLICA
+}
+```
+
+**`RoutingDataSource.java`** — decide qual pool usar com base no flag `readOnly`:
+
+```java
+package com.example.config.datasource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+public class RoutingDataSource extends AbstractRoutingDataSource {
+
+    private static final Logger log = LoggerFactory.getLogger(RoutingDataSource.class);
+
+    @Override
+    protected Object determineCurrentLookupKey() {
+        boolean readOnly = TransactionSynchronizationManager.isCurrentTransactionReadOnly();
+        DataSourceType target = readOnly ? DataSourceType.REPLICA : DataSourceType.PRIMARY;
+        log.debug("DataSource routing → {} (readOnly={})", target, readOnly);
+        return target;
+    }
+}
+```
+
+**`DataSourceConfig.java`** — monta a hierarquia de beans:
+
+```java
+package com.example.config.datasource;
+
+import com.zaxxer.hikari.HikariDataSource;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.datasource.LazyConnectionDataSourceProxy;
+
+import javax.sql.DataSource;
+import java.util.Map;
+
+@Configuration
+public class DataSourceConfig {
+
+    @Bean
+    @ConfigurationProperties("app.datasource.primary.hikari")
+    public HikariDataSource primaryDataSource() {
+        return new HikariDataSource();
+    }
+
+    @Bean
+    @ConfigurationProperties("app.datasource.replica.hikari")
+    public HikariDataSource replicaDataSource() {
+        return new HikariDataSource();
+    }
+
+    @Bean
+    public DataSource routingDataSource(
+            @Qualifier("primaryDataSource") DataSource primary,
+            @Qualifier("replicaDataSource") DataSource replica) {
+
+        RoutingDataSource routing = new RoutingDataSource();
+        routing.setTargetDataSources(Map.of(
+            DataSourceType.PRIMARY, primary,
+            DataSourceType.REPLICA, replica
+        ));
+        routing.setDefaultTargetDataSource(primary);
+        routing.afterPropertiesSet();
+        return routing;
+    }
+
+    @Primary
+    @Bean
+    public DataSource dataSource(@Qualifier("routingDataSource") DataSource routing) {
+        return new LazyConnectionDataSourceProxy(routing);
+    }
+}
+```
+
+Hierarquia de beans resultante:
+
+```
+dataSource (@Primary, LazyConnectionDataSourceProxy)
+  └── routingDataSource (RoutingDataSource)
+        ├── primaryDataSource (HikariCP → :5432)
+        └── replicaDataSource (HikariCP → :5433)
+```
+
+### 31.9. Uso no Service — `@Transactional` como critério de roteamento
+
+Com a configuração acima, o roteamento é completamente transparente. Basta anotar os métodos corretamente:
+
+```java
+package com.example.service;
+
+import com.example.repository.ProdutoRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ProdutoService {
+
+    private final ProdutoRepository produtoRepository;
+
+    public ProdutoService(ProdutoRepository produtoRepository) {
+        this.produtoRepository = produtoRepository;
+    }
+
+    // Roteado para REPLICA — readOnly=true
+    @Transactional(readOnly = true)
+    public Page<ProdutoDto> listarAtivos(Pageable pageable) {
+        return produtoRepository.findByAtivoTrue(pageable)
+            .map(ProdutoDto::fromEntity);
+    }
+
+    // Roteado para REPLICA — readOnly=true
+    @Transactional(readOnly = true)
+    public ProdutoDto buscarPorId(Long id) {
+        return produtoRepository.findById(id)
+            .map(ProdutoDto::fromEntity)
+            .orElse(null);
+    }
+
+    // Roteado para PRIMARY — readOnly padrão é false
+    @Transactional
+    public ProdutoDto criar(CriarProdutoRequest request) {
+        ProdutoEntity entity = new ProdutoEntity();
+        entity.setNome(request.nome());
+        entity.setPreco(request.preco());
+        return ProdutoDto.fromEntity(produtoRepository.save(entity));
+    }
+
+    // Roteado para PRIMARY — operação de escrita
+    @Transactional
+    public void desativar(Long id) {
+        ProdutoEntity entity = produtoRepository.findById(id)
+            .orElseThrow(() -> new RuntimeException("Produto não encontrado: " + id));
+        entity.setAtivo(false);
+        produtoRepository.save(entity);
+    }
+}
+```
+
+### 31.10. Health Indicator para a Replica (recomendado em produção)
+
+```java
+package com.example.config.datasource;
+
+import com.zaxxer.hikari.HikariDataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+
+import java.sql.Connection;
+
+@Component("replica")
+public class ReplicaHealthIndicator implements HealthIndicator {
+
+    private static final Logger log = LoggerFactory.getLogger(ReplicaHealthIndicator.class);
+
+    private final HikariDataSource replicaDataSource;
+
+    public ReplicaHealthIndicator(@Qualifier("replicaDataSource") HikariDataSource replicaDataSource) {
+        this.replicaDataSource = replicaDataSource;
+    }
+
+    @Override
+    public Health health() {
+        try (Connection connection = replicaDataSource.getConnection()) {
+            boolean isReadOnly = connection.isReadOnly();
+            boolean isValid    = connection.isValid(2);
+
+            if (isValid && isReadOnly) {
+                return Health.up()
+                    .withDetail("pool", replicaDataSource.getPoolName())
+                    .withDetail("readOnly", true)
+                    .withDetail("activeConnections", replicaDataSource.getHikariPoolMXBean().getActiveConnections())
+                    .build();
+            }
+            return Health.down()
+                .withDetail("reason", isReadOnly ? "connection invalid" : "not read-only")
+                .build();
+
+        } catch (Exception ex) {
+            log.warn("Replica health check failed: {}", ex.getMessage());
+            return Health.down(ex).build();
+        }
+    }
+}
+```
+
+O endpoint `/actuator/health/replica` passa a monitorar a disponibilidade da instância de leitura.
+
+### 31.11. Considerações de Produção
+
+#### Lag de Replicação
+
+A replicação streaming é **assíncrona por padrão**. Uma escrita no primary pode não ser imediatamente visível na replica. Padrões para lidar com isso:
+
+```java
+// ✅ Retornar o DTO diretamente da operação de escrita, sem ler da replica
+@Transactional
+public ProdutoDto criar(CriarProdutoRequest req) {
+    return ProdutoDto.fromEntity(produtoRepository.save(toEntity(req)));
+}
+
+// ✅ Forçar leitura no PRIMARY logo após escrita crítica
+@Transactional  // PRIMARY — garante leitura consistente
+public ProdutoDto criarEConfirmar(CriarProdutoRequest req) {
+    ProdutoEntity saved = produtoRepository.save(toEntity(req));
+    return ProdutoDto.fromEntity(
+        produtoRepository.findById(saved.getId()).orElseThrow());
+}
+```
+
+Para replicação síncrona (zero lag, mas com impacto em performance de escrita):
+
+```ini
+# postgresql.conf no primary
+synchronous_commit = on
+synchronous_standby_names = '*'
+```
+
+#### Propagação de Transação e Chamadas Internas
+
+```java
+// ⚠️ Chamada direta (sem proxy) — readOnly=true da anotação interna é ignorado,
+// o método se junta à transação pai (PRIMARY)
+@Transactional
+public void escritaComLeituraInterna() {
+    repository.save(entidade);
+    this.listarAtivos(pageable);  // vai para PRIMARY, não REPLICA
+}
+
+// ✅ Para isolar a leitura na replica, injete o próprio serviço via proxy
+// ou use Propagation.REQUIRES_NEW na leitura
+@Transactional(readOnly = true, propagation = Propagation.REQUIRES_NEW)
+public Page<ProdutoDto> listarAtivos(Pageable pageable) { ... }
+```
+
+#### Métricas dos Pools via Prometheus
+
+Com `micrometer-registry-prometheus`, os dois pools HikariCP expõem métricas automaticamente:
+
+```
+hikaricp_connections_active{pool="HikariPrimary"}
+hikaricp_connections_active{pool="HikariReplica"}
+hikaricp_connections_acquire_seconds_max{pool="HikariPrimary"}
+hikaricp_connections_acquire_seconds_max{pool="HikariReplica"}
+```
+
+Query Grafana útil — lag de replicação (executada na replica):
+
+```sql
+SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) AS replication_lag_seconds;
+```
+
+### 31.12. PgBouncer como Connection Pooler Externo
+
+Em produção, é comum colocar o PgBouncer entre a aplicação e o PostgreSQL para reduzir o custo de conexões reais ao banco. Ele funciona de forma transparente com o roteamento descrito nas seções anteriores.
+
+#### Topologia
+
+São necessários **dois endpoints PgBouncer separados** — um por instância PostgreSQL — para preservar a semântica de roteamento:
+
+```
+Spring Boot App
+  ├── HikariPrimary  →  PgBouncer :6432  →  PostgreSQL Primary  :5432
+  └── HikariReplica  →  PgBouncer :6433  →  PostgreSQL Replica  :5433
+```
+
+No `application.yml`, apenas as URLs dos datasources mudam. O `RoutingDataSource` e o `LazyConnectionDataSourceProxy` não precisam de nenhuma alteração:
+
+```yaml
+app:
+  datasource:
+    primary:
+      hikari:
+        jdbc-url: jdbc:postgresql://pgbouncer:6432/mydb
+    replica:
+      hikari:
+        jdbc-url: jdbc:postgresql://pgbouncer:6433/mydb
+```
+
+#### Double Pooling — HikariCP e PgBouncer com papéis distintos
+
+Com os dois pools em série, cada um tem responsabilidade diferente:
+
+- **HikariCP**: pool local na JVM — aquisição de conexão em microssegundos, sem latência de rede;
+- **PgBouncer**: multiplexação — muitas conexões da aplicação compartilham poucas conexões reais ao PostgreSQL.
+
+A configuração correta é manter o **HikariCP pequeno** e deixar o **PgBouncer gerenciar as conexões reais**:
+
+```ini
+; pgbouncer.ini — instância do primary
+[databases]
+mydb = host=postgres-primary port=5432 dbname=mydb
+
+[pgbouncer]
+pool_mode = transaction
+max_client_conn = 500
+default_pool_size = 20     ; conexões reais ao PostgreSQL
+```
+
+```yaml
+# HikariCP pequeno — conexões ao PgBouncer são baratas
+app:
+  datasource:
+    primary:
+      hikari:
+        maximum-pool-size: 5    # por instância da aplicação
+        minimum-idle: 2
+```
+
+#### Armadilha: `pool_mode = transaction` com Hibernate
+
+No modo `transaction` (o mais eficiente), a conexão retorna ao pool PgBouncer após cada transação, o que apaga o estado de sessão do PostgreSQL. Isso causa dois problemas com Hibernate:
+
+**1. Prepared statements server-side** — Hibernate envia `PREPARE` ao servidor por padrão, mas o estado preparado se perde entre transações de clientes diferentes.
+
+Solução — desabilitar prepared statements server-side via propriedade do driver JDBC:
+
+```yaml
+app:
+  datasource:
+    primary:
+      hikari:
+        jdbc-url: jdbc:postgresql://pgbouncer:6432/mydb?prepareThreshold=0
+    replica:
+      hikari:
+        jdbc-url: jdbc:postgresql://pgbouncer:6433/mydb?prepareThreshold=0
+```
+
+Ou via propriedade JPA/Hibernate:
+
+```yaml
+spring:
+  jpa:
+    properties:
+      jakarta:
+        persistence:
+          query:
+            prepare_threshold: 0
+```
+
+**2. Variáveis de sessão** — comandos `SET search_path` e similares são perdidos quando a conexão retorna ao pool. Para casos com `search_path` customizado, defina-o fixo no `pgbouncer.ini`:
+
+```ini
+[databases]
+mydb = host=postgres-primary port=5432 dbname=mydb search_path=public
+```
+
+#### `pool_mode = session` — mais seguro para JPA
+
+Se a compatibilidade com Hibernate sem ajustes extras for prioridade, use `pool_mode = session`. A conexão permanece vinculada ao cliente durante toda a sessão, preservando o estado. Perde parte da eficiência de multiplexação, mas ainda economiza conexões ao PostgreSQL em cenários com múltiplas instâncias da aplicação.
+
+#### Resumo
+
+| Aspecto | Detalhe |
+|---|---|
+| Funciona com o routing do documento? | Sim, sem alteração no código |
+| Quantos PgBouncers? | 2 endpoints (primary + replica) |
+| Modo recomendado com JPA | `session` (seguro) ou `transaction` + `prepareThreshold=0` |
+| HikariCP pool size | Pequeno (2–5 por instância de app) |
+| PgBouncer pool size | Grande (20–50 conexões reais ao PostgreSQL) |
+| Roteamento read/write | Feito pelo Spring — PgBouncer é transparente |
+
+---
 
 ## Referências
 

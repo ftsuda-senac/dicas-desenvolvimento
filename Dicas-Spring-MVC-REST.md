@@ -4470,9 +4470,10 @@ class ProdutoAsyncControllerIT {
 ### 10.9 API Versioning nativo — Spring Framework 7 / Spring Boot 4
 
 O Spring Framework 7 (base do Spring Boot 4) introduziu suporte nativo a
-versionamento de API por meio da classe `ApiVersionRequestMappingHandlerMapping`
-e da anotação `@ApiVersion`. Isso elimina a necessidade de embutir a versão
-explicitamente em cada `@RequestMapping("/api/v1/...")`.
+versionamento de API diretamente no `RequestMappingHandlerMapping`, sem libs
+externas. O atributo `version` é um *matching constraint* **opcional** — rotas
+**sem** ele continuam funcionando normalmente, independente da versão enviada
+pelo cliente.
 
 #### Como funciona
 
@@ -4485,118 +4486,154 @@ flowchart LR
     end
 
     C["Cliente HTTP"] -- "request com versão" --> DS["DispatcherServlet"]
-    DS --> AVRM["ApiVersionRequestMappingHandlerMapping<br>(resolve versão da request)"]
-    AVRM --> CTRL["@Controller<br>@ApiVersion(from=1)"]
-    AVRM --> CTRL2["@Controller<br>@ApiVersion(from=2)"]
+    DS --> AVRM["RequestMappingHandlerMapping<br>(resolve versão da request)"]
+    AVRM --> CTRL["@Controller<br>version = &quot;1&quot;"]
+    AVRM --> CTRL2["@Controller<br>version = &quot;2&quot;"]
+    AVRM --> CTRL3["@Controller<br>(sem version — sempre acessível)"]
 ```
 
-#### Configuração do versionamento
+#### 1. Configuração global da estratégia
 
 ```java
-// ─── 1. Configurar a estratégia em WebMvcConfigurer ──────────────────────────
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
-    public void configureApiVersioning(ApiVersioningConfigurer configurer) {
+    public void configureApiVersioning(ApiVersionConfigurer configurer) {
         configurer
-            // Estratégia 1: versão como prefixo no path  → /v{n}/produtos
-            .usePathPrefix("v{version}")
-
-            // Estratégia 2: via header (alternativa)
-            // .useRequestHeader("X-API-Version")
-
-            // Estratégia 3: via query param (alternativa)
-            // .useRequestParameter("api-version")
-
-            // Versão default quando o cliente não envia nenhuma
-            .setDefaultVersion("1")
-
-            // Como reagir a versões sem handler mapeado
-            .setIncompatibleVersionStrategy(
-                ApiVersionIncompatibleRequestStrategy.sendError(
-                    HttpStatus.GONE, "Versão da API não suportada"));
+            // Estratégia via header (mais comum para APIs internas/B2B)
+            .useRequestHeader("X-API-Version")
+            // Alternativas mutuamente exclusíveis:
+            // .useRequestParameter("api-version")              // ?api-version=2
+            // .usePathPrefix("/v{version}")                     // /v2/products
+            // .useMediaTypeSubtype("vnd.myapp.v{version}+json") // Content negotiation
+            .setDefaultVersion(ApiVersion.of("1"));   // versão padrão quando omitida
     }
 }
 ```
 
-#### Controllers sem versão no path
+#### 2. Rotas sem versão — sempre acessíveis
+
+Rotas **sem** o atributo `version` respondem a qualquer requisição,
+independente do header/parâmetro de versão enviado. Essa é a forma de manter
+rotas estáveis (health check, autenticação) fora do versionamento.
 
 ```java
-// ─── Controller v1 — versão inicial ──────────────────────────────────────────
-//
-// @ApiVersion(from = "1") = atende requests de versão 1 em diante,
-//   até que uma versão mais específica exista para a mesma rota.
-//
-// Mapeamento gerado automaticamente: /v1/produtos/**
-//
+// ✅ Sem versionamento — /api/health sempre acessível
 @RestController
-@RequestMapping("/produtos")   // SEM prefixo de versão na rota!
-@ApiVersion(from = "1")
-@Tag(name = "Produtos")
-public class ProdutoV1Controller {
+@RequestMapping("/api")
+public class HealthController {
 
-    @GetMapping("/{id}")
-    public ResponseEntity<ProdutoV1Response> buscar(@PathVariable Long id) {
-        return ResponseEntity.ok(produtoService.buscarV1(id));
+    @GetMapping("/health")
+    public ResponseEntity<Void> health() {
+        return ResponseEntity.ok().build();
     }
-
-    @GetMapping
-    public ResponseEntity<Page<ProdutoV1Response>> listar(Pageable pageable) {
-        return ResponseEntity.ok(produtoService.listarV1(pageable));
-    }
-}
-
-// ─── Controller v2 — breaking change ─────────────────────────────────────────
-//
-// @ApiVersion(from = "2") = atende requests de versão 2 em diante.
-// Requests para /v1/produtos/{id} continuam indo para ProdutoV1Controller.
-// Requests para /v2/produtos/{id} vão para ProdutoV2Controller.
-//
-// Mapeamento gerado automaticamente: /v2/produtos/**
-//
-@RestController
-@RequestMapping("/produtos")   // mesmo path base — o framework diferencia pela versão
-@ApiVersion(from = "2")
-@Tag(name = "Produtos")
-public class ProdutoV2Controller {
-
-    // v2 retorna um Response com campos extras (breaking change justifica nova versão)
-    @GetMapping("/{id}")
-    public ResponseEntity<ProdutoV2Response> buscar(@PathVariable Long id) {
-        return ResponseEntity.ok(produtoService.buscarV2(id));
-    }
-
-    // Endpoint novo que existe apenas na v2
-    @GetMapping("/{id}/avaliacoes")
-    public ResponseEntity<Page<AvaliacaoResponse>> avaliacoes(
-            @PathVariable Long id, Pageable pageable) {
-        return ResponseEntity.ok(avaliacaoService.listar(id, pageable));
-    }
-}
-
-// ─── Granularidade por método ─────────────────────────────────────────────────
-//
-// @ApiVersion pode ser aplicado também em métodos individuais,
-// permitindo que apenas parte de um controller seja versionado.
-//
-@RestController
-@RequestMapping("/categorias")
-@ApiVersion(from = "1")
-public class CategoriaController {
-
-    @GetMapping                     // disponível desde v1
-    public List<CategoriaResponse> listar() { ... }
-
-    @GetMapping("/{id}/arvore")
-    @ApiVersion(from = "2")         // endpoint novo, apenas v2+
-    public CategoriaArvoreResponse arvore(@PathVariable Long id) { ... }
-
-    @DeleteMapping("/{id}")
-    @ApiVersion(from = "1", to = "2")  // removido na v3 (deprecated range)
-    public void excluir(@PathVariable Long id) { ... }
 }
 ```
+
+> **Mecanismo:** a ausência do atributo `version` é o próprio mecanismo de
+> exclusão. Nenhuma configuração adicional é necessária para "não versionar"
+> uma rota.
+
+#### 3. Versionamento seletivo
+
+O atributo `version` pode ser aplicado no nível do controller (todos os
+endpoints herdam) ou apenas em métodos específicos (*opt-in* granular).
+
+```java
+// ─── Versionamento por método (opt-in granular) ───────────────────────────────
+@RestController
+@RequestMapping("/api/products")
+public class ProductController {
+
+    // Sem version → match em qualquer versão (rota estável/legada)
+    @GetMapping("/{id}")
+    public ProductDetailResponse getById(@PathVariable Long id) { ... }
+
+    // Versão 1 da listagem
+    @GetMapping(version = "1")
+    public List<ProductV1Response> listV1() { ... }
+
+    // Versão 2 da listagem (v1 continua disponível)
+    @GetMapping(version = "2")
+    public List<ProductV2Response> listV2() { ... }
+}
+
+// ─── Versão no nível do controller ────────────────────────────────────────────
+// Todos os endpoints herdam a restrição de versão
+@RestController
+@RequestMapping(path = "/api/orders", version = "2")
+public class OrderControllerV2 {
+
+    @GetMapping
+    public List<OrderV2Response> list() { ... }
+
+    @PostMapping
+    public OrderV2Response create(@RequestBody @Valid CreateOrderRequest req) { ... }
+}
+```
+
+#### 4. Ranges de versão
+
+O Spring Framework 7 suporta notação de intervalos, útil para deprecar versões
+gradualmente sem quebrar clientes antigos:
+
+```java
+@GetMapping(path = "/reports", version = "[1,3)")   // v1 e v2, exclui v3+
+public ReportResponse legacyReport() { ... }
+
+@GetMapping(path = "/reports", version = "[3,)")    // v3 em diante
+public ReportResponse modernReport() { ... }
+```
+
+#### 5. Meta-anotação @ApiV2
+
+Para evitar repetir `version` em cada método de um controller, crie uma
+meta-anotação:
+
+```java
+@Target({ElementType.TYPE, ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@RequestMapping(version = "2")
+public @interface ApiV2 { }
+```
+
+```java
+@RestController
+@RequestMapping("/api/users")
+@ApiV2   // todos os endpoints deste controller exigem versão 2
+public class UserControllerV2 {
+
+    @GetMapping
+    public List<UserV2Response> list() { ... }
+}
+```
+
+#### 6. Properties para auto-configuração
+
+```properties
+# application.properties
+spring.mvc.versioning.enabled=true
+spring.mvc.versioning.default-version=1
+
+# Se usar path prefix: GET /v2/products
+spring.mvc.versioning.path-prefix=/v{version}
+
+# Se usar header
+spring.mvc.versioning.header-name=X-API-Version
+
+# Versão não obrigatória (cai no defaultVersion quando ausente)
+spring.mvc.versioning.required=false
+```
+
+#### Resumo das abordagens para aplicação seletiva
+
+| Abordagem | Quando usar |
+|-----------|-------------|
+| `version` só nos métodos/controllers que precisam | Maioria dos casos — opt-in granular |
+| Meta-anotação `@ApiV2` no controller inteiro | Quando todo um controller muda de versão |
+| Ranges `[1,3)` | Deprecação controlada sem quebrar clientes antigos |
+| Controllers sem `version` | Rotas públicas/estáveis que nunca devem ser versionadas (health, auth) |
 
 #### Documentação OpenAPI por versão
 
@@ -4623,10 +4660,11 @@ public GroupedOpenApi v2Api() {
 }
 ```
 
-> **Compatibilidade:** `@ApiVersion` e `configureApiVersioning` são APIs do
-> Spring Framework 7 — disponíveis a partir do Spring Boot 4.0. No Spring Boot
-> 3.x, o versionamento manual via prefixo de path (`/api/v1/...`) ou
-> `GroupedOpenApi` continua sendo a abordagem recomendada.
+> **Compatibilidade:** o atributo `version` em `@RequestMapping`/`@GetMapping`
+> e `configureApiVersioning` são APIs do Spring Framework 7 — disponíveis a
+> partir do Spring Boot 4.0. No Spring Boot 3.x, o versionamento manual via
+> prefixo de path (`/api/v1/...`) ou `GroupedOpenApi` continua sendo a
+> abordagem recomendada.
 
 ---
 

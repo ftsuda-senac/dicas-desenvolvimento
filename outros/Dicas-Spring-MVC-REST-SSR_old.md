@@ -1,5 +1,7 @@
 # Spring MVC — Guia Completo: REST APIs e SSR com Thymeleaf
 
+> **DEPRECATED** Ver arquivos separados sobre REST e SSR
+
 > **Baseline principal:** Spring Boot 3.5 · Spring Framework 6.x · Java 21+ · Thymeleaf 3.x · SpringDoc OpenAPI 2.x
 >
 > **Notas de compatibilidade:** quando uma seção exigir Spring Boot 4 / Spring Framework 7 ou SpringDoc 3.x, isso será indicado explicitamente.

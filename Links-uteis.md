@@ -5,6 +5,12 @@
 * https://codepen.io/ftsuda-senac
 * https://codepen.io/ftsuda82
 
+
+## Midiateca Dev (Youtube)
+
+* https://www.youtube.com/playlist?list=PLLKhx-ckQ9h_qn8Zl1nsjn6hinxliQfIi
+
+
 ## Fundamentos Web
 
 * Developers Google: https://developers.google.com/web/fundamentals/
@@ -14,9 +20,11 @@
 * Github Exemplos PWA: https://github.com/mdn/pwa-examples
 * web.dev: https://web.dev/learn/
 
+
 ## Programação geral
 
 * Patterns.dev https://www.patterns.dev/
+
 
 ## Acessibilidade
 * WCAG https://wcag.com/

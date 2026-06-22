@@ -15,11 +15,11 @@
 
 > "Programs must be written for people to read, and only incidentally for machines to execute."
 > 
-> &mdash; <cite>Unknown</cite> <a href="https://twitter.com/MakadiaHarsh/status/1512821254318870537" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
+> &mdash; <cite>Unknown</cite> <a href="https://x.com/MakadiaHarsh/status/1512821254318870537" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
 
 > "Programming is not about typing, it's about thinking."
 > 
->  &mdash; <cite>Rich Hickey</cite> <a href="https://twitter.com/CodeWisdom/status/1511684402039959555" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
+>  &mdash; <cite>Rich Hickey</cite> <a href="https://x.com/CodeWisdom/status/1511684402039959555" target="_blank" rel="nofollow noopener noreferrer">tweet</a>
 
 ## Convenções para escrita do código
 

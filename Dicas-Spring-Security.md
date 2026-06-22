@@ -6842,6 +6842,470 @@ public class SecurityConfig {
 | **Backup** | Códigos de recuperação | Reenvio | Novo token |
 | **Melhor para** | Alta segurança, usuários técnicos | Usuários não técnicos | Apps sem senha (passwordless) |
 
+### 17.6 Passkeys (WebAuthn / FIDO2)
+
+Passkeys são credenciais criptográficas baseadas no padrão **WebAuthn (W3C) / FIDO2** que substituem a senha tradicional. O dispositivo gera um par de chaves assimétricas: a chave privada fica protegida no autenticador (Touch ID, Windows Hello, YubiKey); a chave pública é registrada no servidor. A autenticação ocorre com um gesto biométrico ou PIN local — nenhum segredo trafega pela rede.
+
+**Spring Security 6.4+ (Spring Boot 3.4+)** inclui suporte nativo a passkeys, sem dependências externas adicionais além do starter de segurança.
+
+| | Senha | Passkey |
+|---|---|---|
+| **Phishing** | Vulnerável | Imune — chave vinculada ao domínio (rpId) |
+| **Vazamento de banco** | Expõe hash quebrável | Expõe só chave pública (matematicamente inútil) |
+| **UX** | Usuário digita e lembra | Biometria / PIN local |
+| **Ataques de força bruta** | Possível | Impossível — desafio assimétrico |
+| **Sincronização** | N/A | iCloud Keychain, Google Password Manager |
+| **Segundo fator** | Necessário separadamente | Inerente ao mecanismo |
+
+#### Fluxo de Registro
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant S as Servidor
+    participant A as Autenticador<br>(Touch ID / Windows Hello)
+
+    B->>S: POST /webauthn/register/options
+    S-->>B: PublicKeyCredentialCreationOptions<br>(challenge, rpId, userId, algoritmos)
+
+    B->>A: navigator.credentials.create(options)
+    A-->>B: Gesto biométrico / PIN
+    A-->>B: PublicKeyCredential<br>(chave pública + attestation)
+
+    B->>S: POST /webauthn/register (credencial + label)
+    S->>S: Verifica attestation, persiste chave pública
+    S-->>B: 200 OK — passkey registrada
+```
+
+#### Fluxo de Autenticação
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant S as Servidor
+    participant A as Autenticador<br>(Touch ID / Windows Hello)
+
+    B->>S: POST /webauthn/authenticate/options
+    S-->>B: PublicKeyCredentialRequestOptions<br>(challenge, rpId)
+
+    B->>A: navigator.credentials.get(options)
+    A-->>B: Gesto biométrico / PIN
+    A-->>B: AuthenticatorAssertionResponse<br>(assinatura com chave privada)
+
+    B->>S: POST /webauthn/authenticate (assertion)
+    S->>S: Verifica assinatura com chave pública<br>Incrementa signatureCount
+    S-->>B: Sessão autenticada
+```
+
+#### Dependências Maven
+
+```xml
+<!-- Spring Boot 3.4+ inclui o suporte via spring-security-web -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+
+<!-- Serialização CBOR (já transitiva no Spring Boot 3.4+) -->
+<dependency>
+    <groupId>com.fasterxml.jackson.dataformat</groupId>
+    <artifactId>jackson-dataformat-cbor</artifactId>
+</dependency>
+```
+
+#### Entidade JPA — Armazenando Credenciais
+
+```java
+@Entity
+@Table(name = "passkey_credential")
+public class PasskeyCredentialEntity {
+
+    @Id
+    private String credentialId;        // Base64URL da credentialId FIDO2
+
+    @Column(nullable = false)
+    private String userId;              // ID do usuário da aplicação (hex)
+
+    @Column(nullable = false)
+    private String label;               // Nome amigável: "iPhone da Maria"
+
+    @Lob
+    @Column(nullable = false)
+    private byte[] publicKeyCose;       // Chave pública serializada COSE
+
+    private long signatureCount;        // Contador anti-replay
+
+    private boolean uvInitialized;      // User Verification realizada no registro
+    private boolean backupEligible;     // Passkey pode ser sincronizada entre dispositivos
+    private boolean backupState;        // Passkey está atualmente sincronizada
+
+    @Column(nullable = false)
+    private String transports;          // JSON: ["internal","hybrid"]
+
+    @Lob
+    private byte[] attestationObject;
+
+    @Lob
+    private byte[] authenticatorData;
+
+    @Column(nullable = false)
+    private Instant created;
+
+    private Instant lastUsed;
+
+    // getters e setters omitidos
+}
+```
+
+#### Implementando PublicKeyCredentialUserEntityRepository
+
+Spring Security usa este repositório para mapear o usuário da aplicação ao identificador WebAuthn:
+
+```java
+import org.springframework.security.web.webauthn.api.*;
+import org.springframework.security.web.webauthn.registration.PublicKeyCredentialUserEntityRepository;
+
+@Component
+@RequiredArgsConstructor
+public class JpaPublicKeyCredentialUserEntityRepository
+        implements PublicKeyCredentialUserEntityRepository {
+
+    private final UsuarioRepository usuarioRepository;
+
+    @Override
+    public PublicKeyCredentialUserEntity findByUsername(String username) {
+        return usuarioRepository.findByEmail(username)
+                .map(this::toUserEntity)
+                .orElse(null);
+    }
+
+    @Override
+    public PublicKeyCredentialUserEntity findById(Bytes id) {
+        return usuarioRepository.findByPasskeyUserId(id.toHex())
+                .map(this::toUserEntity)
+                .orElse(null);
+    }
+
+    @Override
+    public void save(PublicKeyCredentialUserEntity userEntity) {
+        usuarioRepository.findByEmail(userEntity.getName())
+                .ifPresent(u -> {
+                    u.setPasskeyUserId(userEntity.getId().toHex());
+                    usuarioRepository.save(u);
+                });
+    }
+
+    @Override
+    public void delete(Bytes id) {
+        // chamado quando todas as credenciais do usuário são removidas
+    }
+
+    private PublicKeyCredentialUserEntity toUserEntity(Usuario u) {
+        return PublicKeyCredentialUserEntity.builder()
+                .id(Bytes.fromHex(u.getPasskeyUserId()))
+                .name(u.getEmail())
+                .displayName(u.getNome())
+                .build();
+    }
+}
+```
+
+#### Implementando UserCredentialRepository
+
+Persiste e recupera as chaves públicas das passkeys registradas:
+
+```java
+import org.springframework.security.web.webauthn.api.*;
+import org.springframework.security.web.webauthn.registration.UserCredentialRepository;
+
+@Component
+@RequiredArgsConstructor
+public class JpaUserCredentialRepository implements UserCredentialRepository {
+
+    private final PasskeyCredentialEntityRepository repo;
+    private final ObjectMapper objectMapper;
+
+    @Override
+    public void save(CredentialRecord credential) {
+        PasskeyCredentialEntity e = repo
+                .findById(credential.getCredentialId().toBase64UrlString())
+                .orElse(new PasskeyCredentialEntity());
+
+        e.setCredentialId(credential.getCredentialId().toBase64UrlString());
+        e.setUserId(credential.getUserEntityUserId().toHex());
+        e.setLabel(credential.getLabel());
+        e.setPublicKeyCose(credential.getPublicKey().getEncodedBytes());
+        e.setSignatureCount(credential.getSignatureCount());
+        e.setUvInitialized(credential.isUvInitialized());
+        e.setBackupEligible(credential.isBackupEligible());
+        e.setBackupState(credential.isBackupState());
+        e.setTransports(toJson(credential.getTransports()));
+        e.setCreated(credential.getCreated() != null ? credential.getCreated() : Instant.now());
+        e.setLastUsed(credential.getLastUsed());
+        repo.save(e);
+    }
+
+    @Override
+    public CredentialRecord findByCredentialId(Bytes credentialId) {
+        return repo.findById(credentialId.toBase64UrlString())
+                .map(this::toRecord)
+                .orElse(null);
+    }
+
+    @Override
+    public List<CredentialRecord> findByUserId(Bytes userId) {
+        return repo.findByUserId(userId.toHex()).stream()
+                .map(this::toRecord)
+                .toList();
+    }
+
+    @Override
+    public void delete(Bytes credentialId) {
+        repo.deleteById(credentialId.toBase64UrlString());
+    }
+
+    // CredentialRecord é uma interface — implemente como inner class ou record
+    private CredentialRecord toRecord(PasskeyCredentialEntity e) {
+        return new CredentialRecord() {
+            @Override public PublicKeyCredentialType getCredentialType() { return PublicKeyCredentialType.PUBLIC_KEY; }
+            @Override public Bytes getCredentialId() { return Bytes.fromBase64UrlString(e.getCredentialId()); }
+            @Override public COSEKey getPublicKey() { return COSEKey.of(e.getPublicKeyCose()); }
+            @Override public long getSignatureCount() { return e.getSignatureCount(); }
+            @Override public boolean isUvInitialized() { return e.isUvInitialized(); }
+            @Override public boolean isBackupEligible() { return e.isBackupEligible(); }
+            @Override public boolean isBackupState() { return e.isBackupState(); }
+            @Override public Set<AuthenticatorTransport> getTransports() { return fromJson(e.getTransports()); }
+            @Override public AttestationObject getAttestationObject() { return e.getAttestationObject() != null ? AttestationObject.of(e.getAttestationObject()) : null; }
+            @Override public AuthenticatorData getAuthenticatorData() { return e.getAuthenticatorData() != null ? AuthenticatorData.of(e.getAuthenticatorData()) : null; }
+            @Override public Bytes getUserEntityUserId() { return Bytes.fromHex(e.getUserId()); }
+            @Override public String getLabel() { return e.getLabel(); }
+            @Override public Instant getCreated() { return e.getCreated(); }
+            @Override public Instant getLastUsed() { return e.getLastUsed(); }
+        };
+    }
+
+    private String toJson(Set<AuthenticatorTransport> transports) {
+        try { return objectMapper.writeValueAsString(transports.stream().map(AuthenticatorTransport::getValue).toList()); }
+        catch (JsonProcessingException ex) { return "[]"; }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<AuthenticatorTransport> fromJson(String json) {
+        try { return ((List<String>) objectMapper.readValue(json, List.class)).stream().map(AuthenticatorTransport::of).collect(Collectors.toSet()); }
+        catch (JsonProcessingException ex) { return Set.of(); }
+    }
+}
+```
+
+#### SecurityConfig
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http
+            // Registra os filtros e endpoints WebAuthn automaticamente
+            .webAuthn(webAuthn -> webAuthn
+                .rpName("Minha Aplicação")           // Nome exibido no diálogo do autenticador
+                .rpId("example.com")                 // Deve ser o domínio exato (sem https://)
+                .allowedOrigins("https://example.com")
+            )
+            .formLogin(withDefaults())               // Passkey complementa o login tradicional
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/login", "/webauthn/**").permitAll()
+                .anyRequest().authenticated()
+            );
+        return http.build();
+    }
+}
+```
+
+> **rpId deve corresponder ao domínio real** onde a aplicação está hospedada. Em desenvolvimento local use `localhost`; em produção use o eTLD+1 sem protocolo e sem porta (`example.com`, não `https://example.com:8443`). Uma passkey registrada com `rpId` errado não funcionará na autenticação.
+
+#### Endpoints criados automaticamente pelo Spring Security
+
+| Método | Path | Descrição |
+|--------|------|-----------|
+| `POST` | `/webauthn/register/options` | Retorna `PublicKeyCredentialCreationOptions` para o browser |
+| `POST` | `/webauthn/register` | Finaliza o registro e persiste a chave pública |
+| `POST` | `/webauthn/authenticate/options` | Retorna `PublicKeyCredentialRequestOptions` com o challenge |
+| `POST` | `/webauthn/authenticate` | Valida a assinatura e cria a sessão autenticada |
+
+O CSRF token deve ser enviado em todos os requests no header `X-CSRF-TOKEN` (lido do cookie `XSRF-TOKEN`).
+
+#### Frontend JavaScript
+
+```javascript
+// ─── Utilitários Base64URL ───────────────────────────────────────────────
+const toBuffer = b64url =>
+    Uint8Array.from(atob(b64url.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)).buffer;
+
+const toBase64url = buffer =>
+    btoa(String.fromCharCode(...new Uint8Array(buffer)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+const csrf = () => document.cookie.match(/XSRF-TOKEN=([^;]+)/)?.[1] ?? '';
+
+// ─── Registro de nova passkey ───────────────────────────────────────────────────────
+async function registrarPasskey(label) {
+    // 1. Buscar opções do servidor
+    const optRes = await fetch('/webauthn/register/options', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/json' }
+    });
+    const options = await optRes.json();
+
+    // 2. Decodificar campos Base64URL → ArrayBuffer (exigência da WebAuthn API)
+    options.challenge = toBuffer(options.challenge);
+    options.user.id   = toBuffer(options.user.id);
+    (options.excludeCredentials ?? []).forEach(c => c.id = toBuffer(c.id));
+
+    // 3. Abre diálogo biométrico / PIN no dispositivo
+    const credential = await navigator.credentials.create({ publicKey: options });
+
+    // 4. Enviar credencial ao servidor
+    const res = await fetch('/webauthn/register', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            publicKey: {
+                id:    credential.id,
+                rawId: toBase64url(credential.rawId),
+                type:  credential.type,
+                response: {
+                    attestationObject: toBase64url(credential.response.attestationObject),
+                    clientDataJSON:    toBase64url(credential.response.clientDataJSON),
+                    transports:        credential.response.getTransports?.() ?? []
+                }
+            },
+            label
+        })
+    });
+    if (!res.ok) throw new Error('Falha no registro da passkey');
+}
+
+// ─── Autenticação com passkey ───────────────────────────────────────────────────────
+async function autenticarComPasskey() {
+    // 1. Buscar challenge
+    const optRes = await fetch('/webauthn/authenticate/options', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/json' }
+    });
+    const options = await optRes.json();
+
+    options.challenge = toBuffer(options.challenge);
+    (options.allowCredentials ?? []).forEach(c => c.id = toBuffer(c.id));
+
+    // 2. Assinar o challenge com a chave privada local
+    const assertion = await navigator.credentials.get({ publicKey: options });
+
+    // 3. Enviar assinatura ao servidor para verificação
+    const res = await fetch('/webauthn/authenticate', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': csrf(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            id:    assertion.id,
+            rawId: toBase64url(assertion.rawId),
+            type:  assertion.type,
+            response: {
+                authenticatorData: toBase64url(assertion.response.authenticatorData),
+                clientDataJSON:    toBase64url(assertion.response.clientDataJSON),
+                signature:         toBase64url(assertion.response.signature),
+                userHandle:        assertion.response.userHandle
+                    ? toBase64url(assertion.response.userHandle) : null
+            }
+        })
+    });
+    if (res.ok) window.location.href = '/dashboard';
+}
+```
+
+#### Produção — Pontos de Atenção
+
+| Aspecto | Requisito / Recomendação |
+|---------|--------------------------|
+| **HTTPS** | Obrigatório. WebAuthn só funciona em origens seguras (exceto `localhost` para desenvolvimento). |
+| **rpId** | Deve ser o eTLD+1. Subdomínios podem usar o domínio pai (`example.com` para `app.example.com`). |
+| **CSRF** | Manter habilitado; incluir token em todos os requests WebAuthn. |
+| **Fallback** | Oferecer senha ou One-Time Token para dispositivos sem suporte a passkeys. |
+| **Múltiplas passkeys** | Permitir que o usuário registre várias passkeys (celular + notebook + YubiKey). |
+| **Gerenciamento** | Fornecer UI para listar, renomear e revogar passkeys individuais. |
+| **signatureCount** | Incrementar e validar a cada autenticação para detectar clonagem de autenticador. |
+| **backupEligible** | Se `false`, a passkey existe só no dispositivo físico — notifique o usuário para fazer backup. |
+
+#### Autenticação por QR Code (hybrid transport)
+
+O WebAuthn define o transporte **hybrid** para o cenário em que o usuário quer autenticar em um desktop usando o celular como autenticador. O browser já exibe o QR automaticamente — nenhum código extra é necessário no backend.
+
+```mermaid
+sequenceDiagram
+    participant D as Desktop (browser)
+    participant C as Celular (autenticador)
+    participant S as Servidor
+
+    D->>S: POST /webauthn/authenticate/options
+    S-->>D: challenge + allowCredentials
+
+    Note over D: Browser exibe QR code<br>(hybrid transport BLE/CABLEV2)
+
+    C-->>D: Escaneia QR (abre prompt nativo)
+    C-->>C: FaceID / fingerprint
+    C-->>D: Assertion via Bluetooth (proximidade)
+    D->>S: POST /webauthn/authenticate (assertion)
+    S-->>D: Sessão autenticada
+```
+
+O browser aciona o fluxo hybrid automaticamente quando:
+- O usuário não tem passkey no dispositivo atual, **ou**
+- O usuário escolhe "Use a different device" no diálogo nativo
+
+Do ponto de vista do desenvolvedor, não há diferença na chamada JavaScript — o mesmo `navigator.credentials.get()` já oferece o QR como opção.
+
+#### Fluxo Recomendado: Passkey + One-Time Token como Fallback
+
+Para cobrir dispositivos sem autenticador biométrico e usuários sem passkey registrada, a estratégia recomendada combina os dois mecanismos:
+
+```mermaid
+flowchart TD
+    A([Usuário acessa /login]) --> B{Tem passkey
+cadastrada?}
+
+    B -- Sim --> C[navigator.credentials.get]
+    C --> D{Dispositivo
+atual?}
+    D -- Sim --> E[Biometria / PIN local
+Zero digitação]
+    D -- Não --> F[Browser exibe QR
+hybrid transport]
+    F --> G[Escaneia com celular
++ FaceID]
+    E --> H([Autenticado])
+    G --> H
+
+    B -- Não --> I[Solicita e-mail]
+    I --> J[Envia One-Time Token
+magic link]
+    J --> K[Usuário clica no link]
+    K --> H
+    K --> L[Oferecer cadastro
+de passkey]
+    L --> M[Registra passkey
+no dispositivo atual]
+    M --> H
+```
+
+| Situação | Mecanismo | Input do usuário |
+|---|---|---|
+| Tem passkey no dispositivo atual | Passkey local | Zero — só biometria/PIN |
+| Tem passkey, usa outro dispositivo | Passkey hybrid (QR) | Zero — escaneia + biometria |
+| Não tem passkey | One-Time Token | E-mail + clique no link |
+| Primeiro acesso / onboarding | One-Time Token → cadastrar passkey | E-mail + biometria 1x |
+
+Essa combinação elimina digitais de senha na esmagadora maioria dos logins e usa o One-Time Token apenas como porta de entrada para quem ainda não tem passkey — momento ideal para incentivar o cadastro.
+
 ---
 
 ## 18. OAuth2 Resource Server

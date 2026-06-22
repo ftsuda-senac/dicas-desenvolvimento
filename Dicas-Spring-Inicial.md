@@ -2229,7 +2229,7 @@ public class PluginConfig { }
 @Service
 public class PedidoService {
     private final PedidoRepository repository;
-    private final EstoqueService    estoqueService;
+    private final EstoqueService   estoqueService;
 
     public PedidoService(PedidoRepository repository, EstoqueService estoqueService) {
         this.repository      = repository;

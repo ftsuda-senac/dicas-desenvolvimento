@@ -13,6 +13,7 @@ Este documento reúne informações e exemplos práticos sobre recursos avançad
 - upload e download de arquivos, incluindo `MultipartFile`, streaming, armazenamento local, validações de segurança e detecção de tipo real com Apache Tika.
 - leitura e exportação de dados em CSV e Excel com Apache Commons CSV, Apache POI e `excel-streaming-reader`.
 - concorrência com `java.util.concurrent`, incluindo locks (`ReentrantLock`, `ReentrantReadWriteLock`, `StampedLock`), classes atômicas (`AtomicInteger`, `LongAdder`, `AtomicReference`), coleções concorrentes (`ConcurrentHashMap`, `CopyOnWriteArrayList`, filas bloqueantes) e sincronizadores (`CountDownLatch`, `Semaphore`, `CyclicBarrier`, `Phaser`).
+- Actuator e métricas customizadas, incluindo endpoints de saúde, health indicators, métricas técnicas e de negócio com Micrometer (`Counter`, `Timer`, `Gauge`, `DistributionSummary`), e integração com OpenTelemetry para traces, métricas e logs distribuídos.
 
 Os exemplos abaixo seguem um estilo compatível com Spring Boot 3.x e Jakarta EE.
 
@@ -1838,6 +1839,77 @@ Esse formato e útil quando:
 - usar correlation ID em fluxos críticos;
 - avaliar `pooled-jms` principalmente quando houver muitos producers e criação frequente de sessões;
 - documentar quais consumers são de fila e quais são de topico.
+
+### 3.13. `@Transactional` e `@Async` em listeners JMS
+
+#### O que já é implicitamente assíncrono
+
+O `DefaultMessageListenerContainer` (DMLC) — configurado automaticamente pelo Spring Boot quando há um broker JMS — gerencia internamente seu próprio pool de threads. O `@JmsListener` roda em uma thread do DMLC, completamente separada da thread que publicou a mensagem:
+
+```
+Thread da requisição HTTP          Thread do DMLC (pool interno)
+─────────────────────────          ──────────────────────────────
+save() → COMMIT                    (aguarda mensagem no broker)
+convertAndSend() ──────────────→   broker (Artemis)
+retorna ao controller              ↓
+                                   processar(event) ← @JmsListener
+```
+
+O `convertAndSend()` faz uma chamada síncrona ao broker e retorna. A partir daí, quem processa é o DMLC — em outra thread, em outro momento. Não é necessário `@Async` em lugar nenhum.
+
+#### O problema de combinar `@Async` com `@JmsListener`
+
+O `@Transactional` no consumer funciona porque o Spring cria um proxy que vincula a transação à thread corrente. Se `@Async` for adicionado, o método salta para outra thread — e o vínculo transacional se quebra silenciosamente:
+
+```java
+// ⚠️ Combinação problemática
+@JmsListener(destination = "pedidos.criados")
+@Transactional
+@Async  // muda de thread → @Transactional perde o contexto
+public void processar(PedidoCriadoEvent event) {
+    // transação pode não estar ativa aqui
+}
+```
+
+Além disso, se o método lançar exceção numa thread `@Async`, o DMLC não a captura — o ack/nack da mensagem fica em estado indefinido.
+
+#### Quando `@Async` faz sentido no contexto JMS
+
+O único cenário legítimo é desacoplar a chamada ao broker do fluxo principal da requisição — por exemplo, quando o `convertAndSend()` está num `@TransactionalEventListener` e não se quer que uma lentidão do broker atrase o response HTTP:
+
+```java
+// @Async aqui é no SENDER, não no listener JMS
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+@Async  // libera a thread HTTP imediatamente após o commit
+public void onPedidoCriado(PedidoCriadoEvent event) {
+    jmsClient.convertAndSend("pedidos.criados", event);
+}
+```
+
+Esse padrão exige `@EnableAsync` na aplicação e um `TaskExecutor` configurado. O tradeoff é a perda de propagação de exceções: se o broker estiver fora do ar, a falha não aparece no fluxo normal da requisição.
+
+#### Controlando o paralelismo no consumer via DMLC
+
+Quando houver necessidade de mais paralelismo no consumer, o caminho correto é configurar o `DefaultJmsListenerContainerFactory` diretamente — é mais previsível e seguro do que `@Async`:
+
+```java
+@Bean
+public DefaultJmsListenerContainerFactory jmsListenerContainerFactory(ConnectionFactory cf) {
+    DefaultJmsListenerContainerFactory factory = new DefaultJmsListenerContainerFactory();
+    factory.setConnectionFactory(cf);
+    factory.setConcurrency("3-10");  // mínimo 3, máximo 10 threads consumers
+    factory.setSessionTransacted(true);
+    return factory;
+}
+```
+
+#### Resumo
+
+| Contexto | `@Async` necessário? | Motivo |
+|---|---|---|
+| `@JmsListener` (consumer) | Não — e evite | DMLC já tem thread pool próprio; quebra `@Transactional` |
+| `convertAndSend()` (sender) | Opcional | Só para desacoplar o envio da thread da requisição |
+| Outbox relay (`@Scheduled`) | Não | `@Scheduled` já roda em thread separada |
 
 ## 4. Events do Spring
 
@@ -6968,7 +7040,1436 @@ Locks explícitos valem mais quando:
 - calibrar capacidade de `ArrayBlockingQueue` e `Semaphore` conforme o recurso que protegem;
 - documentar qual invariante o lock ou sincronizador protege, para facilitar manutenção.
 
-## 11. Sugestão de organização do projeto
+## 11. Actuator e métricas customizadas
+
+O Spring Boot Actuator expõe endpoints operacionais que ajudam a monitorar e gerenciar a aplicação em produção. Com ele é possível verificar saúde, métricas, configurações, informações do ambiente e muito mais.
+
+Além dos endpoints padrão, o Actuator se integra com o Micrometer, permitindo criar métricas customizadas — tanto técnicas quanto de negócio — que podem ser exportadas para sistemas como Prometheus, Datadog, New Relic ou Grafana.
+
+### 11.1. Dependências
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-actuator</artifactId>
+</dependency>
+```
+
+Para exportar métricas para Prometheus:
+
+```xml
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-registry-prometheus</artifactId>
+</dependency>
+```
+
+### 11.2. Configuração básica
+
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,loggers,caches
+  endpoint:
+    health:
+      show-details: when-authorized
+      show-components: when-authorized
+  info:
+    env:
+      enabled: true
+    git:
+      mode: full
+
+info:
+  app:
+    nome: Minha Aplicação
+    versao: 1.0.0
+    ambiente: ${ENVIRONMENT:desenvolvimento}
+```
+
+Notas importantes:
+
+- `exposure.include` controla quais endpoints ficam acessíveis via HTTP;
+- em produção, exponha apenas o necessário e proteja com Spring Security;
+- `show-details: when-authorized` exige autenticação para ver detalhes de saúde;
+- o endpoint `/actuator/prometheus` só aparece quando o `micrometer-registry-prometheus` está no classpath.
+
+### 11.3. Endpoints mais usados
+
+| Endpoint | Descrição | Uso comum |
+| --- | --- | --- |
+| `/actuator/health` | estado de saúde da aplicação e suas dependências | readiness e liveness probes em Kubernetes, monitoramento |
+| `/actuator/info` | informações sobre a aplicação (versão, git, etc.) | identificação em ambientes com várias instâncias |
+| `/actuator/metrics` | lista de métricas disponíveis | exploração e depuração de métricas |
+| `/actuator/metrics/{nome}` | valor de uma métrica específica | consulta direta de contadores, timers e gauges |
+| `/actuator/prometheus` | métricas no formato Prometheus | scraping pelo Prometheus |
+| `/actuator/env` | propriedades do ambiente | depuração de configuração |
+| `/actuator/loggers` | níveis de log atuais e alteração em runtime | ajustar log sem restart |
+| `/actuator/caches` | caches registrados | monitoramento de caches ativos |
+
+### 11.4. Protegendo endpoints com Spring Security
+
+Em produção, os endpoints do Actuator devem ser protegidos:
+
+```java
+package br.com.exemplo.actuator;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+public class ActuatorSecurityConfig {
+
+    @Bean
+    @Order(1)
+    public SecurityFilterChain actuatorSecurityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .securityMatcher("/actuator/**")
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/actuator/health").permitAll()
+                        .requestMatchers("/actuator/info").permitAll()
+                        .anyRequest().hasRole("ACTUATOR")
+                );
+        return http.build();
+    }
+}
+```
+
+Essa configuração permite acesso público ao `/health` e `/info`, mas exige role `ACTUATOR` para os demais endpoints.
+
+### 11.5. Health indicators customizados
+
+O Actuator já inclui health indicators para banco de dados, Redis, disk space, JMS e outros. Para verificar dependências específicas da aplicação, é possível criar indicadores customizados.
+
+#### Interfaces do pacote `org.springframework.boot.actuate.health`
+
+| Interface | Quando usar | Comportamento |
+| --- | --- | --- |
+| `HealthIndicator` | verificações síncronas e rápidas | executa `health()` de forma bloqueante; é a opção mais comum para checar banco, API externa, fila ou recurso local |
+| `ReactiveHealthIndicator` | verificações reativas (WebFlux) | retorna `Mono<Health>`; indicado para aplicações reativas ou quando a verificação envolve I/O não bloqueante |
+| `HealthContributor` | interface base marcadora | `HealthIndicator` já estende esta interface; usado diretamente apenas em cenários de composição programática |
+| `CompositeHealthContributor` | agrupar vários indicadores sob um único nome | útil quando uma dependência tem sub-verificações, por exemplo `broker` com sub-itens `conexao` e `filas` |
+
+Na maioria dos projetos, `HealthIndicator` é suficiente. `ReactiveHealthIndicator` só é relevante em aplicações WebFlux. `CompositeHealthContributor` é útil quando se quer organizar indicadores relacionados como um grupo no JSON de saúde.
+
+#### Exemplo com `ReactiveHealthIndicator`
+
+Indicado para aplicações reativas que usam `WebClient`:
+
+```java
+package br.com.exemplo.actuator;
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.ReactiveHealthIndicator;
+import org.springframework.stereotype.Component;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Mono;
+
+@Component
+public class ApiCotacaoReactiveHealthIndicator implements ReactiveHealthIndicator {
+
+    private final WebClient webClient;
+
+    public ApiCotacaoReactiveHealthIndicator(WebClient webClient) {
+        this.webClient = webClient;
+    }
+
+    @Override
+    public Mono<Health> health() {
+        return webClient.get()
+                .uri("/health")
+                .retrieve()
+                .toBodilessEntity()
+                .map(response -> Health.up()
+                        .withDetail("servico", "API de Cotação")
+                        .build())
+                .onErrorResume(ex -> Mono.just(Health.down()
+                        .withDetail("servico", "API de Cotação")
+                        .withDetail("erro", ex.getMessage())
+                        .build()));
+    }
+}
+```
+
+#### Exemplo com `CompositeHealthContributor`
+
+Quando uma dependência tem várias dimensões de saúde, pode-se agrupá-las:
+
+```java
+package br.com.exemplo.actuator;
+
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.springframework.boot.actuate.health.CompositeHealthContributor;
+import org.springframework.boot.actuate.health.HealthContributor;
+import org.springframework.boot.actuate.health.NamedContributor;
+import org.springframework.stereotype.Component;
+
+@Component("broker")
+public class BrokerCompositeHealthContributor implements CompositeHealthContributor {
+
+    private final Map<String, HealthContributor> contributors;
+
+    public BrokerCompositeHealthContributor(
+            BrokerConexaoHealthIndicator conexaoIndicator,
+            BrokerFilasHealthIndicator filasIndicator
+    ) {
+        this.contributors = new LinkedHashMap<>();
+        this.contributors.put("conexao", conexaoIndicator);
+        this.contributors.put("filas", filasIndicator);
+    }
+
+    @Override
+    public HealthContributor getContributor(String name) {
+        return contributors.get(name);
+    }
+
+    @Override
+    public Iterator<NamedContributor<HealthContributor>> iterator() {
+        return contributors.entrySet().stream()
+                .map(entry -> NamedContributor.of(entry.getKey(), entry.getValue()))
+                .iterator();
+    }
+}
+```
+
+Indicadores individuais que compõem o grupo:
+
+```java
+package br.com.exemplo.actuator;
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+
+@Component
+public class BrokerConexaoHealthIndicator implements HealthIndicator {
+
+    @Override
+    public Health health() {
+        boolean conectado = verificarConexaoBroker();
+        return conectado
+                ? Health.up().withDetail("status", "conectado").build()
+                : Health.down().withDetail("status", "sem conexão").build();
+    }
+
+    private boolean verificarConexaoBroker() {
+        return true;
+    }
+}
+```
+
+```java
+package br.com.exemplo.actuator;
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+
+@Component
+public class BrokerFilasHealthIndicator implements HealthIndicator {
+
+    @Override
+    public Health health() {
+        int mensagensPendentes = contarMensagensPendentes();
+        if (mensagensPendentes > 50_000) {
+            return Health.down()
+                    .withDetail("mensagensPendentes", mensagensPendentes)
+                    .withDetail("motivo", "Acúmulo acima do limiar operacional")
+                    .build();
+        }
+        return Health.up()
+                .withDetail("mensagensPendentes", mensagensPendentes)
+                .build();
+    }
+
+    private int contarMensagensPendentes() {
+        return 120;
+    }
+}
+```
+
+O resultado no endpoint `/actuator/health` aparece agrupado:
+
+```json
+{
+  "status": "UP",
+  "components": {
+    "broker": {
+      "status": "UP",
+      "components": {
+        "conexao": {
+          "status": "UP",
+          "details": { "status": "conectado" }
+        },
+        "filas": {
+          "status": "UP",
+          "details": { "mensagensPendentes": 120 }
+        }
+      }
+    }
+  }
+}
+```
+
+#### Exemplo com `HealthIndicator` — verificando conectividade com API externa
+
+```java
+package br.com.exemplo.actuator;
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+@Component
+public class ApiPagamentoHealthIndicator implements HealthIndicator {
+
+    private final RestClient restClient;
+
+    public ApiPagamentoHealthIndicator(RestClient restClient) {
+        this.restClient = restClient;
+    }
+
+    @Override
+    public Health health() {
+        try {
+            restClient.get()
+                    .uri("/health")
+                    .retrieve()
+                    .toBodilessEntity();
+            return Health.up()
+                    .withDetail("servico", "API de Pagamento")
+                    .build();
+        } catch (Exception ex) {
+            return Health.down()
+                    .withDetail("servico", "API de Pagamento")
+                    .withDetail("erro", ex.getMessage())
+                    .build();
+        }
+    }
+}
+```
+
+#### Exemplo com `HealthIndicator` — verificando recurso interno
+
+```java
+package br.com.exemplo.actuator;
+
+import org.springframework.boot.actuate.health.Health;
+import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.stereotype.Component;
+
+@Component
+public class FilaProcessamentoHealthIndicator implements HealthIndicator {
+
+    private final FilaProcessamentoService filaService;
+
+    public FilaProcessamentoHealthIndicator(FilaProcessamentoService filaService) {
+        this.filaService = filaService;
+    }
+
+    @Override
+    public Health health() {
+        int pendentes = filaService.contarPendentes();
+        if (pendentes > 10_000) {
+            return Health.down()
+                    .withDetail("pendentes", pendentes)
+                    .withDetail("motivo", "Fila de processamento acima do limite aceitável")
+                    .build();
+        }
+        return Health.up()
+                .withDetail("pendentes", pendentes)
+                .build();
+    }
+}
+```
+
+O nome do componente no endpoint `/actuator/health` é derivado do nome da classe: `ApiPagamentoHealthIndicator` aparece como `apiPagamento`, `FilaProcessamentoHealthIndicator` aparece como `filaProcessamento`.
+
+### 11.6. Métricas customizadas com Micrometer
+
+O Micrometer é a fachada de métricas do Spring Boot. Ele fornece uma API uniforme para registrar métricas que podem ser exportadas para diferentes backends. Os tipos mais usados são:
+
+| Tipo | Quando usar | Exemplo |
+| --- | --- | --- |
+| `Counter` | contar ocorrências que só crescem | pedidos criados, e-mails enviados, erros |
+| `Timer` | medir duração de operações | tempo de processamento de pedido, latência de integração |
+| `Gauge` | medir valor instantâneo que sobe e desce | itens na fila, conexões ativas, memória usada |
+| `DistributionSummary` | medir distribuição de valores (não tempo) | tamanho de payload, valor monetário de pedidos |
+
+### 11.7. Counter — contando ocorrências
+
+Exemplo técnico — contando erros de integração:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+@Service
+public class IntegracaoExternaService {
+
+    private final Counter sucessoCounter;
+    private final Counter falhaCounter;
+
+    public IntegracaoExternaService(MeterRegistry meterRegistry) {
+        this.sucessoCounter = Counter.builder("integracao.externa.chamadas")
+                .tag("resultado", "sucesso")
+                .description("Total de chamadas com sucesso à API externa")
+                .register(meterRegistry);
+
+        this.falhaCounter = Counter.builder("integracao.externa.chamadas")
+                .tag("resultado", "falha")
+                .description("Total de chamadas com falha à API externa")
+                .register(meterRegistry);
+    }
+
+    public String consultar(String parametro) {
+        try {
+            String resultado = chamarApiExterna(parametro);
+            sucessoCounter.increment();
+            return resultado;
+        } catch (Exception ex) {
+            falhaCounter.increment();
+            throw ex;
+        }
+    }
+
+    private String chamarApiExterna(String parametro) {
+        return "resposta";
+    }
+}
+```
+
+Exemplo de negócio — contando pedidos por status:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PedidoMetricsService {
+
+    private final Counter pedidosCriados;
+    private final Counter pedidosCancelados;
+    private final Counter pedidosFaturados;
+
+    public PedidoMetricsService(MeterRegistry meterRegistry) {
+        this.pedidosCriados = Counter.builder("negocio.pedidos.total")
+                .tag("operacao", "criacao")
+                .description("Total de pedidos criados")
+                .register(meterRegistry);
+
+        this.pedidosCancelados = Counter.builder("negocio.pedidos.total")
+                .tag("operacao", "cancelamento")
+                .description("Total de pedidos cancelados")
+                .register(meterRegistry);
+
+        this.pedidosFaturados = Counter.builder("negocio.pedidos.total")
+                .tag("operacao", "faturamento")
+                .description("Total de pedidos faturados")
+                .register(meterRegistry);
+    }
+
+    public void registrarCriacao() {
+        pedidosCriados.increment();
+    }
+
+    public void registrarCancelamento() {
+        pedidosCancelados.increment();
+    }
+
+    public void registrarFaturamento() {
+        pedidosFaturados.increment();
+    }
+}
+```
+
+Com tags, é possível filtrar e agrupar métricas no dashboard. A métrica `negocio.pedidos.total` aparece com a tag `operacao`, permitindo visualizar cada tipo separadamente.
+
+### 11.8. Timer — medindo duração de operações
+
+Exemplo técnico — medindo latência de chamada externa:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ConsultaCreditoTimedService {
+
+    private final Timer consultaTimer;
+
+    public ConsultaCreditoTimedService(MeterRegistry meterRegistry) {
+        this.consultaTimer = Timer.builder("integracao.credito.duracao")
+                .description("Tempo de consulta ao serviço de crédito")
+                .publishPercentiles(0.5, 0.95, 0.99)
+                .register(meterRegistry);
+    }
+
+    public String consultar(String documento) {
+        return consultaTimer.record(() -> {
+            return executarConsulta(documento);
+        });
+    }
+
+    private String executarConsulta(String documento) {
+        return "APROVADO";
+    }
+}
+```
+
+Exemplo de negócio — medindo tempo de processamento de pedido:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ProcessamentoPedidoTimedService {
+
+    private final Timer processamentoTimer;
+
+    public ProcessamentoPedidoTimedService(MeterRegistry meterRegistry) {
+        this.processamentoTimer = Timer.builder("negocio.pedido.processamento.duracao")
+                .description("Tempo total para processar um pedido do início ao faturamento")
+                .tag("tipo", "completo")
+                .publishPercentiles(0.5, 0.95, 0.99)
+                .register(meterRegistry);
+    }
+
+    public void processar(Long pedidoId) {
+        processamentoTimer.record(() -> {
+            validar(pedidoId);
+            calcularFrete(pedidoId);
+            faturar(pedidoId);
+        });
+    }
+
+    private void validar(Long pedidoId) { }
+    private void calcularFrete(Long pedidoId) { }
+    private void faturar(Long pedidoId) { }
+}
+```
+
+O `publishPercentiles` permite acompanhar distribuição de latência: p50 (mediana), p95 e p99 ajudam a identificar problemas de cauda longa.
+
+### 11.9. Gauge — medindo valores instantâneos
+
+Exemplo técnico — monitorando tamanho de fila interna:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.BlockingQueue;
+
+@Component
+public class FilaInternaMeterBinder {
+
+    public FilaInternaMeterBinder(MeterRegistry meterRegistry, BlockingQueue<Runnable> filaProcessamento) {
+        Gauge.builder("infra.fila.tamanho", filaProcessamento, BlockingQueue::size)
+                .description("Quantidade de itens aguardando na fila de processamento")
+                .tag("fila", "processamento")
+                .register(meterRegistry);
+    }
+}
+```
+
+Exemplo de negócio — monitorando pedidos pendentes:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Component;
+
+@Component
+public class PedidosPendentesGauge {
+
+    public PedidosPendentesGauge(MeterRegistry meterRegistry, PedidoRepository pedidoRepository) {
+        Gauge.builder("negocio.pedidos.pendentes", pedidoRepository, repo -> repo.countByStatus("PENDENTE"))
+                .description("Quantidade atual de pedidos pendentes de processamento")
+                .register(meterRegistry);
+    }
+}
+```
+
+Diferente do `Counter`, o `Gauge` reflete o valor no momento da coleta. Ele não acumula — apenas lê o estado atual.
+
+Cuidado: a função passada ao `Gauge` é chamada a cada coleta de métricas. Se a consulta for pesada, pode impactar o desempenho. Nesses casos, considere cachear o valor ou usar um `@Scheduled` para atualizar um `AtomicInteger` que o `Gauge` apenas lê.
+
+Exemplo com `@Scheduled` e `AtomicInteger` para evitar consulta pesada a cada scrape:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.atomic.AtomicInteger;
+
+@Component
+public class PedidosPendentesGaugeScheduled {
+
+    private final PedidoRepository pedidoRepository;
+    private final AtomicInteger pedidosPendentes = new AtomicInteger(0);
+
+    public PedidosPendentesGaugeScheduled(MeterRegistry meterRegistry, PedidoRepository pedidoRepository) {
+        this.pedidoRepository = pedidoRepository;
+
+        Gauge.builder("negocio.pedidos.pendentes", pedidosPendentes, AtomicInteger::get)
+                .description("Quantidade atual de pedidos pendentes de processamento")
+                .register(meterRegistry);
+    }
+
+    @Scheduled(fixedRate = 30_000)
+    public void atualizarContagem() {
+        int total = pedidoRepository.countByStatus("PENDENTE");
+        pedidosPendentes.set(total);
+    }
+}
+```
+
+Nesse modelo:
+
+- o `@Scheduled` executa a consulta ao banco a cada 30 segundos e atualiza o `AtomicInteger`;
+- o `Gauge` apenas lê o valor do `AtomicInteger`, operação praticamente sem custo;
+- o intervalo do `@Scheduled` pode ser ajustado conforme a frequência de scrape do Prometheus ou a volatilidade do dado;
+- requer `@EnableScheduling` na configuração da aplicação.
+
+Essa abordagem é especialmente útil quando:
+
+- a consulta envolve `COUNT` em tabelas grandes;
+- o scrape de métricas ocorre com frequência alta;
+- há vários gauges que dependem de consultas ao banco ou a serviços externos.
+
+### 11.10. DistributionSummary — distribuição de valores
+
+Exemplo de negócio — distribuição de valores de pedidos:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+
+@Service
+public class PedidoValorMetricsService {
+
+    private final DistributionSummary valorPedidoSummary;
+
+    public PedidoValorMetricsService(MeterRegistry meterRegistry) {
+        this.valorPedidoSummary = DistributionSummary.builder("negocio.pedido.valor")
+                .description("Distribuição dos valores dos pedidos faturados")
+                .baseUnit("BRL")
+                .publishPercentiles(0.5, 0.75, 0.95)
+                .register(meterRegistry);
+    }
+
+    public void registrarValor(BigDecimal valor) {
+        valorPedidoSummary.record(valor.doubleValue());
+    }
+}
+```
+
+Exemplo técnico — distribuição de tamanho de payload:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PayloadMetricsService {
+
+    private final DistributionSummary payloadSummary;
+
+    public PayloadMetricsService(MeterRegistry meterRegistry) {
+        this.payloadSummary = DistributionSummary.builder("infra.payload.tamanho")
+                .description("Distribuição do tamanho dos payloads recebidos")
+                .baseUnit("bytes")
+                .publishPercentiles(0.5, 0.95, 0.99)
+                .register(meterRegistry);
+    }
+
+    public void registrar(long tamanhoBytes) {
+        payloadSummary.record(tamanhoBytes);
+    }
+}
+```
+
+O `DistributionSummary` é semelhante ao `Timer`, mas mede valores arbitrários em vez de duração.
+
+### 11.11. Usando `@Timed` para métricas automáticas em métodos
+
+O Micrometer oferece a anotação `@Timed` para registrar automaticamente duração e contagem de chamadas a métodos. Para que funcione, é necessário registrar um `TimedAspect`:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.aop.TimedAspect;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class TimedAspectConfig {
+
+    @Bean
+    public TimedAspect timedAspect(MeterRegistry meterRegistry) {
+        return new TimedAspect(meterRegistry);
+    }
+}
+```
+
+Uso em um service:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.annotation.Timed;
+import org.springframework.stereotype.Service;
+
+@Service
+public class RelatorioService {
+
+    @Timed(value = "negocio.relatorio.geracao", description = "Tempo de geração de relatório")
+    public byte[] gerar(String tipo, String periodo) {
+        // Lógica de geração.
+        return new byte[0];
+    }
+}
+```
+
+Essa abordagem é conveniente para adicionar métricas de tempo sem alterar a lógica do método.
+
+### 11.12. Exemplo completo — métricas de negócio integradas ao fluxo
+
+Um cenário realista é um service de pedidos que combina counter, timer e distribution summary para capturar volume, tempo e valor de operações:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+
+@Service
+public class PedidoCompletoMetricsService {
+
+    private final Counter pedidosFaturados;
+    private final Timer tempoFaturamento;
+    private final DistributionSummary valorFaturado;
+
+    public PedidoCompletoMetricsService(MeterRegistry meterRegistry) {
+        this.pedidosFaturados = Counter.builder("negocio.pedidos.faturados")
+                .description("Total de pedidos faturados com sucesso")
+                .register(meterRegistry);
+
+        this.tempoFaturamento = Timer.builder("negocio.pedidos.faturamento.duracao")
+                .description("Tempo de processamento do faturamento")
+                .publishPercentiles(0.5, 0.95, 0.99)
+                .register(meterRegistry);
+
+        this.valorFaturado = DistributionSummary.builder("negocio.pedidos.faturamento.valor")
+                .description("Distribuição dos valores faturados")
+                .baseUnit("BRL")
+                .publishPercentiles(0.5, 0.95)
+                .register(meterRegistry);
+    }
+
+    public void registrarFaturamento(BigDecimal valor, Runnable operacao) {
+        tempoFaturamento.record(() -> {
+            operacao.run();
+            pedidosFaturados.increment();
+            valorFaturado.record(valor.doubleValue());
+        });
+    }
+}
+```
+
+Uso no service principal:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+
+@Service
+public class FaturamentoService {
+
+    private final PedidoRepository pedidoRepository;
+    private final PedidoCompletoMetricsService metricsService;
+
+    public FaturamentoService(PedidoRepository pedidoRepository, PedidoCompletoMetricsService metricsService) {
+        this.pedidoRepository = pedidoRepository;
+        this.metricsService = metricsService;
+    }
+
+    @Transactional
+    public void faturar(Long pedidoId) {
+        Pedido pedido = pedidoRepository.findById(pedidoId)
+                .orElseThrow(() -> new IllegalArgumentException("Pedido não encontrado"));
+
+        BigDecimal valor = pedido.getValorTotal();
+
+        metricsService.registrarFaturamento(valor, () -> {
+            pedido.setStatus("FATURADO");
+            pedidoRepository.save(pedido);
+        });
+    }
+}
+```
+
+Com isso, cada faturamento registra automaticamente:
+
+- quantidade total de faturamentos (`Counter`);
+- tempo gasto em cada operação (`Timer`);
+- distribuição dos valores faturados (`DistributionSummary`).
+
+### 11.13. Contagem por entidade — visualizações e likes de produtos
+
+Um caso muito comum em aplicações de negócio é contar interações por item, como visualizações e likes de produtos. O desafio é que o ID do produto é um discriminador de alta cardinalidade — criar uma série temporal por produto no Micrometer pode sobrecarregar o backend de métricas quando o catálogo é grande.
+
+A abordagem recomendada é separar as responsabilidades:
+
+- contadores por produto ficam na camada da aplicação, usando estruturas concorrentes;
+- métricas agregadas vão para o Micrometer, com baixa cardinalidade;
+- consultas por produto específico ficam disponíveis via API ou persistência.
+
+#### Serviço de contagem por produto
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.LongAdder;
+
+@Service
+public class ProdutoInteracaoService {
+
+    private final Map<Long, LongAdder> visualizacoesPorProduto = new ConcurrentHashMap<>();
+    private final Map<Long, LongAdder> likesPorProduto = new ConcurrentHashMap<>();
+
+    private final Counter totalVisualizacoes;
+    private final Counter totalLikes;
+
+    public ProdutoInteracaoService(MeterRegistry meterRegistry) {
+        this.totalVisualizacoes = Counter.builder("negocio.produto.visualizacoes.total")
+                .description("Total agregado de visualizações de produtos")
+                .register(meterRegistry);
+
+        this.totalLikes = Counter.builder("negocio.produto.likes.total")
+                .description("Total agregado de likes em produtos")
+                .register(meterRegistry);
+    }
+
+    public void registrarVisualizacao(Long produtoId) {
+        visualizacoesPorProduto
+                .computeIfAbsent(produtoId, id -> new LongAdder())
+                .increment();
+        totalVisualizacoes.increment();
+    }
+
+    public void registrarLike(Long produtoId) {
+        likesPorProduto
+                .computeIfAbsent(produtoId, id -> new LongAdder())
+                .increment();
+        totalLikes.increment();
+    }
+
+    public long obterVisualizacoes(Long produtoId) {
+        LongAdder adder = visualizacoesPorProduto.get(produtoId);
+        return adder != null ? adder.sum() : 0;
+    }
+
+    public long obterLikes(Long produtoId) {
+        LongAdder adder = likesPorProduto.get(produtoId);
+        return adder != null ? adder.sum() : 0;
+    }
+}
+```
+
+Nesse modelo:
+
+- `ConcurrentHashMap<Long, LongAdder>` mantém contadores individuais por produto, com boa performance sob concorrência;
+- `LongAdder` é mais eficiente que `AtomicLong` em cenários de alta frequência de escrita;
+- os `Counter` do Micrometer registram apenas o total agregado, sem explodir a cardinalidade;
+- os métodos `obterVisualizacoes` e `obterLikes` permitem consultar contagens por produto específico.
+
+#### Uso em um controller
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/api/produtos")
+public class ProdutoInteracaoController {
+
+    private final ProdutoInteracaoService interacaoService;
+    private final ProdutoRepository produtoRepository;
+
+    public ProdutoInteracaoController(
+            ProdutoInteracaoService interacaoService,
+            ProdutoRepository produtoRepository
+    ) {
+        this.interacaoService = interacaoService;
+        this.produtoRepository = produtoRepository;
+    }
+
+    @GetMapping("/{id}")
+    public ProdutoDto visualizar(@PathVariable Long id) {
+        ProdutoDto produto = produtoRepository.findDtoById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Produto não encontrado"));
+        interacaoService.registrarVisualizacao(id);
+        return produto;
+    }
+
+    @PostMapping("/{id}/like")
+    public void curtir(@PathVariable Long id) {
+        interacaoService.registrarLike(id);
+    }
+
+    @GetMapping("/{id}/interacoes")
+    public InteracoesDto consultarInteracoes(@PathVariable Long id) {
+        return new InteracoesDto(
+                id,
+                interacaoService.obterVisualizacoes(id),
+                interacaoService.obterLikes(id)
+        );
+    }
+}
+```
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+public record InteracoesDto(Long produtoId, long visualizacoes, long likes) {
+}
+```
+
+#### Persistência periódica das contagens
+
+Em aplicações reais, os contadores em memória devem ser persistidos periodicamente para sobreviver a restarts:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+import java.util.concurrent.atomic.LongAdder;
+
+@Component
+public class ProdutoInteracaoFlushService {
+
+    private final ProdutoInteracaoService interacaoService;
+    private final ProdutoInteracaoRepository repository;
+
+    public ProdutoInteracaoFlushService(
+            ProdutoInteracaoService interacaoService,
+            ProdutoInteracaoRepository repository
+    ) {
+        this.interacaoService = interacaoService;
+        this.repository = repository;
+    }
+
+    @Scheduled(fixedRate = 60_000)
+    public void flush() {
+        Map<Long, LongAdder> visualizacoes = interacaoService.obterTodasVisualizacoes();
+        Map<Long, LongAdder> likes = interacaoService.obterTodosLikes();
+
+        visualizacoes.forEach((produtoId, adder) -> {
+            long delta = adder.sumThenReset();
+            if (delta > 0) {
+                repository.incrementarVisualizacoes(produtoId, delta);
+            }
+        });
+
+        likes.forEach((produtoId, adder) -> {
+            long delta = adder.sumThenReset();
+            if (delta > 0) {
+                repository.incrementarLikes(produtoId, delta);
+            }
+        });
+    }
+}
+```
+
+O `sumThenReset()` lê o valor acumulado e zera o contador atomicamente, evitando perda ou contagem dupla. Com isso, o `@Scheduled` acumula os deltas em memória e persiste periodicamente via `UPDATE ... SET visualizacoes = visualizacoes + :delta`.
+
+#### Quando usar tags dinâmicas no Micrometer
+
+Se o catálogo for pequeno e limitado (dezenas de produtos, não milhares), é possível usar tags dinâmicas diretamente no Micrometer:
+
+```java
+package br.com.exemplo.actuator.metricas;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ProdutoInteracaoTagService {
+
+    private final MeterRegistry meterRegistry;
+
+    public ProdutoInteracaoTagService(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
+    public void registrarVisualizacao(Long produtoId) {
+        meterRegistry.counter("negocio.produto.visualizacoes",
+                "produtoId", String.valueOf(produtoId))
+                .increment();
+    }
+
+    public void registrarLike(Long produtoId) {
+        meterRegistry.counter("negocio.produto.likes",
+                "produtoId", String.valueOf(produtoId))
+                .increment();
+    }
+}
+```
+
+Essa abordagem é mais simples, mas cria uma série temporal por produto. Ela só é segura quando:
+
+- o número de produtos é pequeno e previsível;
+- o backend de métricas suporta a cardinalidade resultante;
+- não há risco de crescimento descontrolado do catálogo.
+
+Para catálogos grandes ou dinâmicos, a abordagem com `ConcurrentHashMap` + contadores agregados é mais adequada e escalável.
+
+### 11.14. Convenções de nomenclatura para métricas
+
+Uma boa prática é adotar um padrão consistente de nomes:
+
+| Prefixo | Uso |
+| --- | --- |
+| `negocio.*` | métricas de domínio e regras de negócio |
+| `integracao.*` | chamadas a APIs e serviços externos |
+| `infra.*` | filas, pools, recursos internos de infraestrutura |
+
+Exemplos de nomes bem formados:
+
+- `negocio.pedidos.total` com tag `operacao=criacao`
+- `negocio.pedido.processamento.duracao`
+- `integracao.credito.duracao`
+- `integracao.externa.chamadas` com tag `resultado=sucesso`
+- `infra.fila.tamanho` com tag `fila=processamento`
+
+Evitar:
+
+- nomes genéricos como `contagem` ou `tempo`;
+- misturar idiomas no mesmo projeto;
+- tags com cardinalidade alta demais, como IDs de usuário ou UUIDs.
+
+### 11.15. Integração com OpenTelemetry (OTEL)
+
+OpenTelemetry é um padrão aberto e vendor-neutral para observabilidade. Ele unifica três pilares:
+
+- **traces**: rastreamento de requisições entre serviços;
+- **métricas**: contadores, timers, gauges e distribuições;
+- **logs**: correlação de registros de log com traces.
+
+O Spring Boot 3.x oferece suporte a OpenTelemetry de duas formas principais:
+
+- via Micrometer Tracing com bridge OpenTelemetry, que integra naturalmente com o Actuator;
+- via OpenTelemetry Java Agent, que instrumenta automaticamente sem mudança de código.
+
+Ambas as abordagens podem coexistir, mas em projetos Spring Boot o caminho mais comum é usar o suporte nativo via Micrometer Tracing.
+
+### 11.16. Dependências para OTEL via Micrometer Tracing
+
+```xml
+<dependencies>
+    <!-- Actuator e métricas -->
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!-- Micrometer Tracing com bridge OpenTelemetry -->
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-tracing-bridge-otel</artifactId>
+    </dependency>
+
+    <!-- Exportador OTLP para traces -->
+    <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-exporter-otlp</artifactId>
+    </dependency>
+
+    <!-- Exportador OTLP para métricas (quando quiser exportar métricas via OTEL) -->
+    <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-otlp</artifactId>
+    </dependency>
+</dependencies>
+```
+
+Notas:
+
+- `micrometer-tracing-bridge-otel` conecta o Micrometer Tracing ao SDK do OpenTelemetry;
+- `opentelemetry-exporter-otlp` envia traces via protocolo OTLP para coletores como Jaeger, Tempo ou o próprio OpenTelemetry Collector;
+- `micrometer-registry-otlp` exporta métricas do Micrometer via OTLP, permitindo centralizar métricas e traces no mesmo coletor.
+
+### 11.17. Configuração para exportação via OTLP
+
+```yaml
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+    metrics:
+      export:
+        enabled: true
+        url: http://localhost:4318/v1/metrics
+        step: 30s
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+    tags:
+      application: minha-aplicacao
+      environment: ${ENVIRONMENT:desenvolvimento}
+
+spring:
+  application:
+    name: minha-aplicacao
+```
+
+Notas importantes:
+
+- `sampling.probability: 1.0` envia 100% dos traces — adequado para desenvolvimento; em produção, valores como `0.1` ou `0.01` são mais comuns;
+- `spring.application.name` aparece como `service.name` nos traces, identificando o serviço no backend de observabilidade;
+- `management.metrics.tags` adiciona tags globais a todas as métricas, útil para distinguir ambientes e instâncias;
+- o endpoint `4318` é a porta HTTP padrão do OTLP; para gRPC, use `4317` e o exporter correspondente.
+
+### 11.18. Propagação de contexto entre serviços
+
+Quando uma requisição passa por vários serviços, o trace é propagado automaticamente via headers HTTP. O Spring Boot 3.x suporta os formatos mais comuns:
+
+```yaml
+management:
+  tracing:
+    propagation:
+      type: w3c,b3
+```
+
+Tipos disponíveis:
+
+- `w3c`: padrão W3C Trace Context (`traceparent` / `tracestate`) — recomendado para novos projetos;
+- `b3`: formato Zipkin B3 — útil para compatibilidade com sistemas que já usam Zipkin ou Sleuth.
+
+Na prática, quando o serviço A chama o serviço B via `RestClient`, `RestTemplate` ou `WebClient`, os headers de propagação são injetados automaticamente. Nenhuma configuração adicional é necessária desde que os beans sejam criados via injeção de dependência do Spring.
+
+### 11.19. Instrumentação automática com `@Observed`
+
+O Micrometer Observation API permite instrumentar métodos com `@Observed`, gerando automaticamente traces e métricas.
+
+Configuração necessária:
+
+```java
+package br.com.exemplo.actuator.otel;
+
+import io.micrometer.observation.aop.ObservedAspect;
+import io.micrometer.observation.ObservationRegistry;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class ObservationConfig {
+
+    @Bean
+    public ObservedAspect observedAspect(ObservationRegistry observationRegistry) {
+        return new ObservedAspect(observationRegistry);
+    }
+}
+```
+
+Uso em um service:
+
+```java
+package br.com.exemplo.actuator.otel;
+
+import io.micrometer.observation.annotation.Observed;
+import org.springframework.stereotype.Service;
+
+@Service
+public class ProcessamentoPedidoObservedService {
+
+    @Observed(name = "negocio.pedido.processamento",
+            contextualName = "processar-pedido",
+            lowCardinalityKeyValues = {"tipo", "padrao"})
+    public void processar(Long pedidoId) {
+        validar(pedidoId);
+        calcular(pedidoId);
+        persistir(pedidoId);
+    }
+
+    private void validar(Long pedidoId) { }
+    private void calcular(Long pedidoId) { }
+    private void persistir(Long pedidoId) { }
+}
+```
+
+O que `@Observed` gera automaticamente:
+
+- um span no trace com o nome `processar-pedido`;
+- um timer com o nome `negocio.pedido.processamento`;
+- tags de baixa cardinalidade para filtragem.
+
+Isso reduz código boilerplate quando o objetivo é observabilidade básica de um método.
+
+### 11.20. Spans customizados com Observation API
+
+Quando é necessário criar spans manualmente com mais controle, a Observation API permite isso diretamente:
+
+```java
+package br.com.exemplo.actuator.otel;
+
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
+import org.springframework.stereotype.Service;
+
+@Service
+public class IntegracaoExternaObservadaService {
+
+    private final ObservationRegistry observationRegistry;
+
+    public IntegracaoExternaObservadaService(ObservationRegistry observationRegistry) {
+        this.observationRegistry = observationRegistry;
+    }
+
+    public String consultar(String codigo) {
+        return Observation.createNotStarted("integracao.fornecedor.consulta", observationRegistry)
+                .lowCardinalityKeyValue("fornecedor", "api-pagamentos")
+                .highCardinalityKeyValue("codigo", codigo)
+                .observe(() -> {
+                    return executarChamadaExterna(codigo);
+                });
+    }
+
+    private String executarChamadaExterna(String codigo) {
+        return "resposta";
+    }
+}
+```
+
+Diferença entre chaves de baixa e alta cardinalidade:
+
+- `lowCardinalityKeyValue`: valores com poucas variações (tipo, fornecedor, status) — seguros para métricas e tags;
+- `highCardinalityKeyValue`: valores com muitas variações (IDs, códigos) — incluídos apenas nos traces, não nas métricas, para evitar explosão de séries temporais.
+
+### 11.21. Correlação de logs com trace ID
+
+Para correlacionar logs com traces distribuídos, o Micrometer Tracing injeta automaticamente `traceId` e `spanId` no MDC do SLF4J. Basta configurar o padrão de log:
+
+```yaml
+logging:
+  pattern:
+    level: "%5p [${spring.application.name},%X{traceId},%X{spanId}]"
+```
+
+Saída de exemplo:
+
+```text
+ INFO [minha-aplicacao,6a3f2b1c4d5e6f7a8b9c0d1e2f3a4b5c,1a2b3c4d5e6f7a8b] Processando pedido 42
+ INFO [minha-aplicacao,6a3f2b1c4d5e6f7a8b9c0d1e2f3a4b5c,9f8e7d6c5b4a3928] Consulta de crédito concluída
+```
+
+Com isso, é possível:
+
+- filtrar todos os logs de uma requisição distribuída pelo `traceId`;
+- correlacionar logs com spans no Jaeger, Tempo ou Grafana;
+- identificar qual etapa do fluxo gerou cada linha de log.
+
+### 11.22. Infraestrutura local com Docker Compose
+
+Para desenvolvimento local, um setup típico com OpenTelemetry Collector, Jaeger (traces) e Prometheus (métricas):
+
+```yaml
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "14250:14250"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+```
+
+Configuração mínima do OpenTelemetry Collector (`otel-collector-config.yaml`):
+
+```yaml
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp/jaeger]
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]
+```
+
+Esse setup permite:
+
+- enviar traces e métricas da aplicação Spring Boot para o Collector via OTLP;
+- visualizar traces no Jaeger em `http://localhost:16686`;
+- consultar métricas no Prometheus em `http://localhost:9090`;
+- montar dashboards no Grafana em `http://localhost:3000`.
+
+### 11.23. OpenTelemetry Java Agent como alternativa
+
+Para aplicações que precisam de instrumentação sem mudança de código, o OpenTelemetry Java Agent é uma alternativa. Ele é um agente JVM que instrumenta automaticamente bibliotecas populares (Spring MVC, JDBC, JMS, RestTemplate, etc.).
+
+Uso:
+
+```bash
+java -javaagent:opentelemetry-javaagent.jar \
+     -Dotel.service.name=minha-aplicacao \
+     -Dotel.exporter.otlp.endpoint=http://localhost:4318 \
+     -Dotel.exporter.otlp.protocol=http/protobuf \
+     -Dotel.metrics.exporter=otlp \
+     -Dotel.logs.exporter=otlp \
+     -jar minha-aplicacao.jar
+```
+
+O agente instrumenta automaticamente:
+
+- requisições HTTP de entrada e saída;
+- consultas JDBC;
+- operações JMS;
+- chamadas a caches;
+- frameworks de log.
+
+Quando preferir o Java Agent:
+
+- aplicações legadas onde não se quer alterar código;
+- instrumentação abrangente sem configuração manual;
+- padronização de observabilidade entre aplicações de diferentes stacks.
+
+Quando preferir Micrometer Tracing nativo:
+
+- controle fino sobre quais operações geram spans;
+- métricas customizadas de negócio integradas ao mesmo pipeline;
+- menos overhead e startup mais rápido;
+- aplicações que já usam Actuator e Micrometer.
+
+Na prática, muitos projetos começam com Micrometer Tracing nativo e adicionam o Java Agent apenas quando precisam de instrumentação automática de bibliotecas que o Spring não cobre diretamente.
+
+### 11.24. Boas práticas
+
+- exponha apenas os endpoints necessários em produção e proteja com autenticação;
+- use health indicators para verificar dependências críticas;
+- crie métricas de negócio que ajudem a responder perguntas reais, como quantos pedidos foram faturados, qual o ticket médio, qual a taxa de erro por integração;
+- use tags para dimensionar métricas, mas evite cardinalidade alta;
+- combine `Counter`, `Timer` e `DistributionSummary` para ter visão completa de volume, latência e distribuição;
+- prefira `@Timed` para métricas simples de duração e o registro manual para cenários mais complexos;
+- monitore o custo de gauges que fazem consultas sob demanda;
+- defina alertas sobre métricas que indicam degradação, como circuit breaker aberto, taxa de fallback alta ou fila crescendo;
+- em Kubernetes, use `/actuator/health/liveness` e `/actuator/health/readiness` como probes;
+- mantenha as métricas alinhadas com o time de operações para que os dashboards reflitam o que realmente importa;
+- ajuste `sampling.probability` em produção para evitar overhead excessivo de traces;
+- use `lowCardinalityKeyValue` para tags que aparecem em métricas e `highCardinalityKeyValue` para dados que ficam apenas nos traces;
+- padronize `spring.application.name` em todos os serviços para facilitar a navegação nos traces;
+- prefira o formato W3C Trace Context para novos projetos;
+- correlacione logs com `traceId` e `spanId` para facilitar depuração de problemas em produção.
+
+## 12. Sugestão de organização do projeto
 
 ```text
 src/main/java/br/com/exemplo/
@@ -6976,6 +8477,8 @@ src/main/java/br/com/exemplo/
     api/
     config/
     template/
+  actuator/
+    metricas/
   events/
   resilience/
   batch/
@@ -6993,7 +8496,7 @@ src/main/java/br/com/exemplo/
     requestreply/
 ```
 
-## 12. Resumo
+## 13. Resumo
 
 Os tópicos avançados deste documento seguem a mesma ideia de arquitetura:
 
@@ -7004,7 +8507,7 @@ Os tópicos avançados deste documento seguem a mesma ideia de arquitetura:
 
 Esse desenho deixa a aplicação mais flexível em produção, reduz a necessidade de deploy para ajustes operacionais e facilita a evolução para cenários multi-tenant, clusterizados ou orientados a eventos.
 
-## 13. Referencias
+## 14. Referencias
 
 As referências abaixo foram usadas como base oficial ou complementar relevante para a elaboração deste documento:
 
@@ -7053,6 +8556,23 @@ As referências abaixo foram usadas como base oficial ou complementar relevante 
 - Bucket4j: https://bucket4j.com/
 - Resilience4j: https://resilience4j.readme.io/
 - Spring Retry: https://github.com/spring-projects/spring-retry
+
+### Actuator, Micrometer e OpenTelemetry
+
+- Spring Boot Actuator: https://docs.spring.io/spring-boot/reference/actuator/
+- Spring Boot Actuator Endpoints: https://docs.spring.io/spring-boot/reference/actuator/endpoints.html
+- Spring Boot Actuator Metrics: https://docs.spring.io/spring-boot/reference/actuator/metrics.html
+- Spring Boot Observability: https://docs.spring.io/spring-boot/reference/actuator/observability.html
+- Spring Boot Tracing: https://docs.spring.io/spring-boot/reference/actuator/tracing.html
+- Micrometer: https://micrometer.io/
+- Micrometer Concepts: https://docs.micrometer.io/micrometer/reference/concepts.html
+- Micrometer Tracing: https://docs.micrometer.io/tracing/reference/
+- Micrometer Prometheus: https://docs.micrometer.io/micrometer/reference/implementations/prometheus.html
+- Micrometer OTLP: https://docs.micrometer.io/micrometer/reference/implementations/otlp.html
+- OpenTelemetry: https://opentelemetry.io/
+- OpenTelemetry Java: https://opentelemetry.io/docs/languages/java/
+- OpenTelemetry Java Agent: https://opentelemetry.io/docs/zero-code/java/agent/
+- OpenTelemetry Collector: https://opentelemetry.io/docs/collector/
 
 ### Cache
 

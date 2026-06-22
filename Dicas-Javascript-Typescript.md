@@ -1662,26 +1662,136 @@ btn.addEventListener('click', handler, {
 
 | Categoria | Eventos |
 |---|---|
+| Documento | `DOMContentLoaded`, `load`, `resize`, `scroll` |
 | Mouse | `click`, `dblclick`, `mousedown`, `mouseup`, `mouseover`, `mouseout`, `mousemove`, `contextmenu` |
+| Touch | `touchstart`, `touchmove`, `touchend` |
 | Teclado | `keydown`, `keyup`, `keypress` (depreciado) |
 | Formulário | `submit`, `change`, `input`, `focus`, `blur`, `reset` |
-| Documento | `DOMContentLoaded`, `load`, `resize`, `scroll` |
 | Drag | `dragstart`, `dragover`, `drop`, `dragend` |
-| Touch | `touchstart`, `touchmove`, `touchend` |
+
+
+**O objeto Event — propriedades e métodos essenciais:**
+
+> MDN: [Event](https://developer.mozilla.org/pt-BR/docs/Web/API/Event)
+
+Todo handler de evento recebe um objeto `Event` como argumento. Ele contém informações sobre o que aconteceu, onde aconteceu e permite controlar a propagação.
+
+**`event.target` vs `event.currentTarget`:**
+
+`target` é o elemento que **originou** o evento (onde o clique/digitação de fato ocorreu). `currentTarget` é o elemento onde o listener **está registrado**. Quando não há delegação, ambos apontam para o mesmo elemento. Com delegação, são diferentes.
 
 ```js
-// event.preventDefault() — cancela o comportamento padrão
-document.querySelector('form').addEventListener('submit', (e) => {
-  e.preventDefault(); // impede o envio do formulário
-  // processar dados com JS
+// HTML: <ul id="lista"> <li><button>Excluir</button></li> </ul>
+document.querySelector('#lista').addEventListener('click', (e) => {
+  console.log(e.target);        // <button> — onde o clique ocorreu de fato
+  console.log(e.currentTarget); // <ul#lista> — onde o listener está registrado
 });
+```
 
-// event.stopPropagation() — interrompe a propagação (bubbling)
+```js
+// Sem delegação — target e currentTarget são o mesmo
+const btn = document.querySelector('#meu-btn');
 btn.addEventListener('click', (e) => {
-  e.stopPropagation();
+  console.log(e.target === e.currentTarget); // true
 });
 
-// Delegação de eventos — um listener no pai captura eventos dos filhos
+// Com delegação — são diferentes
+document.querySelector('ul').addEventListener('click', (e) => {
+  console.log(e.target);        // o <li> ou filho que foi clicado
+  console.log(e.currentTarget); // o <ul> pai
+});
+```
+
+| Propriedade | Descrição |
+|---|---|
+| `e.target` | Elemento que originou o evento (o mais interno que foi clicado) |
+| `e.currentTarget` | Elemento onde o `addEventListener` foi chamado |
+| `e.type` | Tipo do evento (`"click"`, `"submit"`, `"keydown"`, etc.) |
+| `e.timeStamp` | Milissegundos desde o carregamento da página até o disparo |
+
+**`event.preventDefault()`** — cancela o comportamento padrão do navegador para aquele evento. O evento continua propagando normalmente — apenas a ação nativa é impedida.
+
+```js
+// Impedir envio do formulário (recarregamento da página)
+document.querySelector('form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  // processar dados com JS em vez de enviar ao servidor
+  const dados = new FormData(e.currentTarget);
+  console.log(Object.fromEntries(dados));
+});
+
+// Impedir navegação de um link
+document.querySelector('a.interno').addEventListener('click', (e) => {
+  e.preventDefault();
+  // navegar via JS (SPA)
+  console.log('Navegar para:', e.currentTarget.href);
+});
+
+// Impedir digitação de caracteres não numéricos
+document.querySelector('input.somente-numeros').addEventListener('keydown', (e) => {
+  if (!/[\d]/.test(e.key) && !['Backspace', 'Tab', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+  }
+});
+```
+
+**`event.stopPropagation()`** — interrompe a propagação do evento pela árvore do DOM. Eventos no DOM propagam em duas fases: **captura** (da raiz até o alvo) e **bubbling** (do alvo de volta até a raiz). `stopPropagation()` impede que o evento continue para o próximo elemento na cadeia.
+
+```js
+// Problema: clicar no botão dentro do card dispara o handler do card também
+document.querySelector('.card').addEventListener('click', () => {
+  console.log('Card clicado — abrir detalhes');
+});
+
+document.querySelector('.card .btn-fechar').addEventListener('click', (e) => {
+  e.stopPropagation(); // impede que o clique chegue ao .card
+  console.log('Fechar card');
+});
+```
+
+```js
+// Exemplo prático: modal que fecha ao clicar no fundo (overlay),
+// mas NÃO fecha ao clicar dentro do conteúdo
+document.querySelector('.modal-overlay').addEventListener('click', () => {
+  fecharModal();
+});
+
+document.querySelector('.modal-conteudo').addEventListener('click', (e) => {
+  e.stopPropagation(); // cliques dentro do conteúdo não alcançam o overlay
+});
+```
+
+**Propagação de eventos — captura e bubbling:**
+
+```
+          Fase de captura (↓)          Fase de bubbling (↑)
+          ──────────────────          ────────────────────
+          document                    document
+            ↓                           ↑
+          <html>                      <html>
+            ↓                           ↑
+          <body>                      <body>
+            ↓                           ↑
+          <div class="card">          <div class="card">
+            ↓                           ↑
+          <button> ← alvo (target) → <button>
+```
+
+```js
+// Por padrão, listeners são executados na fase de bubbling (↑)
+pai.addEventListener('click', () => console.log('pai'));
+filho.addEventListener('click', () => console.log('filho'));
+// Clique no filho → imprime: "filho", "pai"
+
+// Com capture: true, o listener executa na fase de descida (↓)
+pai.addEventListener('click', () => console.log('pai (captura)'), { capture: true });
+filho.addEventListener('click', () => console.log('filho'));
+// Clique no filho → imprime: "pai (captura)", "filho"
+```
+
+**Delegação de eventos — um listener no pai captura eventos dos filhos:**
+
+```js
 // Útil quando os filhos são criados dinamicamente
 document.querySelector('ul').addEventListener('click', (e) => {
   if (e.target.matches('li')) {
@@ -1689,6 +1799,1082 @@ document.querySelector('ul').addEventListener('click', (e) => {
   }
 });
 ```
+
+**Eventos de document, window e navigator:**
+
+Eventos globais relacionados ao ciclo de vida da página, conectividade, navegação e visibilidade. Muitos deles são essenciais para criar aplicações que reagem ao estado do ambiente em que estão rodando.
+
+**Ciclo de vida da página:**
+
+| Evento | Disparado em | Quando dispara |
+|---|---|---|
+| `DOMContentLoaded` | `document` | HTML parseado e DOM pronto (sem esperar imagens, CSS, fontes) |
+| `load` | `window` | Tudo carregado (imagens, CSS, scripts, iframes) |
+| `beforeunload` | `window` | Usuário está prestes a sair da página (fechar aba, navegar) |
+| `unload` | `window` | Página está sendo descarregada (evitar — usar `beforeunload` ou `visibilitychange`) |
+
+```js
+// DOMContentLoaded — momento ideal para inicializar scripts que manipulam o DOM
+// Mais rápido que load: não espera imagens e recursos externos
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM pronto — pode manipular elementos');
+  inicializarApp();
+});
+
+// load — útil quando precisa de dimensões de imagens ou recursos completos
+window.addEventListener('load', () => {
+  console.log('Tudo carregado — imagens, fontes, CSS');
+  calcularLayoutComImagens();
+});
+
+// beforeunload — avisar sobre dados não salvos
+// O navegador exibe um diálogo genérico de confirmação (mensagem personalizada é ignorada)
+let dadosAlterados = false;
+
+window.addEventListener('beforeunload', (e) => {
+  if (dadosAlterados) {
+    e.preventDefault(); // dispara o diálogo de confirmação do navegador
+  }
+});
+
+// Marcar como alterado quando o formulário muda
+document.querySelector('form')?.addEventListener('input', () => {
+  dadosAlterados = true;
+});
+```
+
+**Visibilidade da página:**
+
+> MDN: [Page Visibility API](https://developer.mozilla.org/pt-BR/docs/Web/API/Page_Visibility_API)
+
+`visibilitychange` dispara quando o usuário troca de aba, minimiza o navegador ou volta à página. Útil para pausar vídeos, economizar requisições ou atualizar dados ao retornar.
+
+```js
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    // Página não está visível — pausar atividades
+    pausarVideo();
+    pararPolling();
+    console.log('Aba em segundo plano');
+  } else {
+    // Página visível novamente — retomar
+    retomarVideo();
+    atualizarDados();
+    console.log('Aba em primeiro plano');
+  }
+});
+
+// document.visibilityState: "visible" | "hidden"
+// document.hidden: true | false (atalho booleano)
+```
+
+```js
+// Exemplo: pausar polling de API quando a aba não está ativa
+let intervaloId;
+
+function iniciarPolling() {
+  intervaloId = setInterval(() => {
+    fetch('/api/notificacoes').then(r => r.json()).then(atualizarUI);
+  }, 5000);
+}
+
+function pararPolling() {
+  clearInterval(intervaloId);
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pararPolling();
+  else iniciarPolling();
+});
+
+iniciarPolling();
+```
+
+**Conectividade — online e offline:**
+
+```js
+// Detectar mudança de conexão de rede
+window.addEventListener('online', () => {
+  console.log('Conexão restaurada');
+  sincronizarDadosPendentes();
+  mostrarNotificacao('Você está online novamente');
+});
+
+window.addEventListener('offline', () => {
+  console.log('Conexão perdida');
+  mostrarNotificacao('Sem conexão — alterações serão salvas localmente');
+});
+
+// Verificar estado atual
+console.log('Online:', navigator.onLine); // true ou false
+```
+
+```js
+// Exemplo: fila de requisições offline
+const filaPendente = [];
+
+async function enviarDado(dado) {
+  if (navigator.onLine) {
+    await fetch('/api/dados', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dado),
+    });
+  } else {
+    filaPendente.push(dado);
+    localStorage.setItem('filaPendente', JSON.stringify(filaPendente));
+  }
+}
+
+window.addEventListener('online', async () => {
+  const pendentes = JSON.parse(localStorage.getItem('filaPendente') || '[]');
+  for (const dado of pendentes) {
+    await fetch('/api/dados', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dado),
+    });
+  }
+  localStorage.removeItem('filaPendente');
+});
+```
+
+**Navegação — popstate e hashchange:**
+
+> MDN: [popstate](https://developer.mozilla.org/pt-BR/docs/Web/API/Window/popstate_event) · [hashchange](https://developer.mozilla.org/pt-BR/docs/Web/API/Window/hashchange_event)
+
+```js
+// popstate — dispara ao navegar pelo histórico (botões voltar/avançar)
+// NÃO dispara quando pushState/replaceState são chamados
+window.addEventListener('popstate', (e) => {
+  console.log('Navegação no histórico');
+  console.log('Estado:', e.state); // objeto passado em pushState/replaceState
+
+  // Atualizar a interface conforme a URL atual
+  renderizarPagina(window.location.pathname);
+});
+
+// Criar entrada no histórico (popstate dispara quando o usuário volta)
+history.pushState({ pagina: 'produtos' }, '', '/produtos');
+history.pushState({ pagina: 'detalhe', id: 42 }, '', '/produtos/42');
+```
+
+```js
+// hashchange — dispara quando o fragmento (#) da URL muda
+// Útil para SPAs baseadas em hash
+window.addEventListener('hashchange', (e) => {
+  console.log('Hash anterior:', new URL(e.oldURL).hash);
+  console.log('Hash atual:', new URL(e.newURL).hash);
+  console.log('Hash:', window.location.hash);
+
+  // Roteamento simples baseado em hash
+  switch (window.location.hash) {
+    case '#/inicio':   renderizar('inicio'); break;
+    case '#/sobre':    renderizar('sobre'); break;
+    case '#/contato':  renderizar('contato'); break;
+    default:           renderizar('404');
+  }
+});
+```
+
+**Redimensionamento e scroll:**
+
+```js
+// resize — dispara em alta frequência ao redimensionar a janela
+// Sempre usar debounce ou throttle para evitar performance ruim
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    console.log(`Viewport: ${window.innerWidth} x ${window.innerHeight}`);
+    ajustarLayout();
+  }, 150);
+});
+```
+
+```js
+// Alternativa moderna: ResizeObserver — observa redimensionamento de elementos específicos
+const observer = new ResizeObserver((entries) => {
+  for (const entry of entries) {
+    const { width, height } = entry.contentRect;
+    console.log(`Elemento redimensionado: ${width} x ${height}`);
+  }
+});
+
+observer.observe(document.querySelector('.container'));
+```
+
+```js
+// scroll — dispara em alta frequência ao rolar a página
+// Exemplo: mostrar botão "voltar ao topo" após rolar 300px
+window.addEventListener('scroll', () => {
+  const btnTopo = document.querySelector('.btn-topo');
+  btnTopo.style.display = window.scrollY > 300 ? 'block' : 'none';
+});
+
+// Detectar se o usuário chegou ao final da página (infinite scroll)
+window.addEventListener('scroll', () => {
+  const distanciaDoFim = document.documentElement.scrollHeight
+    - window.scrollY
+    - window.innerHeight;
+
+  if (distanciaDoFim < 200) {
+    carregarMaisItens();
+  }
+});
+```
+
+**Storage — comunicação entre abas:**
+
+> MDN: [storage event](https://developer.mozilla.org/pt-BR/docs/Web/API/Window/storage_event)
+
+O evento `storage` dispara em **outras abas** do mesmo domínio quando `localStorage` é alterado. Não dispara na aba que fez a alteração.
+
+```js
+// Aba 1: salva dado
+localStorage.setItem('tema', 'escuro');
+
+// Aba 2: detecta a mudança automaticamente
+window.addEventListener('storage', (e) => {
+  console.log('Chave alterada:', e.key);      // 'tema'
+  console.log('Valor anterior:', e.oldValue); // 'claro'
+  console.log('Valor novo:', e.newValue);     // 'escuro'
+  console.log('URL de origem:', e.url);
+
+  if (e.key === 'tema') {
+    aplicarTema(e.newValue);
+  }
+});
+```
+
+```js
+// Exemplo: logout sincronizado entre abas
+// Quando o usuário faz logout em uma aba, todas as outras abas também deslogam
+
+// Na aba que faz logout:
+function logout() {
+  localStorage.setItem('logout', Date.now().toString());
+  window.location.href = '/login';
+}
+
+// Nas outras abas:
+window.addEventListener('storage', (e) => {
+  if (e.key === 'logout') {
+    window.location.href = '/login';
+  }
+});
+```
+
+**Clipboard — copiar e colar:**
+
+```js
+// copy — usuário copiou conteúdo (Ctrl+C ou menu de contexto)
+document.addEventListener('copy', (e) => {
+  e.preventDefault();
+  const selecao = document.getSelection().toString();
+  e.clipboardData.setData('text/plain', selecao.toUpperCase());
+  // Copia o texto selecionado em maiúsculas
+});
+
+// paste — usuário colou conteúdo (Ctrl+V)
+document.addEventListener('paste', (e) => {
+  e.preventDefault();
+  const texto = e.clipboardData.getData('text/plain');
+  console.log('Texto colado:', texto);
+  // Inserir texto filtrado/sanitizado no campo ativo
+  document.execCommand('insertText', false, texto.trim());
+});
+
+// cut — usuário recortou conteúdo (Ctrl+X)
+document.addEventListener('cut', (e) => {
+  console.log('Conteúdo recortado');
+});
+```
+
+```js
+// Clipboard API assíncrona — copiar programaticamente (requer HTTPS)
+async function copiarTexto(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    console.log('Copiado para a área de transferência');
+  } catch (err) {
+    console.error('Falha ao copiar:', err);
+  }
+}
+
+async function lerClipboard() {
+  const texto = await navigator.clipboard.readText();
+  console.log('Conteúdo:', texto);
+}
+
+// Exemplo: botão "copiar código"
+document.querySelector('.btn-copiar').addEventListener('click', async () => {
+  const codigo = document.querySelector('pre code').textContent;
+  await copiarTexto(codigo);
+  // Feedback visual temporário
+  const btn = document.querySelector('.btn-copiar');
+  btn.textContent = 'Copiado!';
+  setTimeout(() => btn.textContent = 'Copiar', 2000);
+});
+```
+
+**Mídia e preferências do sistema:**
+
+```js
+// matchMedia — reagir a media queries via JavaScript
+// Útil para lógica condicional que depende de breakpoints ou preferências do sistema
+const mediaEscuro = window.matchMedia('(prefers-color-scheme: dark)');
+
+// Verificar estado atual
+if (mediaEscuro.matches) {
+  aplicarTemaEscuro();
+}
+
+// Reagir a mudanças (ex.: usuário altera tema do sistema)
+mediaEscuro.addEventListener('change', (e) => {
+  if (e.matches) aplicarTemaEscuro();
+  else aplicarTemaClaro();
+});
+```
+
+```js
+// Detectar mudança de orientação (dispositivos móveis)
+const mediaRetrato = window.matchMedia('(orientation: portrait)');
+
+mediaRetrato.addEventListener('change', (e) => {
+  console.log('Orientação:', e.matches ? 'retrato' : 'paisagem');
+});
+
+// Detectar se o usuário prefere menos animações (acessibilidade)
+const prefereReduzir = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+if (prefereReduzir.matches) {
+  desativarAnimacoes();
+}
+```
+
+**Eventos de mouse — MouseEvent:**
+
+> MDN: [MouseEvent](https://developer.mozilla.org/pt-BR/docs/Web/API/MouseEvent)
+
+| Evento | Quando dispara |
+|---|---|
+| `click` | Após `mousedown` + `mouseup` no mesmo elemento |
+| `dblclick` | Dois cliques rápidos |
+| `mousedown` / `mouseup` | Botão pressionado / solto |
+| `mouseover` / `mouseout` | Cursor entra / sai do elemento (dispara ao passar por filhos) |
+| `mouseenter` / `mouseleave` | Cursor entra / sai do elemento (não dispara ao passar por filhos) |
+| `mousemove` | Cursor se move sobre o elemento (alta frequência) |
+| `contextmenu` | Clique com botão direito |
+
+```js
+const area = document.querySelector('.area');
+
+// Propriedades de posição do cursor
+area.addEventListener('mousemove', (e) => {
+  e.clientX; // posição X relativa à viewport (área visível)
+  e.clientY; // posição Y relativa à viewport
+  e.pageX;   // posição X relativa ao documento (inclui scroll)
+  e.pageY;   // posição Y relativa ao documento
+  e.offsetX; // posição X relativa ao elemento alvo
+  e.offsetY; // posição Y relativa ao elemento alvo
+  e.screenX; // posição X relativa à tela do monitor
+  e.screenY; // posição Y relativa à tela do monitor
+});
+```
+
+```js
+// Identificar qual botão do mouse foi pressionado
+area.addEventListener('mousedown', (e) => {
+  switch (e.button) {
+    case 0: console.log('Botão esquerdo'); break;
+    case 1: console.log('Botão do meio (scroll)'); break;
+    case 2: console.log('Botão direito'); break;
+  }
+});
+
+// Detectar teclas modificadoras pressionadas junto com o clique
+area.addEventListener('click', (e) => {
+  if (e.ctrlKey)  console.log('Ctrl + clique');
+  if (e.shiftKey) console.log('Shift + clique');
+  if (e.altKey)   console.log('Alt + clique');
+  if (e.metaKey)  console.log('Meta (⌘/Win) + clique');
+});
+```
+
+```js
+// Exemplo: arrastar um elemento com mousedown + mousemove + mouseup
+const caixa = document.querySelector('.arrastavel');
+
+caixa.addEventListener('mousedown', (e) => {
+  const deltaX = e.clientX - caixa.offsetLeft;
+  const deltaY = e.clientY - caixa.offsetTop;
+
+  function mover(e) {
+    caixa.style.left = (e.clientX - deltaX) + 'px';
+    caixa.style.top = (e.clientY - deltaY) + 'px';
+  }
+
+  document.addEventListener('mousemove', mover);
+  document.addEventListener('mouseup', () => {
+    document.removeEventListener('mousemove', mover);
+  }, { once: true });
+});
+```
+
+```js
+// mouseover/mouseout vs mouseenter/mouseleave
+// mouseover/mouseout disparam ao entrar/sair de CADA filho interno
+// mouseenter/mouseleave disparam apenas ao entrar/sair do elemento em si
+const card = document.querySelector('.card');
+
+card.addEventListener('mouseover', () => console.log('over'));
+// Dispara múltiplas vezes ao mover o cursor entre filhos dentro do card
+
+card.addEventListener('mouseenter', () => console.log('enter'));
+// Dispara apenas uma vez ao entrar no card (não redispara ao passar pelos filhos)
+```
+
+```js
+// Menu de contexto personalizado (clique direito)
+document.querySelector('.area-custom').addEventListener('contextmenu', (e) => {
+  e.preventDefault(); // impede o menu padrão do navegador
+  const menu = document.querySelector('.menu-contexto');
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+  menu.style.display = 'block';
+});
+
+document.addEventListener('click', () => {
+  document.querySelector('.menu-contexto').style.display = 'none';
+});
+```
+
+**Eventos de toque — TouchEvent:**
+
+> MDN: [TouchEvent](https://developer.mozilla.org/pt-BR/docs/Web/API/TouchEvent) · [Touch](https://developer.mozilla.org/pt-BR/docs/Web/API/Touch)
+
+Eventos de toque são disparados em dispositivos com tela sensível ao toque (smartphones, tablets). Diferente do mouse, o toque suporta **múltiplos pontos simultâneos** (multitouch).
+
+| Evento | Quando dispara |
+|---|---|
+| `touchstart` | Dedo toca a tela |
+| `touchmove` | Dedo se move enquanto está na tela |
+| `touchend` | Dedo é levantado da tela |
+| `touchcancel` | Toque é interrompido pelo sistema (ex.: notificação, gesto do navegador) |
+
+**Propriedades do TouchEvent:**
+
+```js
+const area = document.querySelector('.area-touch');
+
+area.addEventListener('touchstart', (e) => {
+  // Listas de toques (cada uma é uma TouchList)
+  e.touches;        // todos os dedos atualmente na tela
+  e.targetTouches;  // dedos que estão sobre o elemento alvo
+  e.changedTouches; // dedos que mudaram neste evento (iniciaram, moveram ou saíram)
+
+  // Acessar o primeiro toque
+  const toque = e.touches[0];
+  toque.clientX;    // posição X relativa à viewport
+  toque.clientY;    // posição Y relativa à viewport
+  toque.pageX;      // posição X relativa ao documento (inclui scroll)
+  toque.pageY;      // posição Y relativa ao documento
+  toque.screenX;    // posição X relativa à tela do dispositivo
+  toque.screenY;    // posição Y relativa à tela do dispositivo
+  toque.identifier; // ID único do dedo (útil para rastrear múltiplos toques)
+  toque.target;     // elemento onde o toque iniciou
+});
+```
+
+**Interação entre touch e mouse:**
+
+Em dispositivos touch, o navegador dispara eventos na seguinte ordem: `touchstart` → `touchend` → `mousemove` → `mousedown` → `mouseup` → `click`. Para evitar que o evento seja processado duas vezes, use `preventDefault()` no handler de touch.
+
+```js
+area.addEventListener('touchstart', (e) => {
+  e.preventDefault(); // impede que o navegador dispare mousedown/click depois
+  // processar o toque
+});
+```
+
+**Exemplo: detectar swipe (deslizar):**
+
+```js
+function onSwipe(el, callback) {
+  let inicioX, inicioY, inicioTempo;
+  const DISTANCIA_MIN = 50;  // px mínimos para considerar swipe
+  const TEMPO_MAX = 300;     // ms máximos para o gesto
+
+  el.addEventListener('touchstart', (e) => {
+    const toque = e.changedTouches[0];
+    inicioX = toque.clientX;
+    inicioY = toque.clientY;
+    inicioTempo = Date.now();
+  });
+
+  el.addEventListener('touchend', (e) => {
+    const toque = e.changedTouches[0];
+    const deltaX = toque.clientX - inicioX;
+    const deltaY = toque.clientY - inicioY;
+    const tempo = Date.now() - inicioTempo;
+
+    if (tempo > TEMPO_MAX) return;
+
+    // Verifica se o movimento horizontal é maior que o vertical
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > DISTANCIA_MIN) {
+      callback(deltaX > 0 ? 'direita' : 'esquerda');
+    } else if (Math.abs(deltaY) > DISTANCIA_MIN) {
+      callback(deltaY > 0 ? 'baixo' : 'cima');
+    }
+  });
+}
+
+// Uso: navegação de carrossel por swipe
+const carrossel = document.querySelector('.carrossel');
+onSwipe(carrossel, (direcao) => {
+  if (direcao === 'esquerda') avancarSlide();
+  if (direcao === 'direita') voltarSlide();
+});
+```
+
+**Exemplo: arrastar elemento com touch (equivalente ao drag com mouse):**
+
+```js
+const caixa = document.querySelector('.arrastavel');
+
+caixa.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const toque = e.targetTouches[0];
+  const deltaX = toque.clientX - caixa.offsetLeft;
+  const deltaY = toque.clientY - caixa.offsetTop;
+
+  function mover(e) {
+    const toque = e.targetTouches[0];
+    caixa.style.left = (toque.clientX - deltaX) + 'px';
+    caixa.style.top = (toque.clientY - deltaY) + 'px';
+  }
+
+  function soltar() {
+    caixa.removeEventListener('touchmove', mover);
+    caixa.removeEventListener('touchend', soltar);
+  }
+
+  caixa.addEventListener('touchmove', mover);
+  caixa.addEventListener('touchend', soltar);
+});
+```
+
+**Exemplo: pinch to zoom (dois dedos):**
+
+```js
+function onPinch(el, callback) {
+  let distanciaInicial = 0;
+
+  function distanciaEntreToques(t1, t2) {
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    return Math.hypot(dx, dy);
+  }
+
+  el.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      distanciaInicial = distanciaEntreToques(e.touches[0], e.touches[1]);
+    }
+  });
+
+  el.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault(); // impede zoom nativo da página
+      const distanciaAtual = distanciaEntreToques(e.touches[0], e.touches[1]);
+      const escala = distanciaAtual / distanciaInicial;
+      callback(escala); // escala > 1 = afastando (zoom in), < 1 = aproximando (zoom out)
+    }
+  });
+
+  el.addEventListener('touchend', () => {
+    distanciaInicial = 0;
+  });
+}
+
+// Uso
+const imagem = document.querySelector('.imagem-zoom');
+onPinch(imagem, (escala) => {
+  imagem.style.transform = `scale(${escala})`;
+});
+```
+
+**Pointer Events — alternativa unificada:**
+
+> MDN: [Pointer Events](https://developer.mozilla.org/pt-BR/docs/Web/API/Pointer_events)
+
+`PointerEvent` unifica mouse, touch e caneta em uma única API — um handler funciona para todos os dispositivos sem duplicar código.
+
+| Pointer Event | Equivalente mouse | Equivalente touch |
+|---|---|---|
+| `pointerdown` | `mousedown` | `touchstart` |
+| `pointermove` | `mousemove` | `touchmove` |
+| `pointerup` | `mouseup` | `touchend` |
+| `pointerenter` | `mouseenter` | — |
+| `pointerleave` | `mouseleave` | — |
+| `pointercancel` | — | `touchcancel` |
+
+```js
+const caixa = document.querySelector('.arrastavel');
+
+caixa.addEventListener('pointerdown', (e) => {
+  caixa.setPointerCapture(e.pointerId); // garante que events continuem no elemento
+  const deltaX = e.clientX - caixa.offsetLeft;
+  const deltaY = e.clientY - caixa.offsetTop;
+
+  function mover(e) {
+    caixa.style.left = (e.clientX - deltaX) + 'px';
+    caixa.style.top = (e.clientY - deltaY) + 'px';
+  }
+
+  caixa.addEventListener('pointermove', mover);
+  caixa.addEventListener('pointerup', () => {
+    caixa.removeEventListener('pointermove', mover);
+  }, { once: true });
+});
+```
+
+```js
+// Propriedades exclusivas do PointerEvent
+area.addEventListener('pointerdown', (e) => {
+  e.pointerId;    // ID único do ponteiro (útil para multitouch)
+  e.pointerType;  // "mouse", "touch" ou "pen"
+  e.pressure;     // pressão do toque/caneta (0.0 a 1.0; mouse sempre 0.5)
+  e.width;        // largura da área de contato (touch)
+  e.height;       // altura da área de contato (touch)
+  e.isPrimary;    // true se é o ponteiro principal (primeiro dedo, mouse)
+});
+```
+
+> **Recomendação:** para novos projetos, preferir **Pointer Events** em vez de usar mouse + touch separadamente. A API é suportada em todos os navegadores modernos e elimina a necessidade de escrever handlers duplicados.
+
+**Eventos de teclado — KeyboardEvent:**
+
+> MDN: [KeyboardEvent](https://developer.mozilla.org/pt-BR/docs/Web/API/KeyboardEvent)
+
+| Evento | Quando dispara |
+|---|---|
+| `keydown` | Tecla pressionada (dispara repetidamente se mantida pressionada) |
+| `keyup` | Tecla solta |
+| ~~`keypress`~~ | **Depreciado** — não usar; substituído por `keydown` |
+
+```js
+document.addEventListener('keydown', (e) => {
+  e.key;    // valor legível da tecla: "a", "Enter", "ArrowUp", " " (espaço), "Shift"
+  e.code;   // tecla física no teclado: "KeyA", "Enter", "ArrowUp", "Space", "ShiftLeft"
+  e.repeat; // true se a tecla está sendo mantida pressionada (repetição automática)
+
+  // Teclas modificadoras (mesmo comportamento que no MouseEvent)
+  e.ctrlKey;  // true se Ctrl está pressionado
+  e.shiftKey; // true se Shift está pressionado
+  e.altKey;   // true se Alt está pressionado
+  e.metaKey;  // true se Meta (⌘ no Mac, Win no Windows) está pressionado
+});
+```
+
+**`key` vs `code`:**
+
+`key` reflete o caractere produzido (varia conforme layout do teclado e idioma). `code` identifica a tecla física (sempre o mesmo, independente do layout).
+
+```js
+// Em um teclado ABNT2, pressionar a tecla ";" (ponto-e-vírgula):
+// e.key  → ";" (o caractere produzido)
+// e.code → "Semicolon" (a tecla física)
+
+// A tecla "A" com e sem Shift:
+// Sem Shift: e.key → "a",  e.code → "KeyA"
+// Com Shift: e.key → "A",  e.code → "KeyA" (code não muda)
+
+// Quando usar qual:
+// - key: atalhos baseados no caractere (Ctrl+S, Ctrl+Z)
+// - code: jogos e controles direcionais (WASD sempre nas mesmas teclas físicas)
+```
+
+```js
+// Exemplo: atalhos de teclado
+document.addEventListener('keydown', (e) => {
+  // Ctrl+S — salvar (impede o comportamento padrão do navegador)
+  if (e.ctrlKey && e.key === 's') {
+    e.preventDefault();
+    salvarDocumento();
+  }
+
+  // Escape — fechar modal
+  if (e.key === 'Escape') {
+    fecharModal();
+  }
+
+  // Ctrl+Enter — enviar formulário
+  if (e.ctrlKey && e.key === 'Enter') {
+    enviarFormulario();
+  }
+});
+```
+
+```js
+// Exemplo: navegação com setas (ex.: carrossel, galeria)
+document.addEventListener('keydown', (e) => {
+  switch (e.key) {
+    case 'ArrowLeft':  voltarSlide(); break;
+    case 'ArrowRight': avancarSlide(); break;
+    case 'ArrowUp':    e.preventDefault(); scrollParaCima(); break;
+    case 'ArrowDown':  e.preventDefault(); scrollParaBaixo(); break;
+  }
+});
+```
+
+```js
+// Exemplo: campo de busca com debounce no keydown
+const inputBusca = document.querySelector('#busca');
+let timerId;
+
+inputBusca.addEventListener('keydown', (e) => {
+  // Ignorar teclas que não produzem caractere
+  if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Alt') return;
+
+  clearTimeout(timerId);
+  timerId = setTimeout(() => {
+    buscar(inputBusca.value);
+  }, 300);
+});
+```
+
+```js
+// Valores comuns de e.key
+// Letras e números: "a", "A", "1", "0"
+// Setas:           "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"
+// Controle:        "Enter", "Escape", "Tab", "Backspace", "Delete"
+// Modificadores:   "Shift", "Control", "Alt", "Meta"
+// Espaço:          " " (string com um espaço)
+// Função:          "F1", "F2", ..., "F12"
+```
+
+**Eventos de formulário:**
+
+> MDN: [HTMLFormElement — Events](https://developer.mozilla.org/pt-BR/docs/Web/API/HTMLFormElement#events) · [HTMLInputElement — Events](https://developer.mozilla.org/pt-BR/docs/Web/API/HTMLInputElement#events)
+
+| Evento | Disparado em | Quando dispara |
+|---|---|---|
+| `submit` | `<form>` | Formulário é enviado (botão submit ou Enter) |
+| `reset` | `<form>` | Formulário é resetado |
+| `input` | `<input>`, `<textarea>`, `<select>` | Valor muda a cada digitação/interação (tempo real) |
+| `change` | `<input>`, `<textarea>`, `<select>` | Valor muda e o campo perde o foco (ou ao selecionar em `<select>` e checkbox/radio) |
+| `focus` | qualquer elemento focável | Elemento recebe foco |
+| `blur` | qualquer elemento focável | Elemento perde foco |
+| `focusin` | qualquer elemento focável | Como `focus`, mas propaga (bubbling) — útil para delegação |
+| `focusout` | qualquer elemento focável | Como `blur`, mas propaga (bubbling) |
+| `invalid` | `<input>`, `<textarea>`, `<select>` | Validação nativa do campo falha ao tentar enviar o formulário |
+
+**`input` vs `change`:**
+
+```js
+const campo = document.querySelector('#nome');
+
+// input — dispara a cada tecla digitada (tempo real)
+campo.addEventListener('input', (e) => {
+  console.log('digitando:', e.target.value);
+  // Útil para: busca ao vivo, contagem de caracteres, preview em tempo real
+});
+
+// change — dispara quando o valor muda E o campo perde o foco
+campo.addEventListener('change', (e) => {
+  console.log('valor confirmado:', e.target.value);
+  // Útil para: salvar dado, validar após preenchimento, atualizar estado
+});
+
+// Em <select>, checkbox e radio, change dispara imediatamente ao selecionar
+document.querySelector('select').addEventListener('change', (e) => {
+  console.log('selecionou:', e.target.value);
+});
+```
+
+**`focus` / `blur` e `focusin` / `focusout`:**
+
+```js
+const campo = document.querySelector('#email');
+
+// focus — quando o campo recebe foco (não propaga)
+campo.addEventListener('focus', () => {
+  campo.parentElement.classList.add('campo-ativo');
+});
+
+// blur — quando o campo perde foco (não propaga)
+campo.addEventListener('blur', () => {
+  campo.parentElement.classList.remove('campo-ativo');
+});
+
+// focusin/focusout — mesma função, mas propagam (bubbling)
+// Permitem usar delegação no formulário inteiro
+document.querySelector('form').addEventListener('focusin', (e) => {
+  e.target.closest('.campo-grupo')?.classList.add('campo-ativo');
+});
+
+document.querySelector('form').addEventListener('focusout', (e) => {
+  e.target.closest('.campo-grupo')?.classList.remove('campo-ativo');
+});
+```
+
+**`submit` e `reset`:**
+
+```js
+const form = document.querySelector('#meu-form');
+
+// submit — interceptar envio do formulário
+form.addEventListener('submit', (e) => {
+  e.preventDefault(); // impede envio nativo (recarregamento da página)
+
+  const dados = new FormData(form);
+  console.log('Dados:', Object.fromEntries(dados));
+
+  // enviar via fetch, validar, etc.
+});
+
+// reset — interceptar limpeza do formulário
+form.addEventListener('reset', (e) => {
+  // executa ANTES dos campos serem limpos
+  const confirma = confirm('Deseja limpar todos os campos?');
+  if (!confirma) e.preventDefault(); // cancela o reset
+});
+```
+
+**Validação de formulários com JavaScript:**
+
+> MDN: [Constraint Validation API](https://developer.mozilla.org/pt-BR/docs/Web/HTML/Constraint_validation)
+
+O HTML5 oferece validação nativa via atributos (`required`, `type`, `pattern`, `min`, `max`, `minlength`, `maxlength`). O JavaScript pode complementá-la com a **Constraint Validation API** para mensagens customizadas e validações mais complexas.
+
+**Atributos de validação HTML:**
+
+```html
+<form id="form-cadastro" novalidate>
+  <!-- novalidate desabilita os tooltips nativos do navegador -->
+  <!-- a validação será feita via JavaScript para controle total -->
+
+  <label>Nome *
+    <input type="text" name="nome" required minlength="3" maxlength="100" />
+  </label>
+
+  <label>E-mail *
+    <input type="email" name="email" required />
+  </label>
+
+  <label>Idade
+    <input type="number" name="idade" min="1" max="150" />
+  </label>
+
+  <label>CPF
+    <input type="text" name="cpf" pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
+           title="Formato: 000.000.000-00" />
+  </label>
+
+  <label>Senha *
+    <input type="password" name="senha" required minlength="8" />
+  </label>
+
+  <label>Site
+    <input type="url" name="site" placeholder="https://exemplo.com" />
+  </label>
+
+  <button type="submit">Cadastrar</button>
+</form>
+```
+
+**Constraint Validation API — propriedades e métodos:**
+
+```js
+const campo = document.querySelector('input[name="email"]');
+
+// Verificar se o campo é válido
+campo.validity;            // objeto ValidityState com detalhes do estado
+campo.validity.valid;      // true se todas as restrições passam
+campo.validity.valueMissing;   // true se required e vazio
+campo.validity.typeMismatch;   // true se type="email" e valor não é e-mail válido
+campo.validity.patternMismatch;// true se não bate com o atributo pattern
+campo.validity.tooShort;       // true se menor que minlength
+campo.validity.tooLong;        // true se maior que maxlength
+campo.validity.rangeUnderflow; // true se menor que min (number/date)
+campo.validity.rangeOverflow;  // true se maior que max (number/date)
+campo.validity.stepMismatch;   // true se não respeita o step
+campo.validity.customError;    // true se setCustomValidity foi chamado com mensagem
+
+// Métodos
+campo.checkValidity();     // retorna boolean e dispara evento 'invalid' se inválido
+campo.reportValidity();    // como checkValidity, mas exibe tooltip nativo do navegador
+campo.setCustomValidity('mensagem'); // define erro personalizado
+campo.setCustomValidity('');         // limpa o erro personalizado (campo volta a ser válido)
+```
+
+**Validação ao perder o foco (blur) — feedback imediato:**
+
+```js
+const form = document.querySelector('#form-cadastro');
+
+function validarCampo(campo) {
+  const grupo = campo.closest('label') || campo.parentElement;
+  let erroEl = grupo.querySelector('.erro');
+
+  // Criar elemento de erro se não existir
+  if (!erroEl) {
+    erroEl = document.createElement('span');
+    erroEl.className = 'erro';
+    erroEl.setAttribute('role', 'alert');
+    grupo.appendChild(erroEl);
+  }
+
+  // Limpar erro personalizado anterior antes de validar
+  campo.setCustomValidity('');
+
+  if (campo.validity.valid) {
+    grupo.classList.remove('invalido');
+    grupo.classList.add('valido');
+    erroEl.textContent = '';
+    return true;
+  }
+
+  // Mensagens personalizadas conforme o tipo de erro
+  let mensagem = '';
+
+  if (campo.validity.valueMissing) {
+    mensagem = 'Este campo é obrigatório.';
+  } else if (campo.validity.typeMismatch) {
+    if (campo.type === 'email') mensagem = 'Informe um e-mail válido.';
+    else if (campo.type === 'url') mensagem = 'Informe uma URL válida (ex: https://...).';
+    else mensagem = 'Formato inválido.';
+  } else if (campo.validity.tooShort) {
+    mensagem = `Mínimo de ${campo.minLength} caracteres (atual: ${campo.value.length}).`;
+  } else if (campo.validity.tooLong) {
+    mensagem = `Máximo de ${campo.maxLength} caracteres.`;
+  } else if (campo.validity.patternMismatch) {
+    mensagem = campo.title || 'Formato inválido.';
+  } else if (campo.validity.rangeUnderflow) {
+    mensagem = `O valor mínimo é ${campo.min}.`;
+  } else if (campo.validity.rangeOverflow) {
+    mensagem = `O valor máximo é ${campo.max}.`;
+  }
+
+  grupo.classList.add('invalido');
+  grupo.classList.remove('valido');
+  erroEl.textContent = mensagem;
+  return false;
+}
+
+// Validar cada campo ao perder o foco (delegação com focusout)
+form.addEventListener('focusout', (e) => {
+  if (e.target.matches('input, textarea, select')) {
+    validarCampo(e.target);
+  }
+});
+
+// Revalidar em tempo real após o primeiro erro (limpa o erro assim que corrige)
+form.addEventListener('input', (e) => {
+  const campo = e.target;
+  const grupo = campo.closest('label') || campo.parentElement;
+  if (grupo.classList.contains('invalido')) {
+    validarCampo(campo);
+  }
+});
+```
+
+**Validação ao enviar o formulário:**
+
+```js
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+
+  const campos = form.querySelectorAll('input, textarea, select');
+  let formValido = true;
+
+  campos.forEach((campo) => {
+    if (!validarCampo(campo)) {
+      formValido = false;
+    }
+  });
+
+  if (!formValido) {
+    // Foco no primeiro campo com erro
+    form.querySelector('.invalido input, .invalido textarea, .invalido select')?.focus();
+    return;
+  }
+
+  // Formulário válido — enviar dados
+  const dados = new FormData(form);
+  console.log('Enviando:', Object.fromEntries(dados));
+});
+```
+
+**Validação personalizada com `setCustomValidity`:**
+
+```js
+// Confirmar senha — validação que não existe nativamente
+const senha = form.querySelector('[name="senha"]');
+const confirmar = form.querySelector('[name="confirmar-senha"]');
+
+confirmar?.addEventListener('input', () => {
+  if (confirmar.value !== senha.value) {
+    confirmar.setCustomValidity('As senhas não coincidem.');
+  } else {
+    confirmar.setCustomValidity(''); // limpa o erro
+  }
+});
+
+// Validação assíncrona — verificar e-mail já cadastrado
+const emailCampo = form.querySelector('[name="email"]');
+
+emailCampo.addEventListener('blur', async () => {
+  if (!emailCampo.validity.valid) return; // já tem erro nativo
+
+  const resp = await fetch(`/api/verificar-email?email=${encodeURIComponent(emailCampo.value)}`);
+  const { existe } = await resp.json();
+
+  if (existe) {
+    emailCampo.setCustomValidity('Este e-mail já está cadastrado.');
+    validarCampo(emailCampo);
+  } else {
+    emailCampo.setCustomValidity('');
+    validarCampo(emailCampo);
+  }
+});
+```
+
+**CSS para feedback visual:**
+
+```css
+/* Estilização dos estados de validação */
+.campo-grupo.invalido input,
+label.invalido input {
+  border-color: #dc2626;
+  outline-color: #dc2626;
+}
+
+.campo-grupo.valido input,
+label.valido input {
+  border-color: #16a34a;
+}
+
+.erro {
+  color: #dc2626;
+  font-size: 0.85em;
+  display: block;
+  margin-top: 4px;
+  min-height: 1.2em; /* evita layout shift */
+}
+
+/* Alternativa: usar pseudo-classes nativas (sem novalidate) */
+input:invalid:not(:placeholder-shown) {
+  border-color: #dc2626;
+}
+
+input:valid:not(:placeholder-shown) {
+  border-color: #16a34a;
+}
+```
+
+> **Dica:** a pseudo-classe `:not(:placeholder-shown)` evita que campos vazios apareçam como inválidos antes do usuário interagir. Campos que usam `placeholder` só mostram o estilo de erro após o usuário começar a digitar.
 
 ### FormData
 
@@ -1859,6 +3045,424 @@ const params = new URLSearchParams(formData);
 // Útil para requisições GET com dados do formulário
 window.location.href = `/busca?${params}`;
 ```
+
+---
+
+### Helpers utilitários para DOM (vanilla)
+
+Pequenas funções que encapsulam APIs nativas verbosas, reduzindo boilerplate em projetos sem framework. Nenhuma depende de bibliotecas externas.
+
+**Seleção**
+
+```js
+// $ / $$ — querySelector com retorno tipado
+const $  = (sel, ctx = document) => ctx.querySelector(sel);
+const $$ = (sel, ctx = document) => [...ctx.querySelectorAll(sel)];
+
+$('.card');             // primeiro elemento ou null
+$$('.card');            // array de elementos (não NodeList)
+
+// closest já existe nativamente — acessa o ancestral mais próximo pelo seletor
+btn.closest('.modal');  // sobe a árvore até encontrar .modal
+```
+
+**Criação e manipulação**
+
+```js
+// createElement — cria elemento com atributos e filhos em uma única chamada
+function el(tag, attrs = {}, ...filhos) {
+  const node = document.createElement(tag);
+  for (const [chave, valor] of Object.entries(attrs)) {
+    if (chave === 'class') node.className = valor;
+    else if (chave.startsWith('on') && typeof valor === 'function')
+      node.addEventListener(chave.slice(2).toLowerCase(), valor);
+    else node.setAttribute(chave, valor);
+  }
+  node.append(...filhos.flat());
+  return node;
+}
+
+const card = el('div', { class: 'card' },
+  el('h2', {}, 'Título'),
+  el('button', { onClick: () => alert('clicou') }, 'OK'),
+);
+document.body.append(card);
+
+// html — template literal que retorna um DocumentFragment pronto para inserção
+function html(strings, ...valores) {
+  const template = document.createElement('template');
+  template.innerHTML = strings.reduce((acc, str, i) => acc + valores[i - 1] + str);
+  return template.content;
+}
+
+const frag = html`<li class="item">${nome}</li>`;
+lista.append(frag);
+```
+
+> **Atenção:** `html` interpreta a string como HTML — assim como `innerHTML`, é seguro para conteúdo estático, mas exige sanitização se algum valor interpolado vier de input do usuário (risco de XSS). Quando o conteúdo é dinâmico/não confiável, preferir `el()`, que monta nós programaticamente e nunca interpreta HTML.
+
+**Classes e estilos**
+
+```js
+// cls — manipulação declarativa de classes (semelhante a clsx/classnames)
+function cls(el, mapa) {
+  for (const [classe, condicao] of Object.entries(mapa)) {
+    el.classList.toggle(classe, !!condicao);
+  }
+}
+cls(btn, { ativo: estaAtivo, desabilitado: !podeClicar });
+
+// setStyle — aplica múltiplas propriedades de estilo de uma vez
+function setStyle(el, props) {
+  Object.assign(el.style, props);
+}
+setStyle(box, { display: 'flex', gap: '8px', backgroundColor: '#2563eb' });
+```
+
+**Eventos**
+
+```js
+// on / off — wrapper com retorno de função de cleanup
+function on(el, evento, handler, opts) {
+  el.addEventListener(evento, handler, opts);
+  return () => el.removeEventListener(evento, handler, opts);
+}
+
+const cleanup = on(window, 'resize', () => console.log('resize'));
+cleanup(); // remove o listener quando não for mais necessário
+
+// once — disparado uma única vez (atalho para addEventListener com { once: true })
+function once(el, evento, handler) {
+  return on(el, evento, handler, { once: true });
+}
+
+// delegate — event delegation: um único listener no pai captura eventos dos filhos
+function delegate(parent, evento, seletor, handler) {
+  return on(parent, evento, (e) => {
+    const target = e.target.closest(seletor);
+    if (target && parent.contains(target)) handler(e, target);
+  });
+}
+
+// Funciona mesmo para itens adicionados dinamicamente depois do listener ser criado
+delegate(document.querySelector('ul'), 'click', 'li', (e, item) => {
+  console.log('Item clicado:', item.textContent);
+});
+```
+
+> `on` com retorno de cleanup é o padrão mais reutilizável da lista: encaixa-se diretamente em `connectedCallback`/`disconnectedCallback` de Web Components, em `mount`/`unmount` de rotas de uma SPA vanilla, e é equivalente à função de cleanup retornada por um `useEffect` no React.
+>
+> `delegate` evita reatachar listeners a cada item de uma lista dinâmica — é o mesmo princípio usado internamente pelo React, que registra um único listener no root e despacha eventos via delegation.
+
+**Ciclo de vida e timing**
+
+```js
+// ready — executa o callback quando o DOM estiver pronto (já parseado)
+function ready(fn) {
+  if (document.readyState !== 'loading') fn();
+  else document.addEventListener('DOMContentLoaded', fn);
+}
+ready(() => console.log('DOM pronto'));
+
+// onVisible — lazy execution via IntersectionObserver (ex.: lazy load, animações)
+function onVisible(el, callback, opts = {}) {
+  const observer = new IntersectionObserver((entradas) => {
+    for (const entrada of entradas) {
+      if (entrada.isIntersecting) {
+        callback(entrada);
+        observer.unobserve(el); // dispara uma vez e desconecta
+      }
+    }
+  }, opts);
+  observer.observe(el);
+  return () => observer.disconnect();
+}
+
+onVisible($('.imagem-lazy'), (entrada) => {
+  entrada.target.src = entrada.target.dataset.src;
+});
+
+// onMutate — observa mudanças no DOM via MutationObserver
+function onMutate(el, callback, opts = { childList: true, subtree: true }) {
+  const observer = new MutationObserver(callback);
+  observer.observe(el, opts);
+  return () => observer.disconnect();
+}
+
+const pararObservacao = onMutate(document.querySelector('#lista'), (mutacoes) => {
+  console.log(`${mutacoes.length} mudança(s) detectada(s)`);
+});
+```
+
+> `onVisible` e `onMutate` são os helpers que mais se justificam: as APIs nativas (`IntersectionObserver`, `MutationObserver`) têm interface verbosa (criar, `observe`, lembrar de `disconnect`/`unobserve`) e é fácil esquecer a limpeza, causando memory leaks.
+
+**Scroll e geometria**
+
+```js
+// scrollTo / intoView — scroll suave declarativo
+function scrollTo(el, opts = {}) {
+  el.scrollIntoView({ behavior: 'smooth', block: 'start', ...opts });
+}
+const intoView = scrollTo; // alias semântico
+
+scrollTo($('#secao-3'));
+
+// rect — getBoundingClientRect simplificado (atalho para leituras comuns)
+function rect(el) {
+  const r = el.getBoundingClientRect();
+  return { top: r.top, left: r.left, width: r.width, height: r.height, bottom: r.bottom, right: r.right };
+}
+
+rect($('.card')).width; // largura renderizada em px
+```
+
+### DocumentFragment — buffer de elementos antes de inserir no DOM
+
+> MDN: [DocumentFragment](https://developer.mozilla.org/pt-BR/docs/Web/API/DocumentFragment)
+
+Um `DocumentFragment` é um contêiner leve que existe apenas em memória — não faz parte da árvore do DOM. Ele permite montar vários elementos de uma vez e inseri-los com uma única operação, evitando múltiplos reflows e repaints.
+
+**Por que usar?** Cada inserção direta no DOM (`append`, `appendChild`) pode disparar recálculo de layout. Quando se criam muitos elementos em um loop, o custo acumula. Com `DocumentFragment`, todas as inserções acontecem em memória e o DOM real é atualizado uma única vez.
+
+```js
+// ❌ Sem fragment — cada appendChild dispara reflow
+const lista = document.querySelector('ul');
+for (const item of dados) {
+  const li = document.createElement('li');
+  li.textContent = item.nome;
+  lista.appendChild(li); // reflow a cada iteração
+}
+
+// ✅ Com fragment — um único reflow ao final
+const lista = document.querySelector('ul');
+const fragment = document.createDocumentFragment();
+
+for (const item of dados) {
+  const li = document.createElement('li');
+  li.textContent = item.nome;
+  fragment.appendChild(li); // adiciona ao fragment (em memória)
+}
+
+lista.appendChild(fragment); // insere tudo de uma vez no DOM
+```
+
+> Quando o `DocumentFragment` é inserido no DOM, ele "esvazia" — seus filhos são movidos para o elemento de destino e o fragment fica vazio. Ele não cria um nó wrapper extra na árvore.
+
+**Exemplo prático — tabela gerada dinamicamente:**
+
+```js
+function renderizarTabela(produtos) {
+  const tbody = document.querySelector('table tbody');
+  const fragment = document.createDocumentFragment();
+
+  for (const prod of produtos) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${prod.nome}</td>
+      <td>R$ ${prod.preco.toFixed(2)}</td>
+      <td>${prod.estoque}</td>
+    `;
+    fragment.appendChild(tr);
+  }
+
+  tbody.innerHTML = ''; // limpa conteúdo anterior
+  tbody.appendChild(fragment);
+}
+
+renderizarTabela([
+  { nome: 'Notebook', preco: 3500, estoque: 12 },
+  { nome: 'Mouse', preco: 89.90, estoque: 45 },
+  { nome: 'Teclado', preco: 199, estoque: 30 },
+]);
+```
+
+**Alternativa com `<template>`:**
+
+O elemento HTML `<template>` também cria um `DocumentFragment` (via `.content`) e é útil quando o modelo do elemento já está definido no HTML.
+
+```html
+<template id="card-template">
+  <div class="card">
+    <h3 class="card-titulo"></h3>
+    <p class="card-descricao"></p>
+  </div>
+</template>
+```
+
+```js
+function criarCards(itens) {
+  const template = document.querySelector('#card-template');
+  const container = document.querySelector('.cards');
+  const fragment = document.createDocumentFragment();
+
+  for (const item of itens) {
+    const clone = template.content.cloneNode(true); // clona o fragment do template
+    clone.querySelector('.card-titulo').textContent = item.titulo;
+    clone.querySelector('.card-descricao').textContent = item.descricao;
+    fragment.appendChild(clone);
+  }
+
+  container.appendChild(fragment);
+}
+```
+
+> `template.content` é um `DocumentFragment` — seu conteúdo não é renderizado até ser clonado e inserido no DOM. `cloneNode(true)` cria uma cópia profunda (incluindo filhos).
+
+### Event Delegation com closest() e AbortController
+
+A **delegação de eventos** consiste em registrar um único listener no elemento pai para capturar eventos de todos os filhos — inclusive os criados dinamicamente depois. Combinada com `closest()` para identificar o alvo e `AbortController` para gerenciar a remoção, é o padrão mais robusto para lidar com eventos em listas e conteúdo dinâmico.
+
+#### Por que delegar?
+
+```js
+// ❌ Listener individual em cada botão — frágil com conteúdo dinâmico
+document.querySelectorAll('.btn-excluir').forEach(btn => {
+  btn.addEventListener('click', () => excluirItem(btn));
+});
+// Problema: botões adicionados depois NÃO recebem o listener
+
+// ✅ Delegação — funciona para elementos atuais e futuros
+document.querySelector('.lista').addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-excluir');
+  if (btn) excluirItem(btn);
+});
+```
+
+#### closest() — encontrar o ancestral correto
+
+> MDN: [Element.closest()](https://developer.mozilla.org/pt-BR/docs/Web/API/Element/closest)
+
+`closest(seletor)` sobe a árvore do DOM a partir do elemento (incluindo ele mesmo) e retorna o primeiro ancestral que bate com o seletor, ou `null`.
+
+```js
+// Estrutura: <ul class="lista"> → <li> → <span> → <button class="btn-excluir">🗑</button>
+// Se o clique for no ícone dentro do <button>, e.target é o ícone, não o <button>
+// closest() resolve isso subindo até encontrar o seletor correto
+
+document.querySelector('.lista').addEventListener('click', (e) => {
+  // Subir até encontrar o .btn-excluir mais próximo
+  const btn = e.target.closest('.btn-excluir');
+  if (!btn) return; // clique fora de qualquer botão
+
+  // Subir mais para encontrar o <li> ao qual o botão pertence
+  const item = btn.closest('li');
+  console.log('Excluir item:', item.dataset.id);
+});
+```
+
+#### AbortController — gerenciar remoção de listeners
+
+> MDN: [AbortController](https://developer.mozilla.org/pt-BR/docs/Web/API/AbortController)
+
+`AbortController` permite remover múltiplos listeners de uma vez usando um único `signal`, sem precisar guardar referência de cada função de callback.
+
+```js
+const controller = new AbortController();
+
+// Todos os listeners abaixo compartilham o mesmo signal
+document.addEventListener('click', handleClick, { signal: controller.signal });
+document.addEventListener('keydown', handleKey, { signal: controller.signal });
+window.addEventListener('resize', handleResize, { signal: controller.signal });
+
+// Uma única chamada remove todos os listeners associados ao signal
+controller.abort();
+```
+
+**Comparação com a abordagem tradicional:**
+
+```js
+// ❌ Sem AbortController — precisa guardar referência de cada handler
+const handleClick = (e) => { /* ... */ };
+const handleKey = (e) => { /* ... */ };
+document.addEventListener('click', handleClick);
+document.addEventListener('keydown', handleKey);
+// Para remover: precisa de cada referência
+document.removeEventListener('click', handleClick);
+document.removeEventListener('keydown', handleKey);
+
+// ✅ Com AbortController — remoção centralizada
+const controller = new AbortController();
+document.addEventListener('click', (e) => { /* ... */ }, { signal: controller.signal });
+document.addEventListener('keydown', (e) => { /* ... */ }, { signal: controller.signal });
+// Uma chamada remove tudo (funciona mesmo com arrow functions anônimas)
+controller.abort();
+```
+
+#### Exemplo completo — lista dinâmica com delegação e AbortController
+
+```html
+<div id="app">
+  <input type="text" id="novo-item" placeholder="Novo item..." />
+  <button id="btn-adicionar">Adicionar</button>
+  <ul id="lista"></ul>
+</div>
+```
+
+```js
+function iniciarListaDinamica() {
+  const controller = new AbortController();
+  const { signal } = controller;
+
+  const input = document.querySelector('#novo-item');
+  const lista = document.querySelector('#lista');
+  let contador = 0;
+
+  // Adicionar item (cria elemento dinamicamente)
+  document.querySelector('#btn-adicionar').addEventListener('click', () => {
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    const li = document.createElement('li');
+    li.dataset.id = ++contador;
+    li.innerHTML = `
+      <span class="texto">${texto}</span>
+      <button class="btn-editar">Editar</button>
+      <button class="btn-excluir">Excluir</button>
+    `;
+    lista.appendChild(li);
+    input.value = '';
+  }, { signal });
+
+  // Delegação — um único listener captura cliques em todos os botões
+  lista.addEventListener('click', (e) => {
+    const btnExcluir = e.target.closest('.btn-excluir');
+    if (btnExcluir) {
+      const li = btnExcluir.closest('li');
+      li.remove();
+      return;
+    }
+
+    const btnEditar = e.target.closest('.btn-editar');
+    if (btnEditar) {
+      const li = btnEditar.closest('li');
+      const span = li.querySelector('.texto');
+      const novoTexto = prompt('Editar item:', span.textContent);
+      if (novoTexto !== null) span.textContent = novoTexto;
+    }
+  }, { signal });
+
+  // Enter no input adiciona o item
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      document.querySelector('#btn-adicionar').click();
+    }
+  }, { signal });
+
+  // Retorna função de cleanup — remove todos os listeners de uma vez
+  return () => controller.abort();
+}
+
+// Iniciar e guardar a função de cleanup
+const destruir = iniciarListaDinamica();
+
+// Quando não precisar mais (ex: navegar para outra "página" em uma SPA)
+// destruir();
+```
+
+**Por que o AbortController é importante aqui:**
+- Em uma SPA (Single Page Application), ao navegar para outra tela, os listeners precisam ser removidos para evitar **memory leaks** e comportamentos duplicados.
+- Sem `AbortController`, seria necessário guardar referência de cada handler e removê-los individualmente.
+- Com `AbortController`, basta chamar `controller.abort()` e todos os listeners associados ao `signal` são removidos automaticamente.
 
 ---
 

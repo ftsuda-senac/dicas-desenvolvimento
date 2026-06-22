@@ -16,6 +16,7 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
    - [Configuração das IDEs](#configuração-das-ides)
    - [Estrutura de Pastas](#estrutura-de-pastas)
    - [Arquivos de Configuração](#arquivos-de-configuração)
+   - [Plugins Nativos e Compatibilidade com Web](#plugins-nativos-e-compatibilidade-com-web)
    - [Widgets Essenciais](#widgets-essenciais)
      - [Estrutura de Tela](#estrutura-de-tela) — Scaffold, AppBar, SafeArea, Drawer
      - [Layout e Posicionamento](#layout-e-posicionamento) — Column, Row, Stack, Container, Padding, SizedBox, Center, Align, Wrap
@@ -29,6 +30,9 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
    - [Layouts de Tela Completos](#layouts-de-tela-completos)
      - [Cabeçalho + Corpo Rolável + Rodapé Fixo](#cabeçalho--corpo-rolável--rodapé-fixo)
      - [Duas Colunas — Sidebar + Conteúdo](#duas-colunas--sidebar--conteúdo)
+     - [Sidebar Retrátil — Push (empurra o conteúdo)](#sidebar-retrátil--push-empurra-o-conteúdo)
+     - [Sidebar Retrátil — Overlay (sobre o conteúdo)](#sidebar-retrátil--overlay-sobre-o-conteúdo)
+     - [Sidebar Retrátil — Slide (desliza sem redimensionar)](#sidebar-retrátil--slide-desliza-sem-redimensionar)
      - [Header + 2 Colunas + Footer Responsivo](#header--2-colunas--footer-responsivo)
      - [Lista com Busca e Filtros](#lista-com-busca-e-filtros)
      - [Grade de Itens — Grid Responsivo](#grade-de-itens--grid-responsivo)
@@ -36,6 +40,8 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
      - [Tela de Perfil](#tela-de-perfil)
      - [Dashboard com Métricas](#dashboard-com-métricas)
      - [Navegação por Abas — TabBar](#navegação-por-abas--tabbar)
+     - [Design Token System — Boas Práticas de Layout](#design-token-system--boas-práticas-de-layout)
+     - [Boas Práticas de Layout e Performance](#boas-práticas-de-layout-e-performance)
 2. [Navegação](#2-navegação)
    - [GoRouter](#gorouter)
      - [Configuração do GoRouter](#configuração-do-gorouter)
@@ -63,6 +69,16 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
    - [Listas com ListView e Paginação](#listas-com-listview-e-paginação)
    - [Formulários e Validação](#formulários-e-validação)
    - [Feedback Visual ao Usuário](#feedback-visual-ao-usuário)
+   - [Componentes de UI Reutilizáveis](#componentes-de-ui-reutilizáveis)
+     - [Toast — Notificação Temporária](#toast--notificação-temporária)
+     - [Diálogo Customizável — Mensagem e Botões Dinâmicos](#diálogo-customizável--mensagem-e-botões-dinâmicos)
+     - [Hero — Transição entre Telas](#hero--transição-entre-telas)
+     - [Carrossel de Imagens](#carrossel-de-imagens)
+     - [Dropdown e Autocomplete](#dropdown-e-autocomplete)
+     - [Chips de Seleção — Única e Múltipla](#chips-de-seleção--única-e-múltipla)
+     - [Bottom Sheet com Opções](#bottom-sheet-com-opções)
+     - [Tooltip e Popover](#tooltip-e-popover)
+     - [Skeleton — Placeholder de Carregamento](#skeleton--placeholder-de-carregamento)
 6. [Internacionalização (i18n)](#6-internacionalização-i18n)
    - [Configuração do flutter_localizations](#configuração-do-flutter_localizations)
    - [Mensagens de Validação Localizadas](#mensagens-de-validação-localizadas)
@@ -101,6 +117,31 @@ Referência consolidada sobre Flutter 3 com Dart, cobrindo fundamentos, navegaç
       - [Animações e Transições](#animações-e-transições)
     - [Padrões de Tela — HTML × Flutter lado a lado](#padrões-de-tela--html--flutter-lado-a-lado)
     - [Requisições HTTP Assíncronas — Fetch API × Flutter](#requisições-http-assíncronas--fetch-api--flutter)
+11. [Testes no Flutter](#11-testes-no-flutter)
+    - [Visão Geral e Configuração](#visão-geral-e-configuração)
+    - [Testes Unitários](#testes-unitários)
+      - [Lógica Pura — Modelos e Validações](#lógica-pura--modelos-e-validações)
+      - [Providers Riverpod com ProviderContainer](#providers-riverpod-com-providercontainer)
+      - [Repositório com Mock — mocktail](#repositório-com-mock--mocktail)
+    - [Testes de Widget](#testes-de-widget)
+      - [Estrutura e WidgetTester](#estrutura-e-widgettester)
+      - [Finders e Matchers](#finders-e-matchers)
+      - [Interações](#interações)
+      - [Testes com Riverpod — ProviderScope Override](#testes-com-riverpod--providerscope-override)
+    - [Testes de Integração e E2E](#testes-de-integração-e-e2e)
+      - [Configuração do integration_test](#configuração-do-integration_test)
+      - [Escrevendo Testes de Integração](#escrevendo-testes-de-integração)
+      - [E2E com Patrol](#e2e-com-patrol)
+      - [Rodando os Testes](#rodando-os-testes)
+12. [Desempenho e Otimização](#12-desempenho-e-otimização)
+    - [Singleton e Reutilização de Instâncias](#singleton-e-reutilização-de-instâncias)
+    - [Reaproveitamento de Widgets](#reaproveitamento-de-widgets)
+    - [Cache de Dados e Imagens](#cache-de-dados-e-imagens)
+    - [Lazy Loading e Inicialização sob Demanda](#lazy-loading-e-inicialização-sob-demanda)
+    - [Isolates — Processamento Pesado fora da UI Thread](#isolates--processamento-pesado-fora-da-ui-thread)
+    - [RepaintBoundary — Limitar Áreas de Repintura](#repaintboundary--limitar-áreas-de-repintura)
+    - [Otimização de Listas](#otimização-de-listas)
+    - [Diagnóstico e Ferramentas de Profiling](#diagnóstico-e-ferramentas-de-profiling)
 
 ---
 
@@ -560,6 +601,133 @@ Principais arquivos de configuração de um projeto Flutter:
 | `.github/workflows/*.yml` | Pipelines GitHub Actions |
 | `fastlane/Fastfile` | Automação de build e publicação com Fastlane |
 
+**`.gitignore` recomendado para Flutter:**
+
+```gitignore
+# Gerados pelo Flutter — nunca commitar
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# FVM — link simbólico do SDK
+.fvm/flutter_sdk
+
+# IDE
+.idea/
+*.iml
+.vscode/launch.json
+
+# Android
+android/.gradle/
+android/local.properties
+android/key.properties
+android/app/release/
+android/**/*.jks
+android/**/*.keystore
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Runner.xcworkspace/xcshareddata/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+# Web
+web/favicon.png
+
+# Cobertura de testes
+coverage/
+
+# Arquivos de ambiente e segredos
+.env
+.env.*
+*.jks
+*.keystore
+
+# Pub
+.pub-cache/
+.pub/
+
+# Gerados por build_runner / freezed / json_serializable
+# (descomente se preferir não commitar arquivos gerados)
+# *.g.dart
+# *.freezed.dart
+```
+
+> **Dica:** O comando `flutter create` já gera um `.gitignore` básico. O modelo acima expande esse padrão com regras para FVM, keystores, arquivos de ambiente e artefatos de build nativos.
+
+---
+
+### Plugins Nativos e Compatibilidade com Web
+
+Ao incluir a plataforma web (`flutter create --platforms=...,web`), plugins que dependem de recursos nativos (câmera, player de vídeo, GPS, etc.) são resolvidos pela arquitetura de **federated plugins** do Flutter.
+
+**Como funciona a arquitetura federada:**
+
+O pacote principal declara uma interface, e cada plataforma tem um pacote de implementação separado que o `pub` resolve automaticamente:
+
+```
+camera                      ← interface (o que você declara no pubspec.yaml)
+├── camera_android          ← implementação Android (CameraX)
+├── camera_avfoundation     ← implementação iOS (AVFoundation)
+└── camera_web              ← implementação Web (getUserMedia / MediaDevices API)
+```
+
+Se o pacote `_web` existe, o plugin funciona no browser. Se não existe, o plugin não executa na web — mas **não impede a compilação**. O `flutter build web` compila normalmente; a falha ocorre apenas em **runtime** ao tentar usar a funcionalidade, com `MissingPluginException` ou `UnimplementedError`.
+
+**Plugins com e sem suporte web:**
+
+| Plugin | Android / iOS | Web | Alternativa Web |
+|---|---|---|---|
+| `video_player` | ExoPlayer / AVPlayer | `<video>` HTML5 | Suporta nativamente |
+| `better_player_plus` | ExoPlayer / AVPlayer | Não suporta | `video_player` ou Video.js via JS interop |
+| `camera` | CameraX / AVFoundation | `getUserMedia` | Suporta (pacote `camera_web`) |
+| `geolocator` | GPS nativo | `navigator.geolocation` | Suporta nativamente |
+| `google_maps_flutter` | SDK nativo | JS SDK do Google Maps | Suporta (pacote `google_maps_flutter_web`) |
+| `flutter_secure_storage` | Keystore / Keychain | `localStorage` | Suporta, mas menos seguro na web |
+| `flutter_appauth` | AppAuth nativo | Não suporta | `url_launcher` + fluxo manual |
+
+**Verificação de plataforma em tempo de compilação:**
+
+```dart
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+Widget build(BuildContext context) {
+  if (kIsWeb) {
+    // Alternativa web (ex: video_player com suporte HTML5)
+    // ou mensagem "não disponível no navegador"
+    return const Center(child: Text('Player não disponível na web.'));
+  }
+  // Plugin nativo normalmente
+  return BetterPlayer(controller: _controller);
+}
+```
+
+**Imports condicionais — separação completa de implementações:**
+
+Quando a diferença entre plataformas exige classes e imports distintos, use **conditional imports** para que o compilador inclua apenas o código da plataforma alvo:
+
+```dart
+// lib/features/video/video_player_factory.dart
+import 'video_player_mobile.dart'
+    if (dart.library.html) 'video_player_web.dart';
+
+// video_player_mobile.dart — usa better_player_plus
+Widget buildPlayer(String url) => BetterPlayer(...);
+
+// video_player_web.dart — usa video_player (suporta web via <video>)
+Widget buildPlayer(String url) => VideoPlayer(...);
+```
+
+> **Resumo:** o Flutter não impede a compilação web quando plugins nativos estão no `pubspec.yaml`. O plugin simplesmente não executa no browser. A responsabilidade de verificar `kIsWeb` e fornecer alternativas é do desenvolvedor. Plugins bem mantidos já incluem o pacote `_web` com implementação via APIs do browser; plugins sem equivalente web exigem conditional imports ou fallback.
+
 ---
 
 ### Widgets Essenciais
@@ -570,6 +738,121 @@ No Flutter tudo é widget. Os dois tipos fundamentais são:
 - **StatefulWidget** — possui estado interno que pode ser atualizado com `setState`.
 
 Com Riverpod, a maioria das telas usa `ConsumerWidget` (equivalente a `StatelessWidget`) ou `ConsumerStatefulWidget`.
+
+**Hierarquia dos widgets padrões do Flutter:**
+
+```mermaid
+graph TD
+    Widget["🧩 Widget"]
+
+    Widget --> StatelessWidget["StatelessWidget"]
+    Widget --> StatefulWidget["StatefulWidget"]
+    Widget --> RenderObjectWidget["RenderObjectWidget"]
+    Widget --> ProxyWidget["ProxyWidget"]
+
+    %% StatelessWidget
+    StatelessWidget --> Container
+    StatelessWidget --> Text
+    StatelessWidget --> Icon
+    StatelessWidget --> Image
+    StatelessWidget --> Card
+    StatelessWidget --> Divider
+    StatelessWidget --> ListTile
+    StatelessWidget --> Chip
+
+    %% StatefulWidget
+    StatefulWidget --> Scaffold
+    StatefulWidget --> AppBar
+    StatefulWidget --> Navigator
+    StatefulWidget --> TextField
+    StatefulWidget --> Checkbox
+    StatefulWidget --> Switch
+    StatefulWidget --> Radio
+    StatefulWidget --> DropdownButton
+    StatefulWidget --> Form
+    StatefulWidget --> ListView
+    StatefulWidget --> GridView
+    StatefulWidget --> PageView
+    StatefulWidget --> TabBarView
+    StatefulWidget --> AnimatedContainer
+    StatefulWidget --> Hero
+
+    %% RenderObjectWidget
+    RenderObjectWidget --> SingleChild["SingleChildRenderObjectWidget"]
+    RenderObjectWidget --> MultiChild["MultiChildRenderObjectWidget"]
+
+    SingleChild --> Padding
+    SingleChild --> Align
+    SingleChild --> Center
+    SingleChild --> SizedBox
+    SingleChild --> ConstrainedBox
+    SingleChild --> DecoratedBox
+    SingleChild --> ClipRRect
+    SingleChild --> Opacity
+    SingleChild --> Transform
+
+    MultiChild --> Column
+    MultiChild --> Row
+    MultiChild --> Stack
+    MultiChild --> Wrap
+    MultiChild --> Flex
+    MultiChild --> CustomMultiChildLayout
+
+    %% ProxyWidget
+    ProxyWidget --> InheritedWidget
+    ProxyWidget --> ParentDataWidget
+
+    InheritedWidget --> Theme
+    InheritedWidget --> MediaQuery
+    InheritedWidget --> DefaultTextStyle
+
+    ParentDataWidget --> Expanded
+    ParentDataWidget --> Flexible
+    ParentDataWidget --> Positioned
+
+    %% Botões (StatelessWidget)
+    StatelessWidget --> BotoesBase["ButtonStyleButton"]
+    BotoesBase --> ElevatedButton
+    BotoesBase --> FilledButton
+    BotoesBase --> TextButton
+    BotoesBase --> OutlinedButton
+
+    StatelessWidget --> IconButton
+    StatelessWidget --> FloatingActionButton
+
+    %% Interação (StatelessWidget)
+    StatelessWidget --> GestureDetector
+    StatelessWidget --> InkWell
+
+    %% Rolagem (StatefulWidget)
+    StatefulWidget --> SingleChildScrollView
+    StatefulWidget --> RefreshIndicator
+    StatefulWidget --> Scrollbar
+
+    %% Feedback (StatelessWidget / StatefulWidget)
+    StatelessWidget --> AlertDialog
+    StatelessWidget --> BottomSheet
+    StatefulWidget --> CircularProgressIndicator
+    StatefulWidget --> LinearProgressIndicator
+    StatefulWidget --> SnackBar
+
+    %% Estilos
+    classDef base fill:#4a90d9,stroke:#2c5f8a,color:#fff,font-weight:bold
+    classDef stateless fill:#66bb6a,stroke:#388e3c,color:#fff
+    classDef stateful fill:#ffa726,stroke:#ef6c00,color:#fff
+    classDef render fill:#ab47bc,stroke:#7b1fa2,color:#fff
+    classDef proxy fill:#26c6da,stroke:#00838f,color:#fff
+    classDef leaf fill:#f5f5f5,stroke:#9e9e9e,color:#333
+
+    class Widget base
+    class StatelessWidget stateless
+    class StatefulWidget stateful
+    class RenderObjectWidget render
+    class SingleChild,MultiChild render
+    class ProxyWidget,InheritedWidget,ParentDataWidget proxy
+```
+
+> **Nota:** A árvore acima mostra a herança real do framework Flutter. Na prática, widgets como `Container` são wrappers de conveniência que combinam vários `RenderObjectWidget` internamente (`Padding`, `DecoratedBox`, `ConstrainedBox`, etc.). A classificação Stateless/Stateful indica se o widget gerencia estado interno mutável.
 
 Os widgets são organizados abaixo por categoria de uso:
 
@@ -1924,6 +2207,523 @@ class _AdminLayoutState extends State<AdminLayout> {
 
 ---
 
+#### Sidebar Retrátil — Push (empurra o conteúdo)
+
+A sidebar participa do layout normal (`Row`). Ao abrir, o conteúdo principal encolhe para acomodá-la; ao fechar, o conteúdo recupera o espaço. É o padrão ideal para painéis administrativos e dashboards onde o conteúdo deve se redistribuir.
+
+```dart
+// lib/features/admin/presentation/admin_push_sidebar.dart
+class AdminPushSidebar extends StatefulWidget {
+  final Widget conteudo;
+  const AdminPushSidebar({super.key, required this.conteudo});
+
+  @override
+  State<AdminPushSidebar> createState() => _AdminPushSidebarState();
+}
+
+class _AdminPushSidebarState extends State<AdminPushSidebar> {
+  bool _sidebarAberta = true;
+  int _indiceMenu = 0;
+
+  static const _itensMenu = [
+    (icone: Icons.dashboard,    rotulo: 'Dashboard',     rota: '/admin'),
+    (icone: Icons.inventory_2,  rotulo: 'Produtos',      rota: '/admin/produtos'),
+    (icone: Icons.people,       rotulo: 'Clientes',      rota: '/admin/clientes'),
+    (icone: Icons.receipt_long, rotulo: 'Pedidos',       rota: '/admin/pedidos'),
+    (icone: Icons.bar_chart,    rotulo: 'Relatórios',    rota: '/admin/relatorios'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Row(
+        children: [
+          // Sidebar animada — empurra o conteúdo ao abrir
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            width: _sidebarAberta ? 240 : 0,
+            clipBehavior: Clip.hardEdge,
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerLow,
+              border: Border(
+                right: BorderSide(color: Theme.of(context).dividerColor),
+              ),
+            ),
+            child: _sidebarAberta
+                ? Column(
+                    children: [
+                      // Cabeçalho da sidebar
+                      Container(
+                        height: 64,
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        alignment: Alignment.centerLeft,
+                        child: Row(
+                          children: [
+                            Icon(Icons.store,
+                                color: Theme.of(context).colorScheme.primary),
+                            const SizedBox(width: 12),
+                            Text('Admin',
+                                style: Theme.of(context).textTheme.titleMedium),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+
+                      // Itens de navegação
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: _itensMenu.length,
+                          itemBuilder: (context, i) {
+                            final item = _itensMenu[i];
+                            final selecionado = i == _indiceMenu;
+                            return ListTile(
+                              leading: Icon(item.icone,
+                                  color: selecionado
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null),
+                              title: Text(item.rotulo),
+                              selected: selecionado,
+                              onTap: () {
+                                setState(() => _indiceMenu = i);
+                                context.go(item.rota);
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  )
+                : const SizedBox.shrink(),
+          ),
+
+          // Conteúdo principal — se redistribui ao abrir/fechar a sidebar
+          Expanded(
+            child: Column(
+              children: [
+                // AppBar com botão de toggle
+                Container(
+                  height: 64,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(color: Theme.of(context).dividerColor),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                            _sidebarAberta ? Icons.menu_open : Icons.menu),
+                        tooltip: _sidebarAberta ? 'Fechar menu' : 'Abrir menu',
+                        onPressed: () =>
+                            setState(() => _sidebarAberta = !_sidebarAberta),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_itensMenu[_indiceMenu].rotulo,
+                          style: Theme.of(context).textTheme.titleLarge),
+                    ],
+                  ),
+                ),
+                Expanded(child: widget.conteudo),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+> **Comportamento:** o `AnimatedContainer` anima a largura da sidebar de 240 para 0. Como a sidebar está dentro de um `Row` ao lado de um `Expanded`, o conteúdo principal cresce e encolhe automaticamente conforme a sidebar abre e fecha. Grids e listas dentro do conteúdo se redistribuem.
+
+---
+
+#### Sidebar Retrátil — Overlay (sobre o conteúdo)
+
+A sidebar flutua sobre o conteúdo principal usando `Stack` + `SlideTransition`. O conteúdo permanece no mesmo tamanho — a sidebar desliza por cima e uma barreira escurecida permite fechar ao tocar fora. É o padrão de apps mobile e a abordagem usada pelo `Drawer` nativo do Flutter.
+
+```dart
+// lib/features/admin/presentation/admin_overlay_sidebar.dart
+class AdminOverlaySidebar extends StatefulWidget {
+  final Widget conteudo;
+  const AdminOverlaySidebar({super.key, required this.conteudo});
+
+  @override
+  State<AdminOverlaySidebar> createState() => _AdminOverlaySidebarState();
+}
+
+class _AdminOverlaySidebarState extends State<AdminOverlaySidebar>
+    with SingleTickerProviderStateMixin {
+  static const _larguraSidebar = 280.0;
+
+  bool _sidebarAberta = false;
+  int _indiceMenu = 0;
+
+  late final AnimationController _animCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  );
+  late final Animation<Offset> _slideAnim = Tween<Offset>(
+    begin: const Offset(-1, 0),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeInOut));
+
+  late final Animation<double> _fadeAnim = Tween<double>(
+    begin: 0,
+    end: 0.4,
+  ).animate(_animCtrl);
+
+  static const _itensMenu = [
+    (icone: Icons.dashboard,    rotulo: 'Dashboard',     rota: '/admin'),
+    (icone: Icons.inventory_2,  rotulo: 'Produtos',      rota: '/admin/produtos'),
+    (icone: Icons.people,       rotulo: 'Clientes',      rota: '/admin/clientes'),
+    (icone: Icons.receipt_long, rotulo: 'Pedidos',       rota: '/admin/pedidos'),
+    (icone: Icons.bar_chart,    rotulo: 'Relatórios',    rota: '/admin/relatorios'),
+  ];
+
+  void _toggle() {
+    setState(() => _sidebarAberta = !_sidebarAberta);
+    _sidebarAberta ? _animCtrl.forward() : _animCtrl.reverse();
+  }
+
+  void _fechar() {
+    setState(() => _sidebarAberta = false);
+    _animCtrl.reverse();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          // Conteúdo principal — ocupa toda a tela, não se move
+          Column(
+            children: [
+              // AppBar com botão de toggle
+              Container(
+                height: 64,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  border: Border(
+                    bottom:
+                        BorderSide(color: Theme.of(context).dividerColor),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.menu),
+                      tooltip: 'Abrir menu',
+                      onPressed: _toggle,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(_itensMenu[_indiceMenu].rotulo,
+                        style: Theme.of(context).textTheme.titleLarge),
+                  ],
+                ),
+              ),
+              Expanded(child: widget.conteudo),
+            ],
+          ),
+
+          // Barreira escurecida — fecha ao tocar fora
+          if (_sidebarAberta)
+            AnimatedBuilder(
+              animation: _fadeAnim,
+              builder: (context, _) => GestureDetector(
+                onTap: _fechar,
+                child: Container(
+                  color: Colors.black.withValues(alpha: _fadeAnim.value),
+                ),
+              ),
+            ),
+
+          // Sidebar deslizante sobre o conteúdo
+          SlideTransition(
+            position: _slideAnim,
+            child: Material(
+              elevation: 16,
+              child: SizedBox(
+                width: _larguraSidebar,
+                child: Column(
+                  children: [
+                    // Cabeçalho
+                    Container(
+                      height: 64,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      color:
+                          Theme.of(context).colorScheme.primaryContainer,
+                      child: Row(
+                        children: [
+                          Icon(Icons.store,
+                              color:
+                                  Theme.of(context).colorScheme.primary),
+                          const SizedBox(width: 12),
+                          Text('Admin',
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium),
+                          const Spacer(),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: _fechar,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+
+                    // Itens de navegação
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: _itensMenu.length,
+                        itemBuilder: (context, i) {
+                          final item = _itensMenu[i];
+                          final selecionado = i == _indiceMenu;
+                          return ListTile(
+                            leading: Icon(item.icone,
+                                color: selecionado
+                                    ? Theme.of(context).colorScheme.primary
+                                    : null),
+                            title: Text(item.rotulo),
+                            selected: selecionado,
+                            onTap: () {
+                              setState(() => _indiceMenu = i);
+                              context.go(item.rota);
+                              _fechar();
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+> **Comportamento:** o `SlideTransition` desliza a sidebar da esquerda para dentro da tela, enquanto a barreira animada escurece o fundo. O conteúdo principal permanece na mesma posição e largura — a sidebar flutua acima dele via `Stack`. Tocar na barreira ou no botão de fechar recolhe o painel.
+
+---
+
+#### Sidebar Retrátil — Slide (desliza sem redimensionar)
+
+Sidebar e conteúdo principal deslizam juntos via `Transform.translate` — nenhum widget é redimensionado. Ao abrir, a sidebar entra pela esquerda e o conteúdo desliza para a direita na mesma proporção, com a borda direita saindo do viewport. É o padrão clássico de apps como Facebook e Gmail mobile (menu "gaveta" que empurra a tela inteira).
+
+```dart
+// lib/features/admin/presentation/admin_slide_sidebar.dart
+class AdminSlideSidebar extends StatefulWidget {
+  final Widget conteudo;
+  const AdminSlideSidebar({super.key, required this.conteudo});
+
+  @override
+  State<AdminSlideSidebar> createState() => _AdminSlideSidebarState();
+}
+
+class _AdminSlideSidebarState extends State<AdminSlideSidebar>
+    with SingleTickerProviderStateMixin {
+  static const _larguraSidebar = 240.0;
+
+  bool _sidebarAberta = false;
+  int _indiceMenu = 0;
+
+  late final AnimationController _animCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  );
+
+  static const _itensMenu = [
+    (icone: Icons.dashboard,    rotulo: 'Dashboard',     rota: '/admin'),
+    (icone: Icons.inventory_2,  rotulo: 'Produtos',      rota: '/admin/produtos'),
+    (icone: Icons.people,       rotulo: 'Clientes',      rota: '/admin/clientes'),
+    (icone: Icons.receipt_long, rotulo: 'Pedidos',       rota: '/admin/pedidos'),
+    (icone: Icons.bar_chart,    rotulo: 'Relatórios',    rota: '/admin/relatorios'),
+  ];
+
+  void _toggle() {
+    setState(() => _sidebarAberta = !_sidebarAberta);
+    _sidebarAberta ? _animCtrl.forward() : _animCtrl.reverse();
+  }
+
+  void _fechar() {
+    setState(() => _sidebarAberta = false);
+    _animCtrl.reverse();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final larguraTela = constraints.maxWidth;
+          final alturaTela = constraints.maxHeight;
+
+          return AnimatedBuilder(
+            animation: _animCtrl,
+            builder: (context, _) {
+              // Deslocamento: 0 (fechado) → _larguraSidebar (aberto)
+              final deslocamento = _larguraSidebar * _animCtrl.value;
+
+              return ClipRect(
+                child: Stack(
+                  children: [
+                    // Sidebar — começa fora do viewport à esquerda
+                    Transform.translate(
+                      offset: Offset(deslocamento - _larguraSidebar, 0),
+                      child: SizedBox(
+                        width: _larguraSidebar,
+                        height: alturaTela,
+                        child: Material(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerLow,
+                          child: Column(
+                            children: [
+                              Container(
+                                height: 64,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16),
+                                alignment: Alignment.centerLeft,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.store,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary),
+                                    const SizedBox(width: 12),
+                                    Text('Admin',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleMedium),
+                                  ],
+                                ),
+                              ),
+                              const Divider(height: 1),
+                              Expanded(
+                                child: ListView.builder(
+                                  itemCount: _itensMenu.length,
+                                  itemBuilder: (context, i) {
+                                    final item = _itensMenu[i];
+                                    final selecionado = i == _indiceMenu;
+                                    return ListTile(
+                                      leading: Icon(item.icone,
+                                          color: selecionado
+                                              ? Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                              : null),
+                                      title: Text(item.rotulo),
+                                      selected: selecionado,
+                                      onTap: () {
+                                        setState(() => _indiceMenu = i);
+                                        context.go(item.rota);
+                                        _fechar();
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    // Conteúdo — desliza para a direita sem redimensionar
+                    Transform.translate(
+                      offset: Offset(deslocamento, 0),
+                      child: SizedBox(
+                        width: larguraTela,
+                        height: alturaTela,
+                        child: Column(
+                          children: [
+                            Container(
+                              height: 64,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color:
+                                    Theme.of(context).colorScheme.surface,
+                                border: Border(
+                                  bottom: BorderSide(
+                                      color: Theme.of(context)
+                                          .dividerColor),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  IconButton(
+                                    icon: Icon(_sidebarAberta
+                                        ? Icons.menu_open
+                                        : Icons.menu),
+                                    tooltip: _sidebarAberta
+                                        ? 'Fechar menu'
+                                        : 'Abrir menu',
+                                    onPressed: _toggle,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(_itensMenu[_indiceMenu].rotulo,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge),
+                                ],
+                              ),
+                            ),
+                            Expanded(child: widget.conteudo),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+```
+
+> **Comportamento:** `LayoutBuilder` captura a largura real da tela. Ambos os widgets (`sidebar` e `conteúdo`) são posicionados com `Transform.translate` dentro de um `Stack` com `ClipRect`. A sidebar inicia em `Offset(-240, 0)` (fora do viewport) e desliza até `Offset(0, 0)`. O conteúdo mantém a largura total da tela e desliza de `Offset(0, 0)` para `Offset(240, 0)` — a borda direita sai do viewport mas nenhum widget é redimensionado.
+
+**Comparação entre as três abordagens:**
+
+| Aspecto | Push (redimensiona) | Overlay (sobre conteúdo) | Slide (desliza sem redimensionar) |
+|---|---|---|---|
+| Conteúdo principal | Se redistribui ao abrir/fechar | Permanece estático e visível | Mantém tamanho, desliza parcialmente para fora |
+| Sidebar | Participa do layout (`Row`) | Flutua acima (`Stack` + elevação) | Desliza junto com o conteúdo (`Transform`) |
+| Redimensionamento | Sim — conteúdo encolhe/cresce | Não | Não |
+| Indicado para | Desktops e tablets com espaço | Mobile e telas estreitas | Mobile — experiência de "gaveta" |
+| Equivalente web/nativo | Sidebar fixa de apps desktop | Modal drawer / off-canvas overlay | Gmail mobile, Facebook sidebar antiga |
+| Mecanismo | `AnimatedContainer` em `Row` | `Stack` + `SlideTransition` + barreira | `Stack` + `Transform.translate` + `ClipRect` |
+
+> **Dica:** combine as abordagens em um layout responsivo — use Push em telas largas (desktop/tablet) e Overlay ou Slide em telas estreitas (mobile), alternando via `LayoutBuilder`.
+
+---
+
 #### Header + 2 Colunas + Footer Responsivo
 
 Tela de checkout com indicador de progresso no topo, formulário + resumo em colunas (tablet) ou empilhado (celular) e barra de ação fixa no rodapé.
@@ -2847,6 +3647,398 @@ class _ListaAba extends ConsumerWidget {
   }
 }
 ```
+
+---
+
+#### Design Token System — Boas Práticas de Layout
+
+A melhor prática consolidada no ecossistema Flutter é o **Design Token System** — uma camada de constantes Dart puras que centraliza todos os valores de design antes de chegarem aos widgets.
+
+**O fundamento: regra dos 8pt**
+
+Ao limitar as opções de espaçamento e tamanho a uma escala consistente (múltiplos de 8), os elementos se relacionam de forma previsível, produzindo um visual harmonioso. É o mesmo sistema que o Material Design e o Tailwind usam internamente.
+
+---
+
+**1. Tokens como classes Dart puras**
+
+Um design system = tokens + componentes + docs + regras. Tokens são os valores atômicos: cores, tipografia, espaçamento e elevação — independentes de widgets Flutter.
+
+```dart
+// lib/core/design/app_spacing.dart
+abstract final class AppSpacing {
+  static const double xs  = 4.0;
+  static const double sm  = 8.0;
+  static const double md  = 16.0;
+  static const double lg  = 24.0;
+  static const double xl  = 32.0;
+  static const double xxl = 48.0;
+  static const double xxxl = 64.0;
+}
+
+// lib/core/design/app_sizes.dart
+abstract final class AppSizes {
+  // Ícones
+  static const double iconSm  = 16.0;
+  static const double iconMd  = 24.0;
+  static const double iconLg  = 32.0;
+
+  // Componentes
+  static const double buttonHeight   = 48.0;
+  static const double inputHeight    = 56.0;
+  static const double appBarHeight   = 64.0;
+  static const double avatarSm      = 32.0;
+  static const double avatarMd      = 48.0;
+  static const double cardElevation = 2.0;
+}
+
+// lib/core/design/app_radius.dart
+abstract final class AppRadius {
+  static const double sm  = 4.0;
+  static const double md  = 8.0;
+  static const double lg  = 12.0;
+  static const double xl  = 16.0;
+  static const double full = 999.0; // pill/circular
+}
+```
+
+---
+
+**2. ThemeExtension para integrar ao ThemeData**
+
+No Flutter, os tokens de design são compartilhados e gerenciados via themes. O ThemeData propaga propriedades como cores, fontes e mais por toda a árvore de widgets.
+
+```dart
+// lib/core/design/app_theme_extension.dart
+@immutable
+class AppThemeExtension extends ThemeExtension<AppThemeExtension> {
+  const AppThemeExtension({
+    required this.cardPadding,
+    required this.sectionSpacing,
+    required this.inputRadius,
+  });
+
+  final EdgeInsets cardPadding;
+  final double sectionSpacing;
+  final BorderRadius inputRadius;
+
+  static const defaults = AppThemeExtension(
+    cardPadding: EdgeInsets.all(AppSpacing.md),
+    sectionSpacing: AppSpacing.xl,
+    inputRadius: BorderRadius.all(Radius.circular(AppRadius.lg)),
+  );
+
+  @override
+  AppThemeExtension copyWith({...}) => ...;
+
+  @override
+  AppThemeExtension lerp(AppThemeExtension? other, double t) => ...;
+}
+
+// Registro no ThemeData
+ThemeData buildTheme() => ThemeData(
+  extensions: const [AppThemeExtension.defaults],
+);
+
+// Uso em qualquer widget
+final ext = Theme.of(context).extension<AppThemeExtension>()!;
+Padding(padding: ext.cardPadding, child: ...);
+```
+
+---
+
+**3. Widget `Gap` utilitário (melhor que `SizedBox` espalhado)**
+
+No Flutter, `SizedBox` é perfeito para adicionar espaços específicos, e você pode criar widgets helper para tornar o uso de múltiplos de 8 ainda mais simples.
+
+```dart
+// lib/core/widgets/gap.dart
+class Gap extends StatelessWidget {
+  const Gap.xs({super.key}) : _size = AppSpacing.xs;
+  const Gap.sm({super.key}) : _size = AppSpacing.sm;
+  const Gap.md({super.key}) : _size = AppSpacing.md;
+  const Gap.lg({super.key}) : _size = AppSpacing.lg;
+  const Gap.xl({super.key}) : _size = AppSpacing.xl;
+
+  final double _size;
+
+  @override
+  Widget build(BuildContext context) =>
+      SizedBox(width: _size, height: _size);
+}
+
+// Uso em Column/Row fica limpo:
+Column(children: [
+  const Text('Título'),
+  const Gap.sm(),
+  const Text('Subtítulo'),
+  const Gap.xl(),
+  ElevatedButton(...),
+])
+```
+
+---
+
+**4. EdgeInsets semânticos via extension**
+
+```dart
+// lib/core/design/spacing_ext.dart
+extension SpacingExt on double {
+  EdgeInsets get all       => EdgeInsets.all(this);
+  EdgeInsets get horizontal => EdgeInsets.symmetric(horizontal: this);
+  EdgeInsets get vertical   => EdgeInsets.symmetric(vertical: this);
+}
+
+// Uso
+Padding(padding: AppSpacing.md.all, child: ...);
+Padding(padding: AppSpacing.lg.horizontal, child: ...);
+```
+
+---
+
+**5. Estrutura de pastas recomendada**
+
+```
+lib/
+└── core/
+    └── design/
+        ├── app_spacing.dart
+        ├── app_sizes.dart
+        ├── app_radius.dart
+        ├── app_colors.dart
+        ├── app_typography.dart
+        ├── app_theme_extension.dart
+        └── design.dart   ← barrel export
+```
+
+---
+
+**O que evitar**
+
+Valores literais espalhados no código (`padding: EdgeInsets.all(16)`, `height: 48`, `radius: 8`) são o equivalente Flutter de escrever CSS inline sem variáveis — funcionam, mas tornam refatoração e consistência impossíveis de manter em escala.
+
+---
+
+#### Boas Práticas de Layout e Performance
+
+Organizando por categoria, do mais fundamental ao mais avançado:
+
+---
+
+**1. Pense em constraints, não em pixels**
+
+Flutter é baseado em constraints. Em vez de pensar "esse dispositivo tem 360px de largura", pense "quanto espaço esse widget recebe?" — esse mindset evita tamanhos hardcoded e layouts frágeis.
+
+```dart
+// ❌ Quebra em telas menores
+Container(width: 300, height: 200)
+
+// ✅ Se adapta ao espaço disponível
+Expanded(child: Container())
+```
+
+---
+
+**2. `LayoutBuilder` > `MediaQuery` para decisões de layout**
+
+`MediaQuery` fornece dimensões da tela, mas não deve conduzir layouts inteiros. `LayoutBuilder` fornece o espaço real disponível no widget pai — é a espinha dorsal dos layouts adaptativos.
+
+```dart
+// ❌ MediaQuery para layout interno — reage à tela, não ao contexto
+final width = MediaQuery.of(context).size.width;
+
+// ✅ LayoutBuilder — reage ao espaço disponível no pai
+LayoutBuilder(
+  builder: (context, constraints) {
+    final isWide = constraints.maxWidth >= 600;
+    return isWide ? TabletLayout() : MobileLayout();
+  },
+)
+```
+
+`MediaQuery` continua válido para padding de teclado, `textScaler`, orientação e pixel density.
+
+---
+
+**3. Breakpoints centralizados**
+
+Defina larguras fixas onde o layout precisa se adaptar — tipicamente 360px para phones, 720px para tablets e 1024px para desktop.
+
+```dart
+abstract final class AppBreakpoints {
+  static const double mobile  = 360.0;
+  static const double tablet  = 720.0;
+  static const double desktop = 1024.0;
+
+  static bool isMobile(BuildContext ctx) =>
+      MediaQuery.sizeOf(ctx).width < tablet;
+  static bool isTablet(BuildContext ctx) {
+    final w = MediaQuery.sizeOf(ctx).width;
+    return w >= tablet && w < desktop;
+  }
+  static bool isDesktop(BuildContext ctx) =>
+      MediaQuery.sizeOf(ctx).width >= desktop;
+}
+```
+
+> Use `MediaQuery.sizeOf(context)` em vez de `MediaQuery.of(context).size` — escuta apenas mudanças de tamanho e evita rebuilds desnecessários.
+
+---
+
+**4. `SafeArea` e `MediaQuery.paddingOf` — nunca ignore notches e barras**
+
+```dart
+// ✅ Envolva o conteúdo raiz com SafeArea
+Scaffold(
+  body: SafeArea(
+    child: ...,
+  ),
+)
+
+// Para casos customizados (ex: imagem que vai atrás da status bar)
+final topPadding = MediaQuery.paddingOf(context).top;
+```
+
+---
+
+**5. `const` construtores em todo widget estático**
+
+`const` construtores informam ao Flutter que o widget e toda a sua subárvore são imutáveis e não precisam ser reconstruídos, mesmo que o pai mude.
+
+```dart
+// ❌ Reconstrói junto com o pai
+Column(children: [
+  Text('Título fixo'),
+  Icon(Icons.star),
+])
+
+// ✅ Flutter reutiliza as instâncias — zero rebuild
+const Column(children: [
+  Text('Título fixo'),
+  Icon(Icons.star),
+])
+```
+
+---
+
+**6. Decomponha widgets grandes — localize rebuilds**
+
+Localize o `setState()` — evite chamá-lo no topo da árvore. Quebre widgets grandes em componentes menores e reutilizáveis.
+
+```dart
+// ❌ setState no widget raiz reconstrói a página inteira
+class ProductPage extends StatefulWidget {
+  // counter, form, lista — tudo junto
+}
+
+// ✅ Cada peça gerencia seu próprio estado
+class ProductPage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    const ProductHeader(),   // const → nunca reconstrói
+    const ProductImageGallery(),
+    QuantitySelector(),      // stateful isolado
+    const AddToCartButton(),
+  ]);
+}
+```
+
+---
+
+**7. Slivers para scroll complexo**
+
+`ListView.builder` constrói apenas os itens visíveis. Para scroll avançado com `SliverAppBar`, múltiplas listas ou comportamentos colapsáveis, `CustomScrollView` com Slivers é a escolha certa.
+
+```dart
+// ❌ Constrói todos os itens de uma vez
+ListView(
+  children: items.map((e) => ItemCard(e)).toList(),
+)
+
+// ✅ Constrói apenas o que está visível
+CustomScrollView(
+  slivers: [
+    const SliverAppBar(pinned: true, title: Text('Produtos')),
+    SliverPadding(
+      padding: AppSpacing.md.all,
+      sliver: SliverList.builder(
+        itemCount: items.length,
+        itemBuilder: (ctx, i) => ItemCard(items[i]),
+      ),
+    ),
+  ],
+)
+```
+
+---
+
+**8. `Flexible` e `Expanded` em vez de larguras fixas em `Row`/`Column`**
+
+```dart
+// ❌ Overflow em telas menores
+Row(children: [
+  Container(width: 200, child: LabelWidget()),
+  Container(width: 150, child: ValueWidget()),
+])
+
+// ✅ Distribui o espaço proporcionalmente
+Row(children: [
+  const Expanded(flex: 2, child: LabelWidget()),
+  const Expanded(flex: 1, child: ValueWidget()),
+])
+```
+
+---
+
+**9. `OrientationBuilder` para mudanças de orientação**
+
+```dart
+OrientationBuilder(
+  builder: (context, orientation) {
+    final isLandscape = orientation == Orientation.landscape;
+    return GridView.count(
+      crossAxisCount: isLandscape ? 4 : 2,
+      children: [...],
+    );
+  },
+)
+```
+
+---
+
+**10. Nunca coloque lógica de negócio no `build()`**
+
+Mantenha o `build()` puro — sem lógica pesada ou chamadas assíncronas. Faça trabalho custoso uma vez nos métodos de ciclo de vida, não a cada frame.
+
+```dart
+// ❌ O(n log n) executado a cada rebuild
+@override
+Widget build(BuildContext context) {
+  final sorted = items.sorted(by: (a, b) => a.name.compareTo(b.name));
+  return ListView.builder(...);
+}
+
+// ✅ Ordena uma vez, fora do build
+@override
+void initState() {
+  super.initState();
+  _sorted = [...widget.items]..sort((a, b) => a.name.compareTo(b.name));
+}
+```
+
+---
+
+**Resumo rápido**
+
+| Prática | Motivo |
+|---|---|
+| `LayoutBuilder` sobre `MediaQuery` | Reage ao contexto, não à tela |
+| `MediaQuery.sizeOf()` | Evita rebuilds por mudanças não relacionadas |
+| `const` em widgets estáticos | Reutilização automática pelo framework |
+| `SafeArea` + `paddingOf` | Respeita notches e gesture bar |
+| Breakpoints centralizados | Consistência e facilidade de manutenção |
+| Slivers para listas longas | Renderização lazy, evita jank |
+| `build()` puro | Performance e previsibilidade |
 
 ---
 
@@ -4472,6 +5664,1188 @@ extension FeedbackContext on BuildContext {
       );
 }
 ```
+
+---
+
+### Componentes de UI Reutilizáveis
+
+Padrões comuns de interação e exibição prontos para uso em qualquer projeto Flutter.
+
+---
+
+#### Toast — Notificação Temporária
+
+Diferente do `SnackBar` (preso à parte inferior e vinculado ao `Scaffold`), um toast é uma notificação flutuante posicionada livremente — normalmente no topo da tela — usando `Overlay`.
+
+```dart
+// lib/core/widgets/app_toast.dart
+class AppToast {
+  static void mostrar(
+    BuildContext context, {
+    required String mensagem,
+    IconData icone = Icons.info_outline,
+    Color cor = Colors.black87,
+    Duration duracao = const Duration(seconds: 3),
+  }) {
+    final overlay = Overlay.of(context);
+    late final OverlayEntry entry;
+
+    entry = OverlayEntry(
+      builder: (ctx) => _ToastWidget(
+        mensagem: mensagem,
+        icone: icone,
+        cor: cor,
+        onDismiss: () => entry.remove(),
+        duracao: duracao,
+      ),
+    );
+
+    overlay.insert(entry);
+  }
+}
+
+class _ToastWidget extends StatefulWidget {
+  final String mensagem;
+  final IconData icone;
+  final Color cor;
+  final VoidCallback onDismiss;
+  final Duration duracao;
+
+  const _ToastWidget({
+    required this.mensagem,
+    required this.icone,
+    required this.cor,
+    required this.onDismiss,
+    required this.duracao,
+  });
+
+  @override
+  State<_ToastWidget> createState() => _ToastWidgetState();
+}
+
+class _ToastWidgetState extends State<_ToastWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+  late final Animation<Offset> _slide = Tween<Offset>(
+    begin: const Offset(0, -1),
+    end: Offset.zero,
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOut));
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.forward();
+    Future.delayed(widget.duracao, () {
+      if (mounted) _ctrl.reverse().then((_) => widget.onDismiss());
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.paddingOf(context).top + 16,
+      left: 24,
+      right: 24,
+      child: SlideTransition(
+        position: _slide,
+        child: Material(
+          elevation: 6,
+          borderRadius: BorderRadius.circular(12),
+          color: widget.cor,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Icon(widget.icone, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(widget.mensagem,
+                      style: const TextStyle(color: Colors.white)),
+                ),
+                GestureDetector(
+                  onTap: () => _ctrl.reverse().then((_) => widget.onDismiss()),
+                  child: const Icon(Icons.close, color: Colors.white70, size: 18),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+```
+
+```dart
+// Uso
+AppToast.mostrar(context, mensagem: 'Item adicionado ao carrinho!',
+    icone: Icons.check_circle, cor: Colors.green.shade700);
+
+AppToast.mostrar(context, mensagem: 'Falha na conexão.',
+    icone: Icons.wifi_off, cor: Colors.red.shade700);
+```
+
+> **SnackBar vs Toast:** `SnackBar` é gerenciado pelo `ScaffoldMessenger`, aparece fixo na parte inferior e suporta ação (botão "Desfazer"). Toast via `Overlay` pode ser posicionado em qualquer lugar da tela e funciona independentemente do `Scaffold`.
+
+---
+
+#### Diálogo Customizável — Mensagem e Botões Dinâmicos
+
+Função utilitária que cria diálogos com título, mensagem e lista variável de botões — desde alertas simples (um botão "OK") até confirmações complexas (múltiplas ações).
+
+```dart
+// lib/core/widgets/app_dialog.dart
+
+class DialogoBotao {
+  final String rotulo;
+  final VoidCallback? onPressed;
+  final bool destrutivo;
+  final bool primario;
+
+  const DialogoBotao({
+    required this.rotulo,
+    this.onPressed,
+    this.destrutivo = false,
+    this.primario = false,
+  });
+}
+
+Future<int?> mostrarDialogo(
+  BuildContext context, {
+  String? titulo,
+  required String mensagem,
+  IconData? icone,
+  Color? corIcone,
+  required List<DialogoBotao> botoes,
+  bool dispensavel = true,
+}) {
+  return showDialog<int>(
+    context: context,
+    barrierDismissible: dispensavel,
+    builder: (ctx) => AlertDialog(
+      icon: icone != null
+          ? Icon(icone, color: corIcone, size: 32)
+          : null,
+      title: titulo != null ? Text(titulo) : null,
+      content: Text(mensagem),
+      actions: botoes.asMap().entries.map((entry) {
+        final i = entry.key;
+        final b = entry.value;
+
+        if (b.primario || b.destrutivo) {
+          return FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx, i);
+              b.onPressed?.call();
+            },
+            style: b.destrutivo
+                ? FilledButton.styleFrom(backgroundColor: Colors.red)
+                : null,
+            child: Text(b.rotulo),
+          );
+        }
+        return TextButton(
+          onPressed: () {
+            Navigator.pop(ctx, i);
+            b.onPressed?.call();
+          },
+          child: Text(b.rotulo),
+        );
+      }).toList(),
+    ),
+  );
+}
+```
+
+```dart
+// Alerta simples — 1 botão, fecha SOMENTE ao clicar no botão
+// dispensavel: false impede fechar ao tocar fora ou pressionar "voltar"
+await mostrarDialogo(
+  context,
+  titulo: 'Sessão expirada',
+  mensagem: 'Faça login novamente para continuar.',
+  icone: Icons.lock_clock,
+  corIcone: Colors.orange,
+  dispensavel: false,
+  botoes: [
+    DialogoBotao(rotulo: 'Ir para Login', primario: true),
+  ],
+);
+
+// Confirmação — 2 botões, fecha SOMENTE pelos botões
+final resultado = await mostrarDialogo(
+  context,
+  titulo: 'Termos de Uso',
+  mensagem: 'Você precisa aceitar os termos de uso para continuar.',
+  icone: Icons.gavel,
+  dispensavel: false,
+  botoes: [
+    DialogoBotao(rotulo: 'Recusar', destrutivo: true),
+    DialogoBotao(rotulo: 'Aceitar', primario: true),
+  ],
+);
+// resultado: 0 = Recusar, 1 = Aceitar (nunca null, pois não é dispensável)
+
+// Confirmação — 2 botões, permite dispensar tocando fora (padrão)
+final confirmacao = await mostrarDialogo(
+  context,
+  titulo: 'Excluir produto',
+  mensagem: 'Esta ação não pode ser desfeita. Deseja continuar?',
+  icone: Icons.warning_amber_rounded,
+  corIcone: Colors.red,
+  botoes: [
+    DialogoBotao(rotulo: 'Cancelar'),
+    DialogoBotao(rotulo: 'Excluir', destrutivo: true),
+  ],
+);
+// confirmacao: 0 = Cancelar, 1 = Excluir, null = tocou fora
+if (confirmacao == 1) await _excluir();
+
+// Escolha múltipla — 3 botões
+final opcao = await mostrarDialogo(
+  context,
+  titulo: 'Salvar alterações?',
+  mensagem: 'Você tem alterações não salvas neste formulário.',
+  icone: Icons.edit_note,
+  botoes: [
+    DialogoBotao(rotulo: 'Descartar', destrutivo: true),
+    DialogoBotao(rotulo: 'Continuar Editando'),
+    DialogoBotao(rotulo: 'Salvar', primario: true),
+  ],
+);
+// opcao: 0 = Descartar, 1 = Continuar, 2 = Salvar, null = dispensado
+```
+
+---
+
+#### Hero — Transição entre Telas
+
+O widget `Hero` anima a transição visual de um elemento entre duas rotas — a imagem "voa" da lista para a tela de detalhe. Exemplos completos com tela de origem e destino estão na seção [Hero — Transição de Elemento Compartilhado](#hero--transição-de-elemento-compartilhado).
+
+Referência rápida dos pontos essenciais:
+
+```dart
+// Tag único — o mesmo valor nas duas rotas conecta a animação
+Hero(
+  tag: 'produto-img-${produto.id}',
+  child: Image.network(produto.imagemUrl!, fit: BoxFit.cover),
+)
+
+// Na tela de destino, use o mesmo tag:
+Hero(
+  tag: 'produto-img-${produto.id}',
+  child: Image.network(produto.imagemUrl!,
+      width: double.infinity, height: 300, fit: BoxFit.cover),
+)
+```
+
+| Propriedade | Tipo | Descrição |
+|---|---|---|
+| `tag` | `Object` | Identificador único — deve ser idêntico nas duas rotas |
+| `child` | `Widget` | Widget animado na transição |
+| `flightShuttleBuilder` | `HeroFlightShuttleBuilder?` | Widget customizado exibido durante o voo |
+| `placeholderBuilder` | `HeroPlaceholderBuilder?` | Widget substituto na rota de origem durante a animação |
+| `createRectTween` | `CreateRectTween?` | Curva do movimento (padrão: `MaterialRectArcTween`) |
+
+```dart
+// Hero com flightShuttleBuilder — mantém ClipRRect durante o voo
+Hero(
+  tag: 'produto-img-${produto.id}',
+  flightShuttleBuilder: (_, animation, direction, fromCtx, toCtx) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (_, __) => ClipRRect(
+        borderRadius: BorderRadius.circular(12 * (1 - animation.value)),
+        child: toCtx.widget,
+      ),
+    );
+  },
+  child: ClipRRect(
+    borderRadius: BorderRadius.circular(12),
+    child: Image.network(produto.imagemUrl!, fit: BoxFit.cover),
+  ),
+)
+```
+
+> **Dica:** `Hero` funciona com qualquer widget, não apenas imagens — textos, ícones e containers também podem ter transições hero.
+
+---
+
+#### Carrossel de Imagens
+
+Carrossel horizontal com `PageView`, indicador de página e auto-play opcional.
+
+```dart
+// lib/core/widgets/app_carousel.dart
+class AppCarousel extends StatefulWidget {
+  final List<String> imagensUrl;
+  final double altura;
+  final bool autoPlay;
+  final Duration intervalo;
+  final BorderRadius borderRadius;
+  final BoxFit fit;
+
+  const AppCarousel({
+    super.key,
+    required this.imagensUrl,
+    this.altura = 200,
+    this.autoPlay = false,
+    this.intervalo = const Duration(seconds: 4),
+    this.borderRadius = const BorderRadius.all(Radius.circular(12)),
+    this.fit = BoxFit.cover,
+  });
+
+  @override
+  State<AppCarousel> createState() => _AppCarouselState();
+}
+
+class _AppCarouselState extends State<AppCarousel> {
+  late final PageController _pageCtrl = PageController();
+  int _paginaAtual = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoPlay && widget.imagensUrl.length > 1) {
+      _timer = Timer.periodic(widget.intervalo, (_) {
+        final proxima = (_paginaAtual + 1) % widget.imagensUrl.length;
+        _pageCtrl.animateToPage(proxima,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final imagens = widget.imagensUrl;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // Área de imagens com PageView
+        SizedBox(
+          height: widget.altura,
+          child: PageView.builder(
+            controller: _pageCtrl,
+            itemCount: imagens.length,
+            onPageChanged: (i) => setState(() => _paginaAtual = i),
+            itemBuilder: (context, i) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: ClipRRect(
+                borderRadius: widget.borderRadius,
+                child: Image.network(
+                  imagens[i],
+                  width: double.infinity,
+                  fit: widget.fit,
+                  loadingBuilder: (_, child, progress) => progress == null
+                      ? child
+                      : const Center(child: CircularProgressIndicator()),
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.grey.shade200,
+                    child: const Icon(Icons.broken_image, size: 48, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Indicadores de página
+        if (imagens.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(imagens.length, (i) {
+                final ativo = i == _paginaAtual;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: ativo ? 24 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: ativo
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                );
+              }),
+            ),
+          ),
+      ],
+    );
+  }
+}
+```
+
+```dart
+// Uso — carrossel simples
+AppCarousel(
+  imagensUrl: produto.galeriaUrls,
+  altura: 250,
+)
+
+// Com auto-play
+AppCarousel(
+  imagensUrl: banners.map((b) => b.imagemUrl).toList(),
+  altura: 180,
+  autoPlay: true,
+  intervalo: const Duration(seconds: 5),
+)
+
+// Dentro de uma tela de detalhe com Hero
+Hero(
+  tag: 'produto-gallery-${produto.id}',
+  child: AppCarousel(imagensUrl: produto.galeriaUrls, altura: 300),
+)
+```
+
+---
+
+#### Dropdown e Autocomplete
+
+**DropdownMenu — substituto moderno do `DropdownButton`**
+
+`DropdownMenu` (Material 3) combina campo de texto com lista suspensa — suporta busca integrada.
+
+```dart
+// Dropdown simples
+DropdownMenu<String>(
+  label: const Text('Categoria'),
+  expandedInsets: EdgeInsets.zero, // ocupa toda a largura
+  initialSelection: _categoriaSelecionada,
+  onSelected: (valor) => setState(() => _categoriaSelecionada = valor),
+  dropdownMenuEntries: const [
+    DropdownMenuEntry(value: 'eletronicos', label: 'Eletrônicos'),
+    DropdownMenuEntry(value: 'roupas', label: 'Roupas'),
+    DropdownMenuEntry(value: 'alimentos', label: 'Alimentos'),
+    DropdownMenuEntry(value: 'casa', label: 'Casa e Jardim'),
+  ],
+)
+
+// Com ícones e busca habilitada
+DropdownMenu<String>(
+  label: const Text('País'),
+  enableFilter: true,              // filtra ao digitar
+  enableSearch: true,
+  leadingIcon: const Icon(Icons.public),
+  onSelected: (valor) => setState(() => _pais = valor),
+  dropdownMenuEntries: paises
+      .map((p) => DropdownMenuEntry(
+            value: p.codigo,
+            label: p.nome,
+            leadingIcon: Text(p.bandeira, style: const TextStyle(fontSize: 20)),
+          ))
+      .toList(),
+)
+```
+
+**Autocomplete — busca com sugestões dinâmicas**
+
+```dart
+Autocomplete<Produto>(
+  optionsBuilder: (textEditingValue) {
+    if (textEditingValue.text.isEmpty) return const Iterable.empty();
+    return produtos.where((p) =>
+        p.nome.toLowerCase().contains(textEditingValue.text.toLowerCase()));
+  },
+  displayStringForOption: (produto) => produto.nome,
+  fieldViewBuilder: (context, controller, focusNode, onSubmitted) {
+    return TextFormField(
+      controller: controller,
+      focusNode: focusNode,
+      decoration: const InputDecoration(
+        labelText: 'Buscar produto',
+        prefixIcon: Icon(Icons.search),
+        border: OutlineInputBorder(),
+      ),
+      onFieldSubmitted: (_) => onSubmitted(),
+    );
+  },
+  optionsViewBuilder: (context, onSelected, opcoes) {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Material(
+        elevation: 4,
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 240, maxWidth: 400),
+          child: ListView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            itemCount: opcoes.length,
+            itemBuilder: (context, i) {
+              final produto = opcoes.elementAt(i);
+              return ListTile(
+                leading: const Icon(Icons.inventory_2),
+                title: Text(produto.nome),
+                subtitle: Text('R\$ ${produto.preco.toStringAsFixed(2)}'),
+                onTap: () => onSelected(produto),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  },
+  onSelected: (produto) => context.push('/produtos/${produto.id}'),
+)
+```
+
+**Autocomplete com chamada assíncrona ao backend:**
+
+```dart
+// lib/features/produtos/presentation/produto_autocomplete.dart
+class ProdutoAutocomplete extends StatefulWidget {
+  final void Function(Produto) onSelecionado;
+  const ProdutoAutocomplete({super.key, required this.onSelecionado});
+
+  @override
+  State<ProdutoAutocomplete> createState() => _ProdutoAutocompleteState();
+}
+
+class _ProdutoAutocompleteState extends State<ProdutoAutocomplete> {
+  final _ctrl = TextEditingController();
+  Timer? _debounce;
+  List<Produto> _sugestoes = [];
+  bool _carregando = false;
+
+  void _onBuscaAlterada(String texto) {
+    _debounce?.cancel();
+    if (texto.length < 2) {
+      setState(() => _sugestoes = []);
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      setState(() => _carregando = true);
+      try {
+        final resultado = await ProdutoRepository().buscar(query: texto);
+        if (mounted) setState(() => _sugestoes = resultado);
+      } finally {
+        if (mounted) setState(() => _carregando = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextFormField(
+          controller: _ctrl,
+          decoration: InputDecoration(
+            labelText: 'Buscar produto',
+            prefixIcon: const Icon(Icons.search),
+            suffixIcon: _carregando
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2)))
+                : null,
+            border: const OutlineInputBorder(),
+          ),
+          onChanged: _onBuscaAlterada,
+        ),
+        if (_sugestoes.isNotEmpty)
+          Material(
+            elevation: 2,
+            borderRadius: BorderRadius.circular(8),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _sugestoes.length,
+              itemBuilder: (_, i) {
+                final p = _sugestoes[i];
+                return ListTile(
+                  title: Text(p.nome),
+                  subtitle: Text('R\$ ${p.preco.toStringAsFixed(2)}'),
+                  onTap: () {
+                    _ctrl.text = p.nome;
+                    setState(() => _sugestoes = []);
+                    widget.onSelecionado(p);
+                  },
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+```
+
+---
+
+#### Chips de Seleção — Única e Múltipla
+
+**Seleção única com `ChoiceChip`:**
+
+```dart
+class CategoriaChips extends StatefulWidget {
+  final List<String> categorias;
+  final ValueChanged<String> onSelecionada;
+
+  const CategoriaChips({
+    super.key,
+    required this.categorias,
+    required this.onSelecionada,
+  });
+
+  @override
+  State<CategoriaChips> createState() => _CategoriaChipsState();
+}
+
+class _CategoriaChipsState extends State<CategoriaChips> {
+  int _indiceSelecionado = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: widget.categorias.asMap().entries.map((entry) {
+        return ChoiceChip(
+          label: Text(entry.value),
+          selected: _indiceSelecionado == entry.key,
+          onSelected: (_) {
+            setState(() => _indiceSelecionado = entry.key);
+            widget.onSelecionada(entry.value);
+          },
+        );
+      }).toList(),
+    );
+  }
+}
+```
+
+**Seleção múltipla com `FilterChip`:**
+
+```dart
+class TagsFilterChips extends StatefulWidget {
+  final List<String> opcoes;
+  final ValueChanged<Set<String>> onAlterado;
+
+  const TagsFilterChips({
+    super.key,
+    required this.opcoes,
+    required this.onAlterado,
+  });
+
+  @override
+  State<TagsFilterChips> createState() => _TagsFilterChipsState();
+}
+
+class _TagsFilterChipsState extends State<TagsFilterChips> {
+  final Set<String> _selecionadas = {};
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: widget.opcoes.map((opcao) {
+        final ativo = _selecionadas.contains(opcao);
+        return FilterChip(
+          label: Text(opcao),
+          selected: ativo,
+          onSelected: (selecionado) {
+            setState(() {
+              selecionado ? _selecionadas.add(opcao) : _selecionadas.remove(opcao);
+            });
+            widget.onAlterado(_selecionadas);
+          },
+        );
+      }).toList(),
+    );
+  }
+}
+```
+
+```dart
+// Uso
+CategoriaChips(
+  categorias: ['Eletrônicos', 'Roupas', 'Alimentos', 'Casa'],
+  onSelecionada: (cat) => _filtrarPorCategoria(cat),
+)
+
+TagsFilterChips(
+  opcoes: ['Wi-Fi', 'Bluetooth', 'USB-C', 'NFC', '5G'],
+  onAlterado: (tags) => _filtrarPorTags(tags),
+)
+```
+
+---
+
+#### Bottom Sheet com Opções
+
+Bottom sheet reutilizável para menus de ação e seleção de opções.
+
+```dart
+// lib/core/widgets/app_bottom_sheet.dart
+
+class OpcaoSheet {
+  final IconData icone;
+  final String rotulo;
+  final String? descricao;
+  final Color? cor;
+  final bool destrutivo;
+
+  const OpcaoSheet({
+    required this.icone,
+    required this.rotulo,
+    this.descricao,
+    this.cor,
+    this.destrutivo = false,
+  });
+}
+
+Future<int?> mostrarOpcoes(
+  BuildContext context, {
+  String? titulo,
+  required List<OpcaoSheet> opcoes,
+}) {
+  return showModalBottomSheet<int>(
+    context: context,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Handle visual
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 8),
+            width: 32,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).colorScheme.outlineVariant,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          if (titulo != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(titulo,
+                  style: Theme.of(ctx).textTheme.titleMedium),
+            ),
+          const Divider(),
+          ...opcoes.asMap().entries.map((entry) {
+            final i = entry.key;
+            final o = entry.value;
+            final corEfetiva = o.destrutivo ? Colors.red : o.cor;
+            return ListTile(
+              leading: Icon(o.icone, color: corEfetiva),
+              title: Text(o.rotulo,
+                  style: corEfetiva != null
+                      ? TextStyle(color: corEfetiva)
+                      : null),
+              subtitle: o.descricao != null ? Text(o.descricao!) : null,
+              onTap: () => Navigator.pop(ctx, i),
+            );
+          }),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+}
+```
+
+```dart
+// Uso — menu de ações em um item de lista
+final opcao = await mostrarOpcoes(
+  context,
+  titulo: 'Ações do Produto',
+  opcoes: [
+    OpcaoSheet(icone: Icons.edit, rotulo: 'Editar'),
+    OpcaoSheet(icone: Icons.copy, rotulo: 'Duplicar'),
+    OpcaoSheet(icone: Icons.share, rotulo: 'Compartilhar'),
+    OpcaoSheet(
+      icone: Icons.delete,
+      rotulo: 'Excluir',
+      descricao: 'Esta ação não pode ser desfeita',
+      destrutivo: true,
+    ),
+  ],
+);
+
+switch (opcao) {
+  case 0: _editar();
+  case 1: _duplicar();
+  case 2: _compartilhar();
+  case 3: _excluir();
+}
+```
+
+---
+
+#### Tooltip e Popover
+
+**Tooltip — dica rápida ao pressionar longo ou hover:**
+
+```dart
+// Tooltip simples
+Tooltip(
+  message: 'Adicionar ao carrinho',
+  child: IconButton(
+    icon: const Icon(Icons.add_shopping_cart),
+    onPressed: () {},
+  ),
+)
+
+// Tooltip com conteúdo rico
+Tooltip(
+  richMessage: TextSpan(
+    children: [
+      const TextSpan(text: 'Estoque: ', style: TextStyle(fontWeight: FontWeight.bold)),
+      TextSpan(text: '${produto.estoque} unidades'),
+    ],
+  ),
+  child: const Icon(Icons.info_outline),
+)
+
+// Tooltip personalizado
+Tooltip(
+  message: 'Disponível para entrega',
+  decoration: BoxDecoration(
+    color: Colors.indigo,
+    borderRadius: BorderRadius.circular(8),
+  ),
+  textStyle: const TextStyle(color: Colors.white, fontSize: 13),
+  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+  preferBelow: false,                       // exibe acima do widget
+  waitDuration: const Duration(seconds: 1), // tempo até aparecer (hover)
+  showDuration: const Duration(seconds: 3), // tempo visível
+  child: const Icon(Icons.local_shipping),
+)
+```
+
+**Popover — menu contextual posicionado junto ao widget:**
+
+```dart
+// PopupMenuButton — menu suspenso ao tocar
+PopupMenuButton<String>(
+  icon: const Icon(Icons.more_vert),
+  onSelected: (valor) {
+    switch (valor) {
+      case 'editar':     _editar();
+      case 'duplicar':   _duplicar();
+      case 'compartilhar': _compartilhar();
+      case 'excluir':    _excluir();
+    }
+  },
+  itemBuilder: (ctx) => [
+    const PopupMenuItem(value: 'editar', child: ListTile(
+      leading: Icon(Icons.edit), title: Text('Editar'),
+      contentPadding: EdgeInsets.zero)),
+    const PopupMenuItem(value: 'duplicar', child: ListTile(
+      leading: Icon(Icons.copy), title: Text('Duplicar'),
+      contentPadding: EdgeInsets.zero)),
+    const PopupMenuDivider(),
+    PopupMenuItem(value: 'excluir', child: ListTile(
+      leading: Icon(Icons.delete, color: Colors.red),
+      title: Text('Excluir', style: TextStyle(color: Colors.red)),
+      contentPadding: EdgeInsets.zero)),
+  ],
+)
+
+// MenuAnchor — menu posicionado junto a qualquer widget (Material 3)
+MenuAnchor(
+  menuChildren: [
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.sort_by_alpha),
+      child: const Text('Ordenar por nome'),
+      onPressed: () => _ordenar('nome'),
+    ),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.attach_money),
+      child: const Text('Ordenar por preço'),
+      onPressed: () => _ordenar('preco'),
+    ),
+    const Divider(),
+    MenuItemButton(
+      leadingIcon: const Icon(Icons.filter_list_off),
+      child: const Text('Limpar filtros'),
+      onPressed: _limparFiltros,
+    ),
+  ],
+  builder: (context, controller, _) => IconButton(
+    icon: const Icon(Icons.tune),
+    tooltip: 'Opções de ordenação',
+    onPressed: () =>
+        controller.isOpen ? controller.close() : controller.open(),
+  ),
+)
+```
+
+> **PopupMenuButton vs MenuAnchor:** `PopupMenuButton` é mais simples e suficiente para menus de contexto. `MenuAnchor` (Material 3) suporta submenus aninhados, atalhos de teclado e integração com `MenuBar` — preferível para menus mais complexos.
+
+---
+
+#### Skeleton — Placeholder de Carregamento
+
+Skeleton (ou *shimmer*) é um placeholder animado que simula a estrutura do conteúdo enquanto ele carrega — substitui spinners genéricos por uma prévia visual da tela final, reduzindo a percepção de espera.
+
+**Widget base reutilizável:**
+
+```dart
+// lib/core/widgets/skeleton.dart
+class Skeleton extends StatefulWidget {
+  final double largura;
+  final double altura;
+  final BorderRadius borderRadius;
+
+  const Skeleton({
+    super.key,
+    this.largura = double.infinity,
+    this.altura = 16,
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
+  });
+
+  @override
+  State<Skeleton> createState() => _SkeletonState();
+}
+
+class _SkeletonState extends State<Skeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1500),
+  )..repeat();
+
+  late final Animation<double> _animacao = Tween<double>(
+    begin: -2,
+    end: 2,
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOutSine));
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animacao,
+      builder: (context, _) {
+        return Container(
+          width: widget.largura,
+          height: widget.altura,
+          decoration: BoxDecoration(
+            borderRadius: widget.borderRadius,
+            gradient: LinearGradient(
+              begin: Alignment(_animacao.value - 1, 0),
+              end: Alignment(_animacao.value + 1, 0),
+              colors: [
+                Colors.grey.shade300,
+                Colors.grey.shade100,
+                Colors.grey.shade300,
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+```
+
+**Skeleton de um Card de produto:**
+
+```dart
+// lib/core/widgets/skeleton_produto_card.dart
+class SkeletonProdutoCard extends StatelessWidget {
+  const SkeletonProdutoCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Imagem
+            const Skeleton(altura: 150),
+            const SizedBox(height: 12),
+            // Título
+            const Skeleton(altura: 18, largura: 180),
+            const SizedBox(height: 8),
+            // Descrição — duas linhas
+            const Skeleton(altura: 14),
+            const SizedBox(height: 6),
+            const Skeleton(altura: 14, largura: 240),
+            const SizedBox(height: 12),
+            // Preço
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Skeleton(altura: 20, largura: 80),
+                Skeleton(
+                  altura: 36,
+                  largura: 36,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+```
+
+**Skeleton de uma lista inteira:**
+
+```dart
+// lib/core/widgets/skeleton_lista.dart
+class SkeletonLista extends StatelessWidget {
+  final int quantidade;
+  final Widget Function(BuildContext, int) itemBuilder;
+
+  const SkeletonLista({
+    super.key,
+    this.quantidade = 5,
+    required this.itemBuilder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: quantidade,
+      itemBuilder: itemBuilder,
+    );
+  }
+}
+```
+
+**Uso integrado com estado de carregamento:**
+
+```dart
+// Dentro de uma tela com Provider / Riverpod
+@override
+Widget build(BuildContext context) {
+  final estado = ref.watch(produtosProvider);
+
+  return estado.when(
+    loading: () => ListView.builder(
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 6,
+      itemBuilder: (_, __) => const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: SkeletonProdutoCard(),
+      ),
+    ),
+    error: (erro, _) => Center(child: Text('Erro: $erro')),
+    data: (produtos) => ListView.builder(
+      itemCount: produtos.length,
+      itemBuilder: (_, i) => ProdutoCard(produto: produtos[i]),
+    ),
+  );
+}
+```
+
+**Skeleton para ListTile (linhas de lista simples):**
+
+```dart
+class SkeletonListTile extends StatelessWidget {
+  const SkeletonListTile({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          // Avatar circular
+          Skeleton(
+            altura: 48,
+            largura: 48,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          const SizedBox(width: 16),
+          // Texto
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Skeleton(altura: 14, largura: 160),
+                SizedBox(height: 8),
+                Skeleton(altura: 12, largura: 220),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+```
+
+**Alternativa com pacote `shimmer`:**
+
+```yaml
+# pubspec.yaml
+dependencies:
+  shimmer: ^3.0.0
+```
+
+```dart
+import 'package:shimmer/shimmer.dart';
+
+// Widget com efeito shimmer usando o pacote
+Shimmer.fromColors(
+  baseColor: Colors.grey.shade300,
+  highlightColor: Colors.grey.shade100,
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(height: 150, color: Colors.white),
+      const SizedBox(height: 12),
+      Container(height: 18, width: 180, color: Colors.white),
+      const SizedBox(height: 8),
+      Container(height: 14, color: Colors.white),
+    ],
+  ),
+)
+```
+
+| Abordagem | Vantagem | Quando usar |
+|---|---|---|
+| Widget `Skeleton` customizado | Sem dependência externa, controle total da animação | Projetos que evitam dependências extras ou precisam de efeito visual específico |
+| Pacote `shimmer` | API prática (`Shimmer.fromColors`), menos código | Prototipagem rápida ou quando já há outras dependências no projeto |
+
+> **Dica:** Monte o skeleton espelhando a estrutura real do widget final — mesmas alturas, espaçamentos e proporções. Quanto mais fiel ao layout real, mais natural a transição de carregando → carregado.
 
 ---
 
@@ -6544,6 +8918,1490 @@ ref.watch(produtosProvider).when(
 
 ---
 
+## 11. Testes no Flutter
+
+Flutter oferece três camadas de testes com suporte nativo no SDK:
+
+### Visão Geral e Configuração
+
+| Tipo | Pacote | Velocidade | O que verifica |
+|---|---|---|---|
+| **Unitário** | `flutter_test` (built-in) | Muito rápido | Lógica pura: modelos, providers, serviços |
+| **Widget** | `flutter_test` (built-in) | Rápido | Widgets isolados: layout, interações, estado |
+| **Integração / E2E** | `integration_test` + `patrol` | Lento (emulador/dispositivo) | Fluxos completos do app |
+
+**Dependências — `pubspec.yaml`:**
+
+```yaml
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.4          # mocking sem geração de código
+  integration_test:
+    sdk: flutter
+  patrol: ^3.14.0           # E2E com acesso a APIs nativas
+```
+
+**Estrutura de pastas recomendada:**
+
+```
+test/
+├── unit/
+│   ├── models/
+│   │   └── produto_model_test.dart
+│   ├── providers/
+│   │   └── auth_provider_test.dart
+│   └── repositories/
+│       └── produto_repository_test.dart
+├── widget/
+│   ├── card_produto_test.dart
+│   └── login_screen_test.dart
+└── helpers/
+    └── test_helpers.dart        # factories e utilitários compartilhados
+
+integration_test/
+├── app_test.dart                # testes de integração
+└── flows/
+    ├── auth_flow_test.dart
+    └── produto_flow_test.dart
+```
+
+**Executar os testes:**
+
+```bash
+# Todos os testes unitários e de widget
+flutter test
+
+# Um arquivo específico
+flutter test test/unit/models/produto_model_test.dart
+
+# Com relatório de cobertura
+flutter test --coverage
+genhtml coverage/lcov.info -o coverage/html
+
+# Testes de integração (emulador ou dispositivo conectado)
+flutter test integration_test/app_test.dart
+```
+
+---
+
+### Testes Unitários
+
+Testam lógica pura em isolamento — sem Flutter framework, sem UI, sem rede.
+
+#### Lógica Pura — Modelos e Validações
+
+```dart
+// test/unit/models/produto_model_test.dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meu_app/features/produtos/domain/produto_model.dart';
+
+void main() {
+  group('ProdutoModel', () {
+    final json = {
+      'id': 1,
+      'nome': 'Notebook Pro',
+      'preco': 3499.90,
+      'disponivel': true,
+      'categoria': 'Eletrônicos',
+    };
+
+    test('fromJson cria instância corretamente', () {
+      final produto = Produto.fromJson(json);
+
+      expect(produto.id, equals(1));
+      expect(produto.nome, equals('Notebook Pro'));
+      expect(produto.preco, equals(3499.90));
+      expect(produto.disponivel, isTrue);
+    });
+
+    test('toJson serializa de volta ao mapa original', () {
+      final produto = Produto.fromJson(json);
+      expect(produto.toJson(), equals(json));
+    });
+
+    test('copyWith altera apenas os campos informados', () {
+      final produto = Produto.fromJson(json);
+      final atualizado = produto.copyWith(preco: 2999.90, disponivel: false);
+
+      expect(atualizado.id, equals(produto.id));
+      expect(atualizado.nome, equals(produto.nome));
+      expect(atualizado.preco, equals(2999.90));
+      expect(atualizado.disponivel, isFalse);
+    });
+
+    test('precoFormatado retorna string no formato correto', () {
+      final produto = Produto.fromJson(json);
+      expect(produto.precoFormatado, equals('R\$ 3.499,90'));
+    });
+  });
+
+  group('Validadores de formulário', () {
+    test('validarEmail aceita e-mail válido', () {
+      expect(validarEmail('usuario@email.com'), isNull);
+    });
+
+    test('validarEmail rejeita e-mail sem @', () {
+      expect(validarEmail('emailinvalido'), isNotNull);
+    });
+
+    test('validarSenha rejeita senha com menos de 8 caracteres', () {
+      expect(validarSenha('abc123'), isNotNull);
+    });
+
+    test('validarSenha aceita senha com 8+ caracteres', () {
+      expect(validarSenha('Senha@123'), isNull);
+    });
+  });
+}
+```
+
+---
+
+#### Providers Riverpod com ProviderContainer
+
+Use `ProviderContainer` para testar providers sem o Flutter framework. Permita leitura de estado assíncrono com `container.read(provider.future)`.
+
+```dart
+// test/unit/providers/auth_provider_test.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:meu_app/features/auth/data/auth_repository.dart';
+import 'package:meu_app/features/auth/presentation/auth_provider.dart';
+
+class MockAuthRepository extends Mock implements AuthRepository {}
+
+void main() {
+  late MockAuthRepository mockRepo;
+  late ProviderContainer container;
+
+  setUp(() {
+    mockRepo = MockAuthRepository();
+    container = ProviderContainer(
+      overrides: [
+        // Substitui a dependência real pelo mock
+        authRepositoryProvider.overrideWithValue(mockRepo),
+      ],
+    );
+  });
+
+  tearDown(() => container.dispose());
+
+  group('AuthNotifier', () {
+    test('estado inicial é AuthState.unauthenticated', () {
+      final state = container.read(authStateProvider);
+      expect(state, isA<AsyncData>());
+      expect(state.value, isA<UnauthenticatedState>());
+    });
+
+    test('login com credenciais válidas atualiza estado para autenticado', () async {
+      when(() => mockRepo.login('user@test.com', '123456'))
+          .thenAnswer((_) async => UserModel(id: 1, nome: 'Teste', email: 'user@test.com'));
+
+      await container.read(authStateProvider.notifier).login('user@test.com', '123456');
+      final state = container.read(authStateProvider);
+
+      expect(state.value, isA<AuthenticatedState>());
+      expect((state.value as AuthenticatedState).usuario.email, equals('user@test.com'));
+    });
+
+    test('login com credenciais inválidas emite estado de erro', () async {
+      when(() => mockRepo.login(any(), any()))
+          .thenThrow(Exception('Credenciais inválidas'));
+
+      await container.read(authStateProvider.notifier).login('x', 'y');
+      final state = container.read(authStateProvider);
+
+      expect(state, isA<AsyncError>());
+    });
+
+    test('logout limpa o estado', () async {
+      when(() => mockRepo.logout()).thenAnswer((_) async {});
+
+      await container.read(authStateProvider.notifier).logout();
+      final state = container.read(authStateProvider);
+
+      expect(state.value, isA<UnauthenticatedState>());
+    });
+  });
+
+  group('FutureProvider — produtosListProvider', () {
+    test('retorna lista de produtos ao carregar com sucesso', () async {
+      final produtos = [
+        Produto(id: 1, nome: 'Item A', preco: 10, disponivel: true),
+        Produto(id: 2, nome: 'Item B', preco: 20, disponivel: false),
+      ];
+
+      when(() => mockRepo.listarProdutos()).thenAnswer((_) async => produtos);
+
+      final resultado = await container.read(produtosListProvider.future);
+      expect(resultado, hasLength(2));
+      expect(resultado.first.nome, equals('Item A'));
+    });
+  });
+}
+```
+
+---
+
+#### Repositório com Mock — mocktail
+
+```dart
+// test/unit/repositories/produto_repository_test.dart
+import 'package:dio/dio.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:meu_app/features/produtos/data/produto_repository.dart';
+
+class MockDio extends Mock implements Dio {}
+
+void main() {
+  late MockDio mockDio;
+  late ProdutoRepository repository;
+
+  setUpAll(() {
+    // Registrar tipos usados em matchers any() / captureAny()
+    registerFallbackValue(Options());
+  });
+
+  setUp(() {
+    mockDio = MockDio();
+    repository = ProdutoRepository(mockDio);
+  });
+
+  group('ProdutoRepository.listar', () {
+    test('retorna lista ao receber status 200', () async {
+      when(() => mockDio.get('/produtos')).thenAnswer(
+        (_) async => Response(
+          data: [
+            {'id': 1, 'nome': 'Produto A', 'preco': 50.0, 'disponivel': true},
+          ],
+          statusCode: 200,
+          requestOptions: RequestOptions(path: '/produtos'),
+        ),
+      );
+
+      final lista = await repository.listar();
+      expect(lista, hasLength(1));
+      expect(lista.first.nome, equals('Produto A'));
+    });
+
+    test('lança exceção ao receber status 500', () async {
+      when(() => mockDio.get('/produtos')).thenThrow(
+        DioException(
+          type: DioExceptionType.badResponse,
+          requestOptions: RequestOptions(path: '/produtos'),
+          response: Response(statusCode: 500, requestOptions: RequestOptions(path: '/produtos')),
+        ),
+      );
+
+      expect(() => repository.listar(), throwsA(isA<RepositoryException>()));
+    });
+  });
+
+  group('ProdutoRepository.salvar', () {
+    test('chama POST e retorna produto criado', () async {
+      final payload = {'nome': 'Novo', 'preco': 99.9, 'disponivel': true};
+
+      when(() => mockDio.post('/produtos', data: any(named: 'data'))).thenAnswer(
+        (_) async => Response(
+          data: {'id': 42, ...payload},
+          statusCode: 201,
+          requestOptions: RequestOptions(path: '/produtos'),
+        ),
+      );
+
+      final produto = await repository.salvar(payload);
+      expect(produto.id, equals(42));
+      verify(() => mockDio.post('/produtos', data: any(named: 'data'))).called(1);
+    });
+  });
+}
+```
+
+---
+
+### Testes de Widget
+
+Testam widgets isolados com o `WidgetTester`, sem precisar de um dispositivo real. O Flutter constrói e renderiza a árvore de widgets em memória.
+
+#### Estrutura e WidgetTester
+
+```dart
+// test/widget/card_produto_test.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:meu_app/features/produtos/presentation/card_produto.dart';
+import 'package:meu_app/features/produtos/domain/produto_model.dart';
+
+void main() {
+  // Produto de exemplo reutilizado nos testes
+  final produto = Produto(
+    id: 1,
+    nome: 'Teclado Mecânico',
+    preco: 299.90,
+    disponivel: true,
+    categoria: 'Periféricos',
+  );
+
+  // testWidgets é o equivalente de test() para testes de widget
+  testWidgets('CardProduto exibe nome e preço', (WidgetTester tester) async {
+    // 1. Construir a árvore de widgets
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CardProduto(produto: produto, onTap: () {}),
+        ),
+      ),
+    );
+
+    // 2. Verificar conteúdo renderizado
+    expect(find.text('Teclado Mecânico'), findsOneWidget);
+    expect(find.text('R\$ 299,90'), findsOneWidget);
+  });
+
+  testWidgets('CardProduto chama onTap ao ser tocado', (tester) async {
+    var tocado = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CardProduto(
+            produto: produto,
+            onTap: () => tocado = true,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(CardProduto));
+    expect(tocado, isTrue);
+  });
+
+  testWidgets('CardProduto exibe ícone de indisponível quando produto inativo',
+      (tester) async {
+    final inativo = produto.copyWith(disponivel: false);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CardProduto(produto: inativo, onTap: () {}),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.cancel), findsOneWidget);
+    expect(find.byIcon(Icons.check_circle), findsNothing);
+  });
+}
+```
+
+---
+
+#### Finders e Matchers
+
+```dart
+// Finders — localizar widgets na árvore
+find.text('Salvar')                        // por texto exato
+find.textContaining('Salv')                // por texto parcial
+find.byType(ElevatedButton)                // por tipo
+find.byKey(const Key('btn-salvar'))        // por Key
+find.byIcon(Icons.search)                  // por ícone
+find.byTooltip('Buscar')                   // por tooltip
+find.descendant(                           // descendente de outro widget
+  of: find.byType(Card),
+  matching: find.byType(Text),
+)
+find.ancestor(                             // ancestral de outro widget
+  of: find.byKey(const Key('preco')),
+  matching: find.byType(ListTile),
+)
+
+// Matchers — verificar estado
+expect(find.text('Título'), findsOneWidget);       // exatamente 1
+expect(find.byType(Card), findsNWidgets(3));        // exatamente 3
+expect(find.text('Erro'), findsNothing);            // nenhum
+expect(find.byType(TextField), findsWidgets);       // 1 ou mais
+
+// Verificar propriedades do widget encontrado
+final texto = tester.widget<Text>(find.byKey(const Key('preco')));
+expect(texto.data, equals('R\$ 299,90'));
+
+final botao = tester.widget<ElevatedButton>(find.byType(ElevatedButton));
+expect(botao.onPressed, isNull); // botão desabilitado
+```
+
+---
+
+#### Interações
+
+```dart
+testWidgets('formulário de login valida campos obrigatórios', (tester) async {
+  await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+
+  // Digitar em um campo de texto
+  await tester.enterText(find.byKey(const Key('campo-email')), 'user@test.com');
+  await tester.enterText(find.byKey(const Key('campo-senha')), 'Senha@123');
+
+  // Tocar em um botão
+  await tester.tap(find.text('Entrar'));
+
+  // pump() — processa um único frame (ex.: setState síncrono)
+  await tester.pump();
+
+  // pumpAndSettle() — executa frames até não haver mais animações/timers
+  await tester.pumpAndSettle();
+
+  // Verificar navegação ou estado pós-ação
+  expect(find.text('Entrar'), findsNothing); // navegou para outra tela
+
+  // Scroll
+  await tester.scrollUntilVisible(
+    find.text('Termos de uso'),
+    500,
+    scrollable: find.byType(Scrollable).first,
+  );
+
+  // Drag
+  await tester.drag(find.byType(RefreshIndicator), const Offset(0, 300));
+  await tester.pumpAndSettle();
+});
+
+testWidgets('exibe mensagem de erro para e-mail inválido', (tester) async {
+  await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
+
+  await tester.tap(find.text('Entrar')); // submeter sem preencher
+  await tester.pump();
+
+  expect(find.text('Campo obrigatório'), findsWidgets);
+});
+```
+
+---
+
+#### Testes com Riverpod — ProviderScope Override
+
+Para testar widgets que consomem providers, envolva com `ProviderScope` e use `overrides` para injetar dependências fake.
+
+```dart
+// test/widget/produtos_screen_test.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+
+class FakeProdutosNotifier extends AsyncNotifier<List<Produto>>
+    with Mock
+    implements ProdutosNotifier {
+  @override
+  Future<List<Produto>> build() async => [
+        Produto(id: 1, nome: 'Item Mock', preco: 10, disponivel: true),
+        Produto(id: 2, nome: 'Item B', preco: 20, disponivel: false),
+      ];
+}
+
+void main() {
+  testWidgets('ProdutosScreen exibe lista quando há dados', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          // Substitui o provider real pelo fake
+          produtosNotifierProvider.overrideWith(FakeProdutosNotifier.new),
+        ],
+        child: const MaterialApp(home: ProdutosScreen()),
+      ),
+    );
+
+    // Aguarda o FutureProvider resolver
+    await tester.pumpAndSettle();
+
+    expect(find.text('Item Mock'), findsOneWidget);
+    expect(find.text('Item B'), findsOneWidget);
+  });
+
+  testWidgets('ProdutosScreen exibe loading enquanto carrega', (tester) async {
+    // Provider que nunca resolve — simula carregamento infinito
+    final sempreCarregando = AsyncNotifierProvider<FakeProdutosNotifier, List<Produto>>(
+      () => throw UnimplementedError(),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          produtosNotifierProvider.overrideWith(() => FakeProdutosNotifier()
+            ..state = const AsyncLoading()),
+        ],
+        child: const MaterialApp(home: ProdutosScreen()),
+      ),
+    );
+
+    await tester.pump(); // um frame — ainda carregando
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+  });
+
+  testWidgets('ProdutosScreen exibe mensagem de erro', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          produtosNotifierProvider.overrideWith(() => FakeProdutosNotifier()
+            ..state = AsyncError(Exception('Sem conexão'), StackTrace.empty)),
+        ],
+        child: const MaterialApp(home: ProdutosScreen()),
+      ),
+    );
+
+    await tester.pump();
+
+    expect(find.textContaining('Sem conexão'), findsOneWidget);
+  });
+}
+```
+
+---
+
+### Testes de Integração e E2E
+
+Executam o app completo em um emulador ou dispositivo real. Mais lentos, mas verificam fluxos de ponta a ponta com UI real.
+
+#### Configuração do integration_test
+
+`integration_test` já vem no Flutter SDK — não precisa de `pub add`. Apenas adicione ao `pubspec.yaml`:
+
+```yaml
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+```
+
+Crie o arquivo de entrada para os testes:
+
+```dart
+// integration_test/app_test.dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:meu_app/main.dart' as app;
+
+void main() {
+  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  // Importar os grupos de teste
+  group('Fluxo de autenticação', authFlowTests);
+  group('Fluxo de produtos', produtosFlowTests);
+}
+```
+
+---
+
+#### Escrevendo Testes de Integração
+
+```dart
+// integration_test/flows/auth_flow_test.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:meu_app/main.dart' as app;
+
+void authFlowTests() {
+  testWidgets('login com sucesso navega para a tela inicial', (tester) async {
+    app.main();
+    await tester.pumpAndSettle();
+
+    // Aguardar a tela de login aparecer
+    expect(find.byKey(const Key('campo-email')), findsOneWidget);
+
+    // Preencher formulário
+    await tester.enterText(find.byKey(const Key('campo-email')), 'admin@test.com');
+    await tester.enterText(find.byKey(const Key('campo-senha')), 'Senha@123');
+    await tester.tap(find.text('Entrar'));
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+
+    // Verificar que chegou na tela inicial
+    expect(find.text('Catálogo'), findsOneWidget);
+  });
+
+  testWidgets('logout retorna à tela de login', (tester) async {
+    app.main();
+    await tester.pumpAndSettle();
+
+    // Assume que já está logado (ou faz o login aqui)
+    await _fazerLogin(tester);
+
+    // Abrir menu e tocar em Sair
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Sair'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Entrar'), findsOneWidget);
+  });
+}
+
+Future<void> _fazerLogin(WidgetTester tester) async {
+  await tester.enterText(find.byKey(const Key('campo-email')), 'admin@test.com');
+  await tester.enterText(find.byKey(const Key('campo-senha')), 'Senha@123');
+  await tester.tap(find.text('Entrar'));
+  await tester.pumpAndSettle(const Duration(seconds: 3));
+}
+```
+
+```dart
+// integration_test/flows/produto_flow_test.dart
+void produtosFlowTests() {
+  testWidgets('busca filtra a lista de produtos', (tester) async {
+    app.main();
+    await tester.pumpAndSettle();
+    await _fazerLogin(tester);
+
+    // Navegar para busca
+    await tester.tap(find.byIcon(Icons.search));
+    await tester.pumpAndSettle();
+
+    // Digitar termo de busca
+    await tester.enterText(find.byType(TextField), 'Notebook');
+    await tester.pumpAndSettle();
+
+    // Verificar que apenas itens relevantes aparecem
+    expect(find.textContaining('Notebook'), findsWidgets);
+  });
+
+  testWidgets('cadastrar produto novo aparece na lista', (tester) async {
+    app.main();
+    await tester.pumpAndSettle();
+    await _fazerLogin(tester);
+
+    // Tocar no FAB
+    await tester.tap(find.byType(FloatingActionButton));
+    await tester.pumpAndSettle();
+
+    // Preencher formulário
+    await tester.enterText(find.byKey(const Key('campo-nome')), 'Produto Teste IT');
+    await tester.enterText(find.byKey(const Key('campo-preco')), '149.90');
+    await tester.tap(find.text('Salvar'));
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+
+    // Verificar que voltou à lista com o novo produto
+    expect(find.text('Produto Teste IT'), findsOneWidget);
+  });
+}
+```
+
+---
+
+#### E2E com Patrol
+
+[Patrol](https://pub.dev/packages/patrol) estende o `integration_test` com acesso a APIs nativas do dispositivo: notificações, permissões, deep links e interações fora do app.
+
+**Instalação:**
+
+```bash
+flutter pub add dev:patrol
+dart pub global activate patrol_cli
+```
+
+**Configuração Android — `android/app/build.gradle`:**
+
+```gradle
+android {
+  defaultConfig {
+    testInstrumentationRunner "pl.leancode.patrol.PatrolJUnitRunner"
+    testInstrumentationRunnerArguments clearPackageData: "true"
+  }
+  testOptions {
+    execution "ANDROIDX_TEST_ORCHESTRATOR"
+  }
+}
+
+dependencies {
+  androidTestUtil "androidx.test:orchestrator:1.4.2"
+}
+```
+
+**Exemplo de teste com Patrol:**
+
+```dart
+// integration_test/patrol/notificacao_test.dart
+import 'package:flutter_test/flutter_test.dart';
+import 'package:patrol/patrol.dart';
+import 'package:meu_app/main.dart' as app;
+
+void main() {
+  patrolTest(
+    'aceitar permissão de notificação e receber alerta',
+    // Configura timeouts nativos por plataforma
+    nativeAutomation: true,
+    ($) async {
+      app.main();
+      await $.pumpAndSettle();
+
+      // Fazer login
+      await $(find.byKey(const Key('campo-email'))).enterText('user@test.com');
+      await $(find.byKey(const Key('campo-senha'))).enterText('Senha@123');
+      await $(find.text('Entrar')).tap();
+      await $.pumpAndSettle();
+
+      // Tocar no botão que solicita permissão de notificação
+      await $(find.text('Ativar alertas')).tap();
+      await $.pumpAndSettle();
+
+      // Interagir com o diálogo NATIVO do sistema operacional
+      if (await $.native.isPermissionDialogVisible()) {
+        await $.native.grantPermissionWhenInUse();
+      }
+
+      await $.pumpAndSettle();
+      expect($(find.text('Alertas ativados')), findsOneWidget);
+    },
+  );
+
+  patrolTest(
+    'deep link abre tela de produto correto',
+    nativeAutomation: true,
+    ($) async {
+      app.main();
+      await $.pumpAndSettle();
+
+      // Abrir deep link via Patrol (acesso nativo)
+      await $.native.openApp(appId: 'com.empresa.meuapp');
+      await $.native.pressBack();
+
+      // Simular abertura via deep link
+      // (Patrol lança o intent correto no Android / Universal Link no iOS)
+      await $.native.openNotification(0); // abre a primeira notificação pendente
+
+      await $.pumpAndSettle();
+      expect($(find.byKey(const Key('produto-detalhe'))), findsOneWidget);
+    },
+  );
+}
+```
+
+---
+
+#### Rodando os Testes
+
+```bash
+# Testes unitários e de widget — sem dispositivo
+flutter test
+
+# Testes unitários com watcher (re-executa ao salvar)
+flutter test --watch
+
+# Relatório de cobertura
+flutter test --coverage
+genhtml coverage/lcov.info -o coverage/html
+open coverage/html/index.html   # macOS
+start coverage/html/index.html  # Windows
+
+# Testes de integração — requer emulador ou dispositivo conectado
+flutter test integration_test/
+
+# Testes de integração em dispositivo específico
+flutter test integration_test/ -d emulator-5554
+
+# Patrol — requer patrol_cli instalado
+patrol test                          # todos os testes Patrol
+patrol test -t integration_test/patrol/notificacao_test.dart
+
+# Testes de integração no Firebase Test Lab (CI/CD)
+gcloud firebase test android run \
+  --type instrumentation \
+  --app build/app/outputs/apk/debug/app-debug.apk \
+  --test build/app/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+  --timeout 3m
+```
+
+**Exemplo de pipeline CI (GitHub Actions):**
+
+```yaml
+# .github/workflows/test.yml
+name: Testes Flutter
+
+on: [push, pull_request]
+
+jobs:
+  unit-widget:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.0'
+      - run: flutter pub get
+      - run: flutter test --coverage
+      - uses: codecov/codecov-action@v4
+        with:
+          file: coverage/lcov.info
+
+  integration:
+    runs-on: macos-latest   # necessário para emulador Android no GitHub Actions
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          script: flutter test integration_test/
+```
+
+---
+
+## 12. Desempenho e Otimização
+
+Técnicas para melhorar a performance de aplicações Flutter, desde a reutilização de instâncias até ferramentas de profiling. Para boas práticas específicas de layout (const, Slivers, LayoutBuilder, build puro), consulte a seção [Boas Práticas de Layout e Performance](#boas-práticas-de-layout-e-performance).
+
+### Singleton e Reutilização de Instâncias
+
+Serviços como clientes HTTP, conexões com banco de dados e configurações globais devem ser instanciados uma única vez e compartilhados por toda a aplicação.
+
+**Singleton com classe Dart pura:**
+
+```dart
+// lib/core/network/dio_client.dart
+class DioClient {
+  DioClient._();
+  static final DioClient instance = DioClient._();
+
+  final dio = Dio(BaseOptions(
+    baseUrl: 'https://api.exemplo.com',
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 10),
+  ));
+}
+
+// Uso — sempre a mesma instância
+final response = await DioClient.instance.dio.get('/produtos');
+```
+
+**Singleton com late + inicialização assíncrona:**
+
+```dart
+// lib/core/database/database_service.dart
+class DatabaseService {
+  DatabaseService._();
+  static final DatabaseService instance = DatabaseService._();
+
+  late final Database _db;
+
+  Future<void> init() async {
+    _db = await openDatabase('app.db', version: 1, onCreate: (db, v) async {
+      await db.execute('CREATE TABLE produtos (id INTEGER PRIMARY KEY, nome TEXT)');
+    });
+  }
+
+  Database get db => _db;
+}
+
+// No main.dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseService.instance.init();
+  runApp(const App());
+}
+```
+
+**Singleton via Riverpod (preferível em projetos com Riverpod):**
+
+```dart
+// Provider singleton — criado uma vez, vive para sempre
+final dioProvider = Provider<Dio>((ref) {
+  return Dio(BaseOptions(baseUrl: 'https://api.exemplo.com'));
+});
+
+// Qualquer outro provider pode depender dele
+final produtoRepositoryProvider = Provider<ProdutoRepository>((ref) {
+  return ProdutoRepository(ref.watch(dioProvider));
+});
+```
+
+**Singleton via flutter_modular:**
+
+```dart
+// Registra como singleton — mesma instância para toda a aplicação
+@override
+void binds(Injector i) {
+  i.addSingleton<AuthService>(AuthService.new);
+  i.addSingleton<DioClient>(() => DioClient(i.get<AuthService>()));
+}
+
+// Uso em qualquer lugar
+final authService = Modular.get<AuthService>();
+```
+
+> **Quando usar singleton:** clientes HTTP, serviços de autenticação, acesso a banco de dados, configurações globais. **Quando evitar:** objetos com estado que varia por tela ou por contexto — nesses casos, use providers com escopo ou instâncias locais.
+
+---
+
+### Reaproveitamento de Widgets
+
+Extrair widgets em classes separadas é mais eficiente que usar funções que retornam widgets — o Flutter reconhece classes como nós independentes na árvore e pode otimizar rebuilds.
+
+**Classe vs função:**
+
+```dart
+// ❌ Função — rebuild junto com o pai, sem identidade na árvore
+Widget _buildHeader(String titulo) {
+  return Container(
+    padding: const EdgeInsets.all(16),
+    child: Text(titulo, style: const TextStyle(fontSize: 20)),
+  );
+}
+
+// ✅ Classe — o Flutter rastreia como nó independente
+class AppHeader extends StatelessWidget {
+  final String titulo;
+  const AppHeader({super.key, required this.titulo});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: Text(titulo, style: const TextStyle(fontSize: 20)),
+    );
+  }
+}
+```
+
+**Widget reutilizável com configuração flexível:**
+
+```dart
+// lib/core/widgets/app_card.dart
+class AppCard extends StatelessWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final EdgeInsets padding;
+  final double elevation;
+
+  const AppCard({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.padding = const EdgeInsets.all(16),
+    this.elevation = 2,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: elevation,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(padding: padding, child: child),
+      ),
+    );
+  }
+}
+```
+
+**const constructors — reutilização automática pelo framework:**
+
+```dart
+// ❌ Cria nova instância a cada rebuild do pai
+Column(children: [
+  Icon(Icons.star, color: Colors.amber),
+  SizedBox(height: 8),
+  Text('Favorito'),
+])
+
+// ✅ Instâncias const são canônicas — zero alocação
+const Column(children: [
+  Icon(Icons.star, color: Colors.amber),
+  SizedBox(height: 8),
+  Text('Favorito'),
+])
+```
+
+**Pré-computar widgets que não mudam:**
+
+```dart
+class ProdutoListScreen extends StatelessWidget {
+  const ProdutoListScreen({super.key});
+
+  // Widget criado uma vez, reutilizado em cada build
+  static const _emptyState = Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.inbox, size: 64, color: Colors.grey),
+        SizedBox(height: 16),
+        Text('Nenhum produto encontrado'),
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    // ...
+    if (produtos.isEmpty) return _emptyState;
+    // ...
+  }
+}
+```
+
+---
+
+### Cache de Dados e Imagens
+
+**Cache de imagens com `cached_network_image`:**
+
+```yaml
+dependencies:
+  cached_network_image: ^3.4.0
+```
+
+```dart
+// Substitui Image.network em toda a aplicação
+CachedNetworkImage(
+  imageUrl: produto.imagemUrl ?? '',
+  width: 80,
+  height: 80,
+  fit: BoxFit.cover,
+  placeholder: (_, __) => const Center(
+    child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2)),
+  ),
+  errorWidget: (_, __, ___) => const Icon(Icons.broken_image, size: 40),
+  // Cache por 7 dias (padrão)
+  cacheManager: CacheManager(Config(
+    'imagens_cache',
+    stalePeriod: const Duration(days: 7),
+    maxNrOfCacheObjects: 200,
+  )),
+)
+```
+
+**Cache de dados em memória com Riverpod:**
+
+```dart
+// keepAlive impede que o provider seja descartado quando não há listeners
+@Riverpod(keepAlive: true)
+Future<List<Categoria>> categorias(CategoriasRef ref) async {
+  final dio = ref.watch(dioProvider);
+  final response = await dio.get('/categorias');
+  return (response.data as List).map((e) => Categoria.fromJson(e)).toList();
+}
+
+// Dados buscados uma vez, reutilizados em toda a aplicação
+// Para forçar re-fetch: ref.invalidate(categoriasProvider)
+```
+
+**Cache manual com expiração:**
+
+```dart
+// lib/core/cache/memory_cache.dart
+class MemoryCache<T> {
+  final Duration ttl;
+  final Map<String, _CacheEntry<T>> _store = {};
+
+  MemoryCache({this.ttl = const Duration(minutes: 5)});
+
+  T? get(String key) {
+    final entry = _store[key];
+    if (entry == null) return null;
+    if (DateTime.now().isAfter(entry.expiry)) {
+      _store.remove(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  void set(String key, T value) {
+    _store[key] = _CacheEntry(value: value, expiry: DateTime.now().add(ttl));
+  }
+
+  void invalidate(String key) => _store.remove(key);
+  void clear() => _store.clear();
+}
+
+class _CacheEntry<T> {
+  final T value;
+  final DateTime expiry;
+  const _CacheEntry({required this.value, required this.expiry});
+}
+
+// Uso no repositório
+class ProdutoRepository {
+  final Dio _dio;
+  final _cache = MemoryCache<List<Produto>>(ttl: const Duration(minutes: 10));
+
+  ProdutoRepository(this._dio);
+
+  Future<List<Produto>> listar({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cached = _cache.get('produtos');
+      if (cached != null) return cached;
+    }
+    final response = await _dio.get('/produtos');
+    final produtos = (response.data as List).map((e) => Produto.fromJson(e)).toList();
+    _cache.set('produtos', produtos);
+    return produtos;
+  }
+}
+```
+
+---
+
+### Lazy Loading e Inicialização sob Demanda
+
+**late para inicialização preguiçosa:**
+
+```dart
+class ProdutoDetalheScreen extends StatefulWidget {
+  final int id;
+  const ProdutoDetalheScreen({super.key, required this.id});
+
+  @override
+  State<ProdutoDetalheScreen> createState() => _ProdutoDetalheScreenState();
+}
+
+class _ProdutoDetalheScreenState extends State<ProdutoDetalheScreen> {
+  // Criado apenas quando acessado pela primeira vez
+  late final _animCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 300),
+  );
+
+  late final _scrollCtrl = ScrollController();
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  // ...
+}
+```
+
+**Lazy loading de módulos com flutter_modular:**
+
+```dart
+// Módulo admin só é carregado quando o usuário navega para /admin
+r.module('/admin', module: AdminModule());
+// O AdminModule (binds e routes) só é instanciado no primeiro acesso
+```
+
+**Lazy loading de dados com FutureProvider (Riverpod):**
+
+```dart
+// Dados carregados apenas quando a tela é exibida
+@riverpod
+Future<ProdutoDetalhe> produtoDetalhe(ProdutoDetalheRef ref, int id) async {
+  final dio = ref.watch(dioProvider);
+  final response = await dio.get('/produtos/$id');
+  return ProdutoDetalhe.fromJson(response.data);
+}
+
+// Na tela — carrega só quando o widget monta
+final detalheAsync = ref.watch(produtoDetalheProvider(widget.id));
+return detalheAsync.when(
+  loading: () => const CircularProgressIndicator(),
+  error: (e, _) => Text('Erro: $e'),
+  data: (produto) => ProdutoDetalheView(produto: produto),
+);
+```
+
+**Carregamento condicional de recursos pesados:**
+
+```dart
+// ❌ Carrega o mapa mesmo que o usuário nunca role até ele
+Column(children: [
+  InfoSection(),
+  MapaSection(),
+  ComentariosSection(),
+])
+
+// ✅ VisibilityDetector carrega o mapa só quando visível
+Column(children: [
+  InfoSection(),
+  VisibilityDetector(
+    key: const Key('mapa'),
+    onVisibilityChanged: (info) {
+      if (info.visibleFraction > 0 && !_mapaCarregado) {
+        setState(() => _mapaCarregado = true);
+      }
+    },
+    child: _mapaCarregado
+        ? const MapaSection()
+        : const SizedBox(height: 300, child: Center(child: Text('Carregando mapa...'))),
+  ),
+  ComentariosSection(),
+])
+```
+
+---
+
+### Isolates — Processamento Pesado fora da UI Thread
+
+O Flutter roda a UI em uma única thread. Operações pesadas (parsing de JSON grande, compressão de imagens, cálculos complexos) devem ser movidas para isolates para evitar travamentos.
+
+**`compute` — isolate simples para uma operação:**
+
+```dart
+// Função top-level (obrigatório para compute)
+List<Produto> _parseProdutos(String jsonString) {
+  final list = jsonDecode(jsonString) as List;
+  return list.map((e) => Produto.fromJson(e)).toList();
+}
+
+// Uso — parsing em isolate separado
+Future<List<Produto>> buscarProdutos() async {
+  final response = await dio.get('/produtos');
+  // Parsing pesado roda em outra thread
+  return compute(_parseProdutos, jsonEncode(response.data));
+}
+```
+
+**`Isolate.run` (Dart 3+) — sintaxe mais limpa:**
+
+```dart
+Future<List<Produto>> buscarProdutos() async {
+  final response = await dio.get('/produtos');
+  final jsonString = jsonEncode(response.data);
+
+  return Isolate.run(() {
+    final list = jsonDecode(jsonString) as List;
+    return list.map((e) => Produto.fromJson(e)).toList();
+  });
+}
+```
+
+**Compressão de imagem em isolate:**
+
+```dart
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
+
+// Função top-level para usar com compute
+Uint8List _comprimirImagem((Uint8List bytes, int qualidade) args) {
+  final image = img.decodeImage(args.$1)!;
+  final resized = img.copyResize(image, width: 800);
+  return Uint8List.fromList(img.encodeJpg(resized, quality: args.$2));
+}
+
+Future<Uint8List> comprimirImagem(Uint8List bytes, {int qualidade = 75}) {
+  return compute(_comprimirImagem, (bytes, qualidade));
+}
+```
+
+> **Quando usar isolates:** parsing de JSON > 1 MB, processamento de imagens, criptografia, ordenação de listas grandes, conversão de formatos. **Quando evitar:** operações rápidas (< 16ms) — o overhead de criar o isolate supera o ganho.
+
+---
+
+### RepaintBoundary — Limitar Áreas de Repintura
+
+O Flutter repinta widgets em cascata. `RepaintBoundary` cria uma camada de pintura isolada — widgets fora do boundary não são repintados quando o conteúdo interno muda.
+
+```dart
+// ❌ Animação no cabeçalho repinta a lista inteira
+Column(children: [
+  AnimatedHeader(),    // muda a cada frame
+  ProductList(),       // repintada desnecessariamente
+])
+
+// ✅ RepaintBoundary isola a animação
+Column(children: [
+  RepaintBoundary(child: AnimatedHeader()),
+  ProductList(),       // não é repintada
+])
+```
+
+**Casos de uso mais comuns:**
+
+```dart
+// Animações contínuas (relógio, loading customizado, gráficos)
+RepaintBoundary(
+  child: CustomPaint(painter: ChartPainter(data: _chartData)),
+)
+
+// Widget com vídeo ou mapa que atualiza frequentemente
+RepaintBoundary(
+  child: GoogleMap(initialCameraPosition: _posicao, ...),
+)
+
+// Item de lista com animação individual
+ListView.builder(
+  itemCount: items.length,
+  itemBuilder: (_, i) => RepaintBoundary(
+    child: AnimatedListItem(item: items[i]),
+  ),
+)
+```
+
+> **Diagnóstico:** ative `debugRepaintRainbowEnabled = true` no `main.dart` para visualizar quais áreas estão sendo repintadas — cada repintura muda a cor da borda do widget.
+
+---
+
+### Otimização de Listas
+
+**`ListView.builder` em vez de `ListView`:**
+
+```dart
+// ❌ Renderiza TODOS os itens de uma vez — lento com centenas de itens
+ListView(
+  children: produtos.map((p) => CardProduto(produto: p)).toList(),
+)
+
+// ✅ Renderiza apenas os itens visíveis + buffer
+ListView.builder(
+  itemCount: produtos.length,
+  itemBuilder: (_, i) => CardProduto(produto: produtos[i]),
+)
+```
+
+**`itemExtent` para listas com itens de altura fixa:**
+
+```dart
+// Flutter calcula a posição de cada item sem medi-los — scroll mais rápido
+ListView.builder(
+  itemCount: 10000,
+  itemExtent: 72, // todos os itens têm 72px de altura
+  itemBuilder: (_, i) => ListTile(title: Text('Item $i')),
+)
+```
+
+**`addAutomaticKeepAlives: false` para listas longas:**
+
+```dart
+// Descarta itens ao sair do viewport — menor uso de memória
+ListView.builder(
+  addAutomaticKeepAlives: false,
+  itemCount: 10000,
+  itemBuilder: (_, i) => ItemWidget(item: items[i]),
+)
+```
+
+**`const` key para itens que não mudam de posição:**
+
+```dart
+ListView.builder(
+  itemCount: categorias.length,
+  itemBuilder: (_, i) {
+    final cat = categorias[i];
+    return ListTile(
+      key: ValueKey(cat.id), // Flutter reconhece o item e evita rebuild desnecessário
+      title: Text(cat.nome),
+    );
+  },
+)
+```
+
+**SliverList + SliverGrid — múltiplas listas em um único ScrollView:**
+
+```dart
+// ❌ ListView dentro de SingleChildScrollView — problemas de performance
+SingleChildScrollView(child: Column(children: [
+  ListView(shrinkWrap: true, physics: NeverScrollableScrollPhysics(), ...),
+  GridView(shrinkWrap: true, physics: NeverScrollableScrollPhysics(), ...),
+]))
+
+// ✅ CustomScrollView com Slivers — renderização lazy unificada
+CustomScrollView(slivers: [
+  const SliverAppBar(title: Text('Loja'), pinned: true),
+  SliverList.builder(
+    itemCount: destaques.length,
+    itemBuilder: (_, i) => DestacardCard(item: destaques[i]),
+  ),
+  SliverGrid.builder(
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2),
+    itemCount: produtos.length,
+    itemBuilder: (_, i) => ProdutoCard(produto: produtos[i]),
+  ),
+])
+```
+
+---
+
+### Diagnóstico e Ferramentas de Profiling
+
+**DevTools — profiling integrado:**
+
+```bash
+# Iniciar o app em modo profile (mais próximo de release, mas com DevTools)
+flutter run --profile
+
+# Abrir DevTools no navegador
+flutter pub global activate devtools
+dart devtools
+```
+
+| Aba DevTools | O que diagnostica |
+|---|---|
+| **Flutter Inspector** | Árvore de widgets, rebuild counts, layout constraints |
+| **Timeline** | Frames, jank, duração de builds e paints |
+| **Memory** | Alocações, leaks, snapshots de heap |
+| **CPU Profiler** | Funções mais custosas, flame chart |
+| **Network** | Requisições HTTP, tempo de resposta |
+
+**Flags de debug para diagnóstico visual:**
+
+```dart
+// lib/main.dart — ative durante o desenvolvimento, nunca em produção
+import 'package:flutter/rendering.dart';
+
+void main() {
+  // Visualizar áreas sendo repintadas (muda cor a cada repaint)
+  debugRepaintRainbowEnabled = true;
+
+  // Exibir bordas de todos os widgets (debug de layout)
+  debugPaintSizeEnabled = true;
+
+  // Mostrar baseline dos textos
+  debugPaintBaselinesEnabled = true;
+
+  runApp(const App());
+}
+```
+
+**Medir tempo de operações em código:**
+
+```dart
+// Stopwatch para medir duração de operações
+final sw = Stopwatch()..start();
+final produtos = await repository.listar();
+sw.stop();
+debugPrint('Listagem levou ${sw.elapsedMilliseconds}ms');
+
+// Timeline events (visíveis no DevTools → Timeline)
+import 'dart:developer';
+
+Timeline.startSync('parseProdutos');
+final result = parseProdutos(jsonData);
+Timeline.finishSync();
+```
+
+**Checklist de performance antes do release:**
+
+```bash
+# Build em release com tree shaking e minificação
+flutter build apk --release
+flutter build ipa --release
+
+# Analisar tamanho do app
+flutter build apk --analyze-size
+flutter build appbundle --analyze-size
+
+# Verificar uso de widgets descontinuados ou ineficientes
+flutter analyze
+```
+
+| Verificação | Comando / Ação |
+|---|---|
+| Jank (frames > 16ms) | DevTools → Timeline → verificar frames vermelhos |
+| Memory leaks | DevTools → Memory → snapshot antes e depois de navegar |
+| Rebuilds excessivos | `debugPrintRebuildDirtyWidgets = true` |
+| Repaints desnecessários | `debugRepaintRainbowEnabled = true` |
+| Tamanho do APK/IPA | `flutter build --analyze-size` |
+| Imagens não cacheadas | Verificar uso de `CachedNetworkImage` em vez de `Image.network` |
+| Listas sem builder | Buscar `ListView(children:` no código — trocar por `ListView.builder` |
+
+---
+
 > **Referências:**
 > - [flutter.dev](https://flutter.dev) — documentação oficial
 > - [pub.dev](https://pub.dev) — repositório de pacotes Dart/Flutter
@@ -6552,3 +10410,6 @@ ref.watch(produtosProvider).when(
 > - [Dio](https://pub.dev/packages/dio) — cliente HTTP
 > - [flutter_secure_storage](https://pub.dev/packages/flutter_secure_storage) — armazenamento seguro
 > - [webview_flutter](https://pub.dev/packages/webview_flutter) — WebView oficial do Flutter team
+> - [mocktail](https://pub.dev/packages/mocktail) — mocking para testes unitários
+> - [integration_test](https://pub.dev/packages/integration_test) — testes de integração oficiais
+> - [patrol](https://patrol.leancode.co) — testes E2E com acesso a APIs nativas
