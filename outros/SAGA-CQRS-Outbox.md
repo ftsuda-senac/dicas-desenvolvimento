@@ -34,6 +34,7 @@
    - [8.7 Semânticas de Entrega do Kafka e Garantia End-to-End](#87-semânticas-de-entrega-do-kafka-e-garantia-end-to-end)
    - [8.8 Ordenação de Eventos e Evolução de Schema](#88-ordenação-de-eventos-e-evolução-de-schema)
    - [8.9 Estratégias de Teste](#89-estratégias-de-teste)
+   - [8.10 Pessimistic Locking e Controle de Concorrência](#810-pessimistic-locking-e-controle-de-concorrência)
 9. [Tutorial Prático Completo — E-commerce com Microsserviços](#9-tutorial-prático-completo--e-commerce-com-microsserviços)
    - [9.1 Visão Geral da Arquitetura](#91-visão-geral-da-arquitetura)
    - [9.2 Estrutura do Projeto e Dependências Maven](#92-estrutura-do-projeto-e-dependências-maven)
@@ -44,10 +45,21 @@
    - [9.7 Projeção CQRS — Consulta Consolidada de Pedidos](#97-projeção-cqrs--consulta-consolidada-de-pedidos)
    - [9.8 Docker Compose e Configuração](#98-docker-compose-e-configuração)
    - [9.9 Testando o Fluxo Completo](#99-testando-o-fluxo-completo)
-10. [Tabela Comparativa dos Padrões](#10-tabela-comparativa-dos-padrões)
-11. [Quando Usar (e Quando Não Usar)](#11-quando-usar-e-quando-não-usar)
-12. [Referências e Leitura Complementar](#12-referências-e-leitura-complementar)
-13. [Glossário](#13-glossário)
+10. [Tutorial Prático — Sistema Bancário com Microsserviços](#10-tutorial-prático--sistema-bancário-com-microsserviços)
+    - [10.1 Visão Geral e Requisitos](#101-visão-geral-e-requisitos)
+    - [10.2 Arquitetura e Microsserviços](#102-arquitetura-e-microsserviços)
+    - [10.3 Modelo de Domínio Bancário — Ledger com Partidas Dobradas](#103-modelo-de-domínio-bancário--ledger-com-partidas-dobradas)
+    - [10.4 Serviço de Contas (account-service)](#104-serviço-de-contas-account-service)
+    - [10.5 Serviço de Transferências (transfer-service) — SAGA Orquestrada](#105-serviço-de-transferências-transfer-service--saga-orquestrada)
+    - [10.6 Gateway PIX (pix-gateway-service) — Integração Externa com Circuit Breaker](#106-gateway-pix-pix-gateway-service--integração-externa-com-circuit-breaker)
+    - [10.7 Serviço de Extrato (statement-service) — Event Sourcing + CQRS](#107-serviço-de-extrato-statement-service--event-sourcing--cqrs)
+    - [10.8 Fluxos Completos — Diagramas Mermaid](#108-fluxos-completos--diagramas-mermaid)
+    - [10.9 Docker Compose e Testando o Fluxo](#109-docker-compose-e-testando-o-fluxo)
+11. [Outros Exemplos de Aplicação dos Padrões](#11-outros-exemplos-de-aplicação-dos-padrões)
+12. [Tabela Comparativa dos Padrões](#12-tabela-comparativa-dos-padrões)
+13. [Quando Usar (e Quando Não Usar)](#13-quando-usar-e-quando-não-usar)
+14. [Referências e Leitura Complementar](#14-referências-e-leitura-complementar)
+15. [Glossário](#15-glossário)
 
 ---
 
@@ -2202,6 +2214,108 @@ class PedidoFluxoCompletoIT {
 | **End-to-end** | Fluxo completo REST→Saga→Kafka→Projeção | Testcontainers (todos) + Awaitility |
 | **Contrato** | Schema dos eventos entre serviços | Spring Cloud Contract ou Pact |
 
+### 8.10 Pessimistic Locking e Controle de Concorrência
+
+Em cenários onde múltiplas transações concorrentes podem modificar o mesmo recurso — como o saldo de uma conta bancária — é necessário garantir que apenas uma transação por vez leia e altere o dado. Sem controle, ocorre o **problema do double-spend**:
+
+```
+Problema — double-spend sem locking:
+
+  Thread A (transferência de R$ 500)     Thread B (transferência de R$ 400)
+  ─────────────────────────────────     ─────────────────────────────────
+  t=0  SELECT saldo FROM contas          
+       WHERE id = 42                     
+       → saldo = R$ 800                  
+                                          t=1  SELECT saldo FROM contas
+                                               WHERE id = 42
+                                               → saldo = R$ 800 (mesma leitura!)
+  t=2  800 >= 500? SIM → debita          
+       UPDATE saldo = 300                 
+                                          t=3  800 >= 400? SIM → debita
+                                               UPDATE saldo = 400
+                                               
+  Resultado: saldo = R$ 400 (deveria ser R$ -100 ou segunda rejeitada)
+  → R$ 300 "apareceram do nada". Inconsistência grave.
+```
+
+**Solução 1 — SELECT FOR UPDATE (Pessimistic Locking):**
+
+O banco bloqueia a linha durante a transação, impedindo que outras transações a leiam para escrita:
+
+```java
+public interface ContaRepository extends JpaRepository<Conta, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Conta c WHERE c.id = :id")
+    Optional<Conta> findByIdComLock(@Param("id") Long id);
+}
+```
+
+```
+Com SELECT FOR UPDATE:
+
+  Thread A                               Thread B
+  ─────────────────────────────────     ─────────────────────────────────
+  t=0  SELECT ... FOR UPDATE             
+       WHERE id = 42                     
+       → saldo = R$ 800 (lock obtido)   
+                                          t=1  SELECT ... FOR UPDATE
+                                               WHERE id = 42
+                                               → BLOQUEADO (aguarda lock)
+  t=2  800 >= 500? SIM                    
+       UPDATE saldo = 300                 
+  t=3  COMMIT (libera lock)              
+                                          t=4  → saldo = R$ 300 (lock obtido)
+                                               300 >= 400? NÃO → rejeita
+                                               
+  Resultado correto: primeira aprovada, segunda rejeitada.
+```
+
+**Solução 2 — Optimistic Locking com @Version:**
+
+```java
+@Entity
+public class Conta {
+    @Id private Long id;
+    @Version private Long version; // incrementado a cada UPDATE pelo JPA
+    private BigDecimal saldo;
+    
+    public void debitar(BigDecimal valor) {
+        if (saldo.compareTo(valor) < 0) {
+            throw new SaldoInsuficienteException(id, saldo, valor);
+        }
+        this.saldo = this.saldo.subtract(valor);
+    }
+}
+// Se duas threads lerem a mesma version e tentarem atualizar,
+// a segunda recebe OptimisticLockException e pode retentar.
+```
+
+**Quando usar cada abordagem:**
+
+| Cenário | Recomendação | Justificativa |
+|---------|-------------|---------------|
+| Alta contenção (muitas escritas concorrentes no mesmo registro) | Pessimistic (FOR UPDATE) | Evita retries repetidos; correto na primeira tentativa |
+| Baixa contenção (escritas raras no mesmo registro) | Optimistic (@Version) | Melhor throughput; sem bloqueio de threads |
+| Operação financeira / saldo bancário | **Pessimistic** | Não tolera falha — correto na primeira tentativa |
+| Edição colaborativa de texto | Optimistic | Conflitos raros, retry é aceitável |
+| SAGA — débito de conta | Pessimistic + Idempotência | Lock garante atomicidade; idempotência garante segurança no retry |
+
+```
+Cuidado com deadlocks em pessimistic locking:
+
+  Se SAGA A debita Conta 1 e credita Conta 2, e SAGA B debita Conta 2 e credita Conta 1:
+  
+  SAGA A: lock(Conta 1) ✓ → lock(Conta 2) ← BLOQUEADO (SAGA B tem o lock)
+  SAGA B: lock(Conta 2) ✓ → lock(Conta 1) ← BLOQUEADO (SAGA A tem o lock)
+  → DEADLOCK
+  
+  Solução: adquirir locks sempre na mesma ordem.
+  Ex: ordenar por ID da conta — lock(min(id)) → lock(max(id)).
+  Ou em uma SAGA: separar débito e crédito em transações diferentes
+  (que é o que a SAGA naturalmente faz — cada passo é uma transação local).
+```
+
 ---
 
 ## 9. Tutorial Prático Completo — E-commerce com Microsserviços
@@ -4279,9 +4393,1963 @@ dominio.pedido.pedidoconfirmado  ← evento de domínio (CQRS)
 dominio.pedido.pedidocancelado   ← evento de domínio (CQRS)
 ```
 
+
 ---
 
-## 10. Tabela Comparativa dos Padrões
+## 10. Tutorial Prático — Sistema Bancário com Microsserviços
+
+> **Objetivo:** Demonstrar os padrões SAGA, CQRS, Outbox, Event Sourcing e técnicas complementares em um domínio bancário com requisitos de saldo, extrato, transferências internas e externas (PIX). Este exemplo complementa o tutorial de e-commerce (seção 9), reutilizando a infraestrutura compartilhada (Outbox, Inbox, Relay — seção 9.3) e adicionando conceitos específicos do domínio financeiro: **pessimistic locking** (seção 8.10), **ledger com partidas dobradas**, **Circuit Breaker para integrações externas** (ver System-design.md seção 10) e **Event Sourcing para auditoria regulatória** (seção 6).
+
+### 10.1 Visão Geral e Requisitos
+
+```
+Funcionais:
+  - Consultar saldo em tempo real
+  - Consultar extrato com filtros (data, tipo, valor)
+  - Realizar transferência interna (entre contas do mesmo banco)
+  - Realizar transferência externa via PIX
+  - Receber transferência PIX de outros bancos (webhook)
+  - Garantir que nenhuma transação seja perdida ou duplicada
+
+Não-Funcionais:
+  - Saldo nunca negativo (exceto conta com limite pré-aprovado)
+  - Idempotência rigorosa — retry de transferência não debita duas vezes
+  - Auditoria completa — cada centavo rastreável (regulação BACEN)
+  - Latência: consulta de saldo < 100ms, transferência interna < 2s
+  - Disponibilidade: 99,95% para consultas, 99,9% para transferências
+  - Integração PIX: tolerar indisponibilidade do PSP com Circuit Breaker
+```
+
+**Diferenças em relação ao e-commerce (seção 9):**
+
+| Aspecto | E-commerce | Banco |
+|---------|-----------|-------|
+| **Tolerância a erro** | Pedido cancelado é aceitável | Perder centavos é inaceitável |
+| **Concorrência** | Estoque: contenção moderada | Saldo: alta contenção (mesma conta, múltiplas transferências) |
+| **Locking** | Optimistic (@Version) é suficiente | Pessimistic (SELECT FOR UPDATE) obrigatório |
+| **Auditoria** | Desejável | Obrigatória por regulação |
+| **Modelo contábil** | Simples (status do pedido) | Partidas dobradas (débito + crédito = 0) |
+| **Integração externa** | Gateway de pagamento | PSP/BACEN (PIX) com SLA e Circuit Breaker |
+| **Event Sourcing** | Opcional | Essencial (ledger imutável) |
+
+### 10.2 Arquitetura e Microsserviços
+
+```
+Microsserviços:
+  1. account-service      — gerencia contas e saldos (write side)
+  2. transfer-service     — orquestra SAGAs de transferência
+  3. pix-gateway-service  — integra com PSP via API PIX (Circuit Breaker)
+  4. statement-service    — extrato e saldo consolidado (Event Sourcing + CQRS read side)
+  5. notification-service — notificações de débito/crédito (push, SMS)
+
+Infraestrutura (mesma do e-commerce + Redis):
+  - PostgreSQL (um banco por serviço)
+  - Apache Kafka (eventos e comandos)
+  - Redis (cache de saldo para consulta rápida)
+  - Docker Compose (orquestração local)
+```
+
+```
+Diagrama de arquitetura:
+
+  Cliente (App Mobile / Internet Banking)
+       │
+       ▼
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │                          API Gateway                                     │
+  │  (autenticação JWT, rate limiting, roteamento)                           │
+  └──────┬──────────────┬──────────────────┬─────────────────────────────────┘
+         │              │                  │
+         ▼              ▼                  ▼
+  ┌──────────────┐  ┌──────────────────┐  ┌─────────────────────────┐
+  │   account    │  │   transfer       │  │    statement            │
+  │   service    │  │   service        │  │    service              │
+  │              │  │                  │  │                         │
+  │ • saldo      │  │ • SAGA interna   │  │ • Event Sourcing       │
+  │ • débito     │  │ • SAGA PIX       │  │ • extrato (CQRS read)  │
+  │ • crédito    │  │ • orquestrador   │  │ • saldo consolidado    │
+  │ • SELECT     │  │ • Outbox         │  │ • Redis cache          │
+  │   FOR UPDATE │  └──────┬───────────┘  └──────┬──────────────────┘
+  └──────┬───────┘         │                     │
+         │                 │                     │
+         ▼                 ▼                     ▼
+  ┌──────────────────────────────────────────────────────────────┐
+  │                        Apache Kafka                           │
+  │  Tópicos:                                                     │
+  │   saga.cmd.debitar       saga.cmd.creditar                   │
+  │   saga.cmd.enviar-pix    saga.reply.*                        │
+  │   dominio.conta.*        dominio.transferencia.*             │
+  └──────────────────────────────────────────────────────────────┘
+         │                                       │
+         ▼                                       ▼
+  ┌──────────────┐                        ┌──────────────────┐
+  │ pix-gateway  │                        │  notification    │
+  │ service      │                        │  service         │
+  │              │                        │                  │
+  │ • Circuit    │◄── webhook do PSP      │ • push / SMS     │
+  │   Breaker    │                        │ • e-mail         │
+  │ • API BACEN  │                        └──────────────────┘
+  └──────────────┘
+```
+
+**Padrões aplicados por serviço:**
+
+| Serviço | Padrões |
+|---------|---------|
+| **account-service** | Pessimistic Locking, Outbox, Inbox, Idempotência |
+| **transfer-service** | SAGA Orquestrada, Outbox, Timeout/Stuck Saga |
+| **pix-gateway-service** | Circuit Breaker, Retry, Outbox, Inbox |
+| **statement-service** | Event Sourcing, CQRS, Projeção Assíncrona, Cache (Redis) |
+| **notification-service** | Inbox, DLQ, Retriable |
+
+### 10.3 Modelo de Domínio Bancário — Ledger com Partidas Dobradas
+
+Em sistemas financeiros, toda movimentação segue o princípio de **partidas dobradas** (double-entry bookkeeping): cada transferência gera pelo menos dois lançamentos — um débito e um crédito — cuja soma é sempre zero.
+
+```
+Partidas Dobradas — princípio fundamental:
+
+  Transferência de R$ 500 da Conta A para Conta B:
+
+  ┌───────────────────────────────────────────────────────────────┐
+  │ Ledger (livro razão)                                           │
+  │                                                                 │
+  │ lancamento_id │ conta_id │  tipo   │   valor   │ saldo_apos    │
+  │ ──────────────│──────────│─────────│───────────│───────────────│
+  │ L-001         │ Conta A  │ DEBITO  │ -500.00   │ 2500.00       │
+  │ L-002         │ Conta B  │ CREDITO │ +500.00   │ 1500.00       │
+  │                                                                 │
+  │ Soma dos lançamentos da transferência: (-500) + (+500) = 0  ✓  │
+  │                                                                 │
+  │ Benefícios:                                                     │
+  │ • Rastreabilidade — cada centavo tem origem e destino           │
+  │ • Validação — soma de todos os lançamentos = 0                  │
+  │ • Conciliação — fácil detectar divergências                     │
+  │ • Regulação — exigido por BACEN para instituições financeiras   │
+  └───────────────────────────────────────────────────────────────┘
+
+  Transferência PIX externa — R$ 300 para outro banco:
+
+  ┌───────────────────────────────────────────────────────────────┐
+  │ lancamento_id │ conta_id     │  tipo   │   valor   │ saldo   │
+  │ ──────────────│──────────────│─────────│───────────│─────────│
+  │ L-003         │ Conta A      │ DEBITO  │ -300.00   │ 2200.00 │
+  │ L-004         │ PIX_SAIDA *  │ CREDITO │ +300.00   │   —     │
+  │                                                               │
+  │ * Conta virtual de controle para transações externas.         │
+  │   Mantém o princípio de partidas dobradas mesmo com saída     │
+  │   para fora do sistema.                                       │
+  └───────────────────────────────────────────────────────────────┘
+```
+
+**Schema do banco de dados (account-service):**
+
+```sql
+-- V1__create_account_tables.sql (account-service)
+CREATE TABLE contas (
+    id              BIGSERIAL PRIMARY KEY,
+    titular         VARCHAR(200) NOT NULL,
+    documento       VARCHAR(14) NOT NULL UNIQUE,   -- CPF/CNPJ
+    agencia         VARCHAR(10) NOT NULL,
+    numero_conta    VARCHAR(20) NOT NULL UNIQUE,
+    chave_pix       VARCHAR(100) UNIQUE,           -- e-mail, CPF, telefone ou EVP
+    tipo            VARCHAR(20) NOT NULL DEFAULT 'CORRENTE',
+    saldo           NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    limite_especial NUMERIC(15,2) NOT NULL DEFAULT 0.00,
+    status          VARCHAR(20) NOT NULL DEFAULT 'ATIVA',
+    version         BIGINT NOT NULL DEFAULT 0,
+    criada_em       TIMESTAMP NOT NULL DEFAULT NOW(),
+    atualizada_em   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE lancamentos (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conta_id            BIGINT NOT NULL REFERENCES contas(id),
+    transferencia_id    VARCHAR(100) NOT NULL,
+    tipo                VARCHAR(10) NOT NULL,       -- DEBITO, CREDITO
+    valor               NUMERIC(15,2) NOT NULL,
+    saldo_anterior      NUMERIC(15,2) NOT NULL,
+    saldo_posterior     NUMERIC(15,2) NOT NULL,
+    descricao           VARCHAR(500),
+    criado_em           TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_lancamentos_conta ON lancamentos (conta_id, criado_em DESC);
+CREATE INDEX idx_lancamentos_transferencia ON lancamentos (transferencia_id);
+CREATE UNIQUE INDEX idx_lancamentos_idemp ON lancamentos (transferencia_id, tipo);
+
+-- Dados iniciais para teste
+INSERT INTO contas (titular, documento, agencia, numero_conta, chave_pix, saldo) VALUES
+    ('Alice Silva',   '11111111111', '0001', '100001', 'alice@email.com',     5000.00),
+    ('Bob Santos',    '22222222222', '0001', '100002', '22222222222',          3000.00),
+    ('Carlos Souza',  '33333333333', '0001', '100003', '+5511999990003',      1000.00);
+```
+
+```
+Por que manter saldo na tabela contas E nos lançamentos?
+
+  contas.saldo → "saldo materializado" — leitura rápida O(1)
+                  Atualizado atomicamente com o lançamento (mesma transação).
+
+  lancamentos.saldo_posterior → "trilha de auditoria" — cada lançamento
+                                 registra o saldo após a operação.
+                                 Permite recalcular e validar.
+
+  Reconciliação diária:
+    saldo da conta == saldo_posterior do último lançamento.
+    Se divergir, há um bug — e os lançamentos são a fonte de verdade.
+```
+
+**Schema do transfer-service:**
+
+```sql
+-- V1__create_transfer_tables.sql (transfer-service)
+CREATE TABLE transferencias (
+    id                  VARCHAR(100) PRIMARY KEY,  -- UUID
+    conta_origem_id     BIGINT NOT NULL,
+    conta_destino_id    BIGINT,                    -- NULL para PIX externo
+    chave_pix_destino   VARCHAR(100),              -- preenchido para PIX
+    tipo                VARCHAR(20) NOT NULL,       -- INTERNA, PIX_ENVIO, PIX_RECEBIMENTO
+    valor               NUMERIC(15,2) NOT NULL,
+    descricao           VARCHAR(500),
+    status              VARCHAR(30) NOT NULL DEFAULT 'CRIADA',
+    motivo_falha        TEXT,
+    criada_em           TIMESTAMP NOT NULL DEFAULT NOW(),
+    atualizada_em       TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE saga_states (
+    saga_id             VARCHAR(100) PRIMARY KEY,
+    transferencia_id    VARCHAR(100) NOT NULL REFERENCES transferencias(id),
+    current_step        VARCHAR(30) NOT NULL,
+    status              VARCHAR(20) NOT NULL,
+    retry_count         INT NOT NULL DEFAULT 0,
+    deadline            TIMESTAMP,
+    criado_em           TIMESTAMP NOT NULL DEFAULT NOW(),
+    atualizado_em       TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_saga_running ON saga_states (status, atualizado_em)
+    WHERE status = 'RUNNING';
+```
+
+### 10.4 Serviço de Contas (account-service)
+
+**Entidade Conta com Pessimistic Locking (SELECT FOR UPDATE — ver seção 8.10):**
+
+```java
+package br.com.banco.account.domain;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+
+@Entity
+@Table(name = "contas")
+public class Conta {
+
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String titular;
+    private String documento;
+    private String agencia;
+    private String numeroConta;
+    private String chavePix;
+
+    @Enumerated(EnumType.STRING)
+    private TipoConta tipo = TipoConta.CORRENTE;
+
+    private BigDecimal saldo = BigDecimal.ZERO;
+    private BigDecimal limiteEspecial = BigDecimal.ZERO;
+
+    @Enumerated(EnumType.STRING)
+    private StatusConta status = StatusConta.ATIVA;
+
+    @Version
+    private Long version;
+
+    private Instant criadaEm = Instant.now();
+    private Instant atualizadaEm = Instant.now();
+
+    protected Conta() {}
+
+    public BigDecimal saldoDisponivel() {
+        return saldo.add(limiteEspecial);
+    }
+
+    public Lancamento debitar(BigDecimal valor, String transferenciaId, String descricao) {
+        if (status != StatusConta.ATIVA) {
+            throw new ContaInativaException(id);
+        }
+        if (saldoDisponivel().compareTo(valor) < 0) {
+            throw new SaldoInsuficienteException(id, saldoDisponivel(), valor);
+        }
+        BigDecimal saldoAnterior = this.saldo;
+        this.saldo = this.saldo.subtract(valor);
+        this.atualizadaEm = Instant.now();
+
+        return new Lancamento(id, transferenciaId, TipoLancamento.DEBITO,
+                valor.negate(), saldoAnterior, this.saldo, descricao);
+    }
+
+    public Lancamento creditar(BigDecimal valor, String transferenciaId, String descricao) {
+        if (status != StatusConta.ATIVA) {
+            throw new ContaInativaException(id);
+        }
+        BigDecimal saldoAnterior = this.saldo;
+        this.saldo = this.saldo.add(valor);
+        this.atualizadaEm = Instant.now();
+
+        return new Lancamento(id, transferenciaId, TipoLancamento.CREDITO,
+                valor, saldoAnterior, this.saldo, descricao);
+    }
+
+    // getters
+    public Long getId() { return id; }
+    public String getTitular() { return titular; }
+    public String getDocumento() { return documento; }
+    public String getNumeroConta() { return numeroConta; }
+    public String getChavePix() { return chavePix; }
+    public BigDecimal getSaldo() { return saldo; }
+    public BigDecimal getSaldoDisponivel() { return saldoDisponivel(); }
+    public StatusConta getStatus() { return status; }
+
+    public enum TipoConta { CORRENTE, POUPANCA, SALARIO }
+    public enum StatusConta { ATIVA, BLOQUEADA, ENCERRADA }
+}
+```
+
+**Repository com lock pessimista:**
+
+```java
+package br.com.banco.account.domain;
+
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.*;
+import java.util.Optional;
+
+public interface ContaRepository extends JpaRepository<Conta, Long> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Conta c WHERE c.id = :id")
+    Optional<Conta> findByIdComLock(@Param("id") Long id);
+
+    Optional<Conta> findByChavePix(String chavePix);
+}
+```
+
+**Entidade Lançamento:**
+
+```java
+package br.com.banco.account.domain;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "lancamentos")
+public class Lancamento {
+
+    @Id
+    private UUID id = UUID.randomUUID();
+    private Long contaId;
+    private String transferenciaId;
+
+    @Enumerated(EnumType.STRING)
+    private TipoLancamento tipo;
+
+    private BigDecimal valor;
+    private BigDecimal saldoAnterior;
+    private BigDecimal saldoPosterior;
+    private String descricao;
+    private Instant criadoEm = Instant.now();
+
+    protected Lancamento() {}
+
+    public Lancamento(Long contaId, String transferenciaId, TipoLancamento tipo,
+                      BigDecimal valor, BigDecimal saldoAnterior,
+                      BigDecimal saldoPosterior, String descricao) {
+        this.contaId = contaId;
+        this.transferenciaId = transferenciaId;
+        this.tipo = tipo;
+        this.valor = valor;
+        this.saldoAnterior = saldoAnterior;
+        this.saldoPosterior = saldoPosterior;
+        this.descricao = descricao;
+    }
+
+    // getters
+    public UUID getId() { return id; }
+    public Long getContaId() { return contaId; }
+    public String getTransferenciaId() { return transferenciaId; }
+    public TipoLancamento getTipo() { return tipo; }
+    public BigDecimal getValor() { return valor; }
+    public BigDecimal getSaldoAnterior() { return saldoAnterior; }
+    public BigDecimal getSaldoPosterior() { return saldoPosterior; }
+    public String getDescricao() { return descricao; }
+    public Instant getCriadoEm() { return criadoEm; }
+}
+
+public enum TipoLancamento { DEBITO, CREDITO }
+```
+
+**Service — débito e crédito (chamado pela SAGA via Kafka):**
+
+```java
+package br.com.banco.account.service;
+
+import br.com.banco.account.domain.*;
+import br.com.banco.common.events.*;
+import br.com.banco.common.outbox.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class ContaService {
+
+    private static final Logger log = LoggerFactory.getLogger(ContaService.class);
+
+    private final ContaRepository contaRepo;
+    private final LancamentoRepository lancamentoRepo;
+    private final OutboxEventRepository outboxRepo;
+    private final ObjectMapper mapper;
+
+    public ContaService(ContaRepository contaRepo, LancamentoRepository lancamentoRepo,
+                        OutboxEventRepository outboxRepo, ObjectMapper mapper) {
+        this.contaRepo = contaRepo;
+        this.lancamentoRepo = lancamentoRepo;
+        this.outboxRepo = outboxRepo;
+        this.mapper = mapper;
+    }
+
+    @Transactional
+    public void debitar(DebitarContaCommand cmd) {
+        // Idempotência: verifica se já existe lançamento para esta transferência
+        if (lancamentoRepo.existsByTransferenciaIdAndTipo(
+                cmd.transferenciaId(), TipoLancamento.DEBITO)) {
+            log.info("Débito já processado para transferência {}", cmd.transferenciaId());
+            publicarReply(cmd.sagaId(), "ContaDebitada",
+                    new ContaDebitadaReply(cmd.sagaId(), cmd.contaId(), cmd.transferenciaId()));
+            return;
+        }
+
+        // Pessimistic lock — SELECT FOR UPDATE (ver seção 8.10)
+        Conta conta = contaRepo.findByIdComLock(cmd.contaId())
+                .orElseThrow(() -> new ContaNaoEncontradaException(cmd.contaId()));
+
+        try {
+            Lancamento lancamento = conta.debitar(
+                    cmd.valor(), cmd.transferenciaId(),
+                    "Transferência para " + cmd.descricaoDestino());
+            lancamentoRepo.save(lancamento);
+
+            // Evento de domínio — consumido pelo statement-service (Event Sourcing + CQRS)
+            publicarEvento("Conta", conta.getId().toString(), "ContaDebitada", cmd.sagaId(),
+                    new ContaDebitadaEvent(conta.getId(), cmd.transferenciaId(), cmd.valor(),
+                            lancamento.getSaldoPosterior(), lancamento.getDescricao(),
+                            lancamento.getCriadoEm()));
+
+            // Reply para o orquestrador da SAGA
+            publicarReply(cmd.sagaId(), "ContaDebitada",
+                    new ContaDebitadaReply(cmd.sagaId(), cmd.contaId(), cmd.transferenciaId()));
+
+            log.info("Conta {} debitada em {} (transferência {})",
+                    conta.getId(), cmd.valor(), cmd.transferenciaId());
+
+        } catch (SaldoInsuficienteException e) {
+            publicarReply(cmd.sagaId(), "DebitoRecusado",
+                    new DebitoRecusadoReply(cmd.sagaId(), cmd.contaId(),
+                            cmd.transferenciaId(), e.getMessage()));
+        }
+    }
+
+    @Transactional
+    public void creditar(CreditarContaCommand cmd) {
+        // Idempotência
+        if (lancamentoRepo.existsByTransferenciaIdAndTipo(
+                cmd.transferenciaId(), TipoLancamento.CREDITO)) {
+            log.info("Crédito já processado para transferência {}", cmd.transferenciaId());
+            publicarReply(cmd.sagaId(), "ContaCreditada",
+                    new ContaCreditadaReply(cmd.sagaId(), cmd.contaId(), cmd.transferenciaId()));
+            return;
+        }
+
+        Conta conta = contaRepo.findByIdComLock(cmd.contaId())
+                .orElseThrow(() -> new ContaNaoEncontradaException(cmd.contaId()));
+
+        Lancamento lancamento = conta.creditar(
+                cmd.valor(), cmd.transferenciaId(),
+                "Transferência de " + cmd.descricaoOrigem());
+        lancamentoRepo.save(lancamento);
+
+        publicarEvento("Conta", conta.getId().toString(), "ContaCreditada", cmd.sagaId(),
+                new ContaCreditadaEvent(conta.getId(), cmd.transferenciaId(), cmd.valor(),
+                        lancamento.getSaldoPosterior(), lancamento.getDescricao(),
+                        lancamento.getCriadoEm()));
+
+        publicarReply(cmd.sagaId(), "ContaCreditada",
+                new ContaCreditadaReply(cmd.sagaId(), cmd.contaId(), cmd.transferenciaId()));
+
+        log.info("Conta {} creditada em {} (transferência {})",
+                conta.getId(), cmd.valor(), cmd.transferenciaId());
+    }
+
+    // Compensação: estorno de débito (reverte o lançamento)
+    @Transactional
+    public void estornarDebito(EstornarDebitoCommand cmd) {
+        String idEstorno = cmd.transferenciaId() + "-estorno";
+
+        if (lancamentoRepo.existsByTransferenciaIdAndTipo(idEstorno, TipoLancamento.CREDITO)) {
+            return; // já estornado — idempotente
+        }
+
+        Conta conta = contaRepo.findByIdComLock(cmd.contaId())
+                .orElseThrow(() -> new ContaNaoEncontradaException(cmd.contaId()));
+
+        Lancamento lancamento = conta.creditar(cmd.valor(), idEstorno,
+                "Estorno — " + cmd.motivo());
+        lancamentoRepo.save(lancamento);
+
+        publicarEvento("Conta", conta.getId().toString(), "DebitoEstornado", cmd.sagaId(),
+                new DebitoEstornadoEvent(conta.getId(), cmd.transferenciaId(), cmd.valor(),
+                        lancamento.getSaldoPosterior(), cmd.motivo(), lancamento.getCriadoEm()));
+
+        log.info("Estorno de R$ {} na conta {} (transferência {})",
+                cmd.valor(), conta.getId(), cmd.transferenciaId());
+    }
+
+    private void publicarEvento(String aggType, String aggId, String eventType,
+                                 String sagaId, Object payload) {
+        try {
+            outboxRepo.save(OutboxEvent.of(aggType, aggId, eventType,
+                    sagaId, mapper.writeValueAsString(payload)));
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao serializar evento", e);
+        }
+    }
+
+    private void publicarReply(String sagaId, String eventType, Object payload) {
+        publicarEvento("Saga", sagaId, eventType, sagaId, payload);
+    }
+}
+```
+
+**Eventos e comandos compartilhados:**
+
+```java
+package br.com.banco.common.events;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+
+// Comandos: transfer-service → account-service
+public record DebitarContaCommand(String sagaId, Long contaId, String transferenciaId,
+                                   BigDecimal valor, String descricaoDestino) {}
+
+public record CreditarContaCommand(String sagaId, Long contaId, String transferenciaId,
+                                    BigDecimal valor, String descricaoOrigem) {}
+
+public record EstornarDebitoCommand(String sagaId, Long contaId, String transferenciaId,
+                                     BigDecimal valor, String motivo) {}
+
+// Comando: transfer-service → pix-gateway-service
+public record EnviarPixCommand(String sagaId, String transferenciaId, String chavePix,
+                                BigDecimal valor, String descricao) {}
+
+// Replies: account-service → transfer-service
+public record ContaDebitadaReply(String sagaId, Long contaId, String transferenciaId) {}
+public record DebitoRecusadoReply(String sagaId, Long contaId, String transferenciaId,
+                                   String motivo) {}
+public record ContaCreditadaReply(String sagaId, Long contaId, String transferenciaId) {}
+
+// Replies: pix-gateway-service → transfer-service
+public record PixEnviadoReply(String sagaId, String transferenciaId, String endToEndId) {}
+public record PixRecusadoReply(String sagaId, String transferenciaId, String motivo) {}
+
+// Eventos de domínio (para statement-service / Event Sourcing + CQRS)
+public record ContaDebitadaEvent(Long contaId, String transferenciaId, BigDecimal valor,
+                                  BigDecimal saldoApos, String descricao, Instant ocorridoEm) {}
+
+public record ContaCreditadaEvent(Long contaId, String transferenciaId, BigDecimal valor,
+                                   BigDecimal saldoApos, String descricao, Instant ocorridoEm) {}
+
+public record DebitoEstornadoEvent(Long contaId, String transferenciaId, BigDecimal valor,
+                                    BigDecimal saldoApos, String motivo, Instant ocorridoEm) {}
+
+public record TransferenciaConcluidaEvent(String transferenciaId, String tipo, Long contaOrigemId,
+                                           BigDecimal valor, String descricao, Instant concluidaEm) {}
+
+public record TransferenciaCanceladaEvent(String transferenciaId, Long contaOrigemId,
+                                           BigDecimal valor, String motivo, Instant canceladaEm) {}
+```
+
+### 10.5 Serviço de Transferências (transfer-service) — SAGA Orquestrada
+
+O transfer-service orquestra dois fluxos distintos de SAGA:
+
+```
+Transferência Interna (entre contas do mesmo banco):
+
+  T1 (Debitar Origem)  →  T2 (Creditar Destino)  →  Concluída
+      compensável              retriable
+                                │
+               Se T1 falhar: saga encerra (saldo insuficiente)
+               Se T2 falhar: retry até suceder (após débito, crédito DEVE acontecer)
+
+  Passo  │ Tipo        │ Justificativa
+  ───────│─────────────│──────────────────────────────────────────
+  Debitar│ Compensável │ Pode ser estornado
+  Creditar│ Retriable  │ Após débito confirmado, crédito é obrigatório
+
+
+Transferência PIX (para outro banco):
+
+  T1 (Debitar Origem)  →  T2 (Enviar PIX)  →  [Aguarda callback]  →  Concluída
+      compensável            pivot
+                               │
+               Se T1 falhar: saga encerra (saldo insuficiente)
+               Se T2 falhar: estorna débito (compensação)
+               Se callback confirmar: saga completa
+               Se callback recusar: estorna débito (compensação)
+
+  Passo       │ Tipo        │ Justificativa
+  ────────────│─────────────│──────────────────────────────────────────
+  Debitar     │ Compensável │ Pode ser estornado se PIX falhar
+  Enviar PIX  │ Pivot       │ Ponto sem retorno — se PSP confirmar, acabou
+  Callback    │ Retriable   │ Se PSP já confirmou, notificação DEVE chegar
+```
+
+**Orquestrador da SAGA:**
+
+```java
+package br.com.banco.transfer.saga;
+
+import br.com.banco.common.events.*;
+import br.com.banco.common.outbox.*;
+import br.com.banco.transfer.domain.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.UUID;
+
+@Service
+public class TransferenciaSaga {
+
+    private static final Logger log = LoggerFactory.getLogger(TransferenciaSaga.class);
+
+    private final TransferenciaRepository transferenciaRepo;
+    private final SagaStateRepository sagaStateRepo;
+    private final OutboxEventRepository outboxRepo;
+    private final ObjectMapper mapper;
+
+    public TransferenciaSaga(TransferenciaRepository transferenciaRepo,
+                              SagaStateRepository sagaStateRepo,
+                              OutboxEventRepository outboxRepo, ObjectMapper mapper) {
+        this.transferenciaRepo = transferenciaRepo;
+        this.sagaStateRepo = sagaStateRepo;
+        this.outboxRepo = outboxRepo;
+        this.mapper = mapper;
+    }
+
+    // ── Transferência Interna ──────────────────────────────────
+
+    @Transactional
+    public Transferencia iniciarInterna(Long contaOrigemId, Long contaDestinoId,
+                                         java.math.BigDecimal valor, String descricao) {
+        String id = UUID.randomUUID().toString();
+        Transferencia t = new Transferencia(id, contaOrigemId, contaDestinoId,
+                null, TipoTransferencia.INTERNA, valor, descricao);
+        transferenciaRepo.save(t);
+
+        String sagaId = UUID.randomUUID().toString();
+        SagaState saga = new SagaState(sagaId, id, SagaStep.DEBITAR_ORIGEM);
+        saga.setDeadline(Instant.now().plus(Duration.ofMinutes(2)));
+        sagaStateRepo.save(saga);
+
+        // Passo 1: debitar conta de origem
+        publicarOutbox("Saga", sagaId, "DebitarConta", sagaId,
+                new DebitarContaCommand(sagaId, contaOrigemId, id, valor,
+                        "Conta " + contaDestinoId));
+
+        log.info("SAGA {} iniciada: transferência interna {} de R$ {}",
+                sagaId, id, valor);
+        return t;
+    }
+
+    @Transactional
+    public void onContaDebitada(ContaDebitadaReply reply) {
+        SagaState saga = sagaStateRepo.findById(reply.sagaId()).orElseThrow();
+        Transferencia t = transferenciaRepo.findById(saga.getTransferenciaId()).orElseThrow();
+
+        if (t.getTipo() == TipoTransferencia.INTERNA) {
+            // Passo 2 (interna): creditar conta destino — retriable
+            saga.avancar(SagaStep.CREDITAR_DESTINO);
+            t.marcarDebitada();
+
+            publicarOutbox("Saga", saga.getSagaId(), "CreditarConta", saga.getSagaId(),
+                    new CreditarContaCommand(saga.getSagaId(), t.getContaDestinoId(),
+                            t.getId(), t.getValor(), "Conta " + t.getContaOrigemId()));
+
+        } else if (t.getTipo() == TipoTransferencia.PIX_ENVIO) {
+            // Passo 2 (PIX): enviar ao PSP — pivot
+            saga.avancar(SagaStep.ENVIAR_PIX);
+            t.marcarDebitada();
+
+            publicarOutbox("Saga", saga.getSagaId(), "EnviarPix", saga.getSagaId(),
+                    new EnviarPixCommand(saga.getSagaId(), t.getId(),
+                            t.getChavePixDestino(), t.getValor(), t.getDescricao()));
+        }
+
+        log.info("SAGA {}: conta debitada, avançando para {}",
+                saga.getSagaId(), saga.getCurrentStep());
+    }
+
+    @Transactional
+    public void onContaCreditada(ContaCreditadaReply reply) {
+        SagaState saga = sagaStateRepo.findById(reply.sagaId()).orElseThrow();
+        Transferencia t = transferenciaRepo.findById(saga.getTransferenciaId()).orElseThrow();
+
+        t.concluir();
+        saga.completar();
+
+        publicarOutbox("Transferencia", t.getId(), "TransferenciaConcluida", saga.getSagaId(),
+                new TransferenciaConcluidaEvent(t.getId(), t.getTipo().name(),
+                        t.getContaOrigemId(), t.getValor(), t.getDescricao(), Instant.now()));
+
+        log.info("SAGA {} completada: transferência {} concluída", saga.getSagaId(), t.getId());
+    }
+
+    // ── Transferência PIX ──────────────────────────────────────
+
+    @Transactional
+    public Transferencia iniciarPix(Long contaOrigemId, String chavePix,
+                                     java.math.BigDecimal valor, String descricao) {
+        String id = UUID.randomUUID().toString();
+        Transferencia t = new Transferencia(id, contaOrigemId, null,
+                chavePix, TipoTransferencia.PIX_ENVIO, valor, descricao);
+        transferenciaRepo.save(t);
+
+        String sagaId = UUID.randomUUID().toString();
+        SagaState saga = new SagaState(sagaId, id, SagaStep.DEBITAR_ORIGEM);
+        saga.setDeadline(Instant.now().plus(Duration.ofMinutes(5))); // PIX tem mais tempo
+        sagaStateRepo.save(saga);
+
+        publicarOutbox("Saga", sagaId, "DebitarConta", sagaId,
+                new DebitarContaCommand(sagaId, contaOrigemId, id, valor, "PIX " + chavePix));
+
+        log.info("SAGA {} iniciada: PIX {} de R$ {} para {}",
+                sagaId, id, valor, chavePix);
+        return t;
+    }
+
+    @Transactional
+    public void onPixEnviado(PixEnviadoReply reply) {
+        SagaState saga = sagaStateRepo.findById(reply.sagaId()).orElseThrow();
+        Transferencia t = transferenciaRepo.findById(saga.getTransferenciaId()).orElseThrow();
+
+        t.concluir();
+        t.setEndToEndId(reply.endToEndId());
+        saga.completar();
+
+        publicarOutbox("Transferencia", t.getId(), "TransferenciaConcluida", saga.getSagaId(),
+                new TransferenciaConcluidaEvent(t.getId(), "PIX_ENVIO",
+                        t.getContaOrigemId(), t.getValor(), t.getDescricao(), Instant.now()));
+
+        log.info("SAGA {} completada: PIX {} enviado (e2e={})",
+                saga.getSagaId(), t.getId(), reply.endToEndId());
+    }
+
+    // ── Compensações ───────────────────────────────────────────
+
+    @Transactional
+    public void onDebitoRecusado(DebitoRecusadoReply reply) {
+        SagaState saga = sagaStateRepo.findById(reply.sagaId()).orElseThrow();
+        Transferencia t = transferenciaRepo.findById(saga.getTransferenciaId()).orElseThrow();
+
+        t.cancelar(reply.motivo());
+        saga.falhar(reply.motivo());
+
+        publicarOutbox("Transferencia", t.getId(), "TransferenciaCancelada", saga.getSagaId(),
+                new TransferenciaCanceladaEvent(t.getId(), t.getContaOrigemId(),
+                        t.getValor(), reply.motivo(), Instant.now()));
+
+        log.info("SAGA {} falhou: débito recusado — {}", saga.getSagaId(), reply.motivo());
+    }
+
+    @Transactional
+    public void onPixRecusado(PixRecusadoReply reply) {
+        SagaState saga = sagaStateRepo.findById(reply.sagaId()).orElseThrow();
+        Transferencia t = transferenciaRepo.findById(saga.getTransferenciaId()).orElseThrow();
+
+        saga.compensar(reply.motivo());
+
+        // Compensação: estornar o débito da conta de origem
+        publicarOutbox("Saga", saga.getSagaId(), "EstornarDebito", saga.getSagaId(),
+                new EstornarDebitoCommand(saga.getSagaId(), t.getContaOrigemId(),
+                        t.getId(), t.getValor(), "PIX recusado: " + reply.motivo()));
+
+        t.cancelar(reply.motivo());
+        saga.falhar(reply.motivo());
+
+        publicarOutbox("Transferencia", t.getId(), "TransferenciaCancelada", saga.getSagaId(),
+                new TransferenciaCanceladaEvent(t.getId(), t.getContaOrigemId(),
+                        t.getValor(), reply.motivo(), Instant.now()));
+
+        log.info("SAGA {}: PIX recusado, estornando débito — {}", saga.getSagaId(), reply.motivo());
+    }
+
+    private void publicarOutbox(String aggType, String aggId, String eventType,
+                                 String sagaId, Object payload) {
+        try {
+            outboxRepo.save(OutboxEvent.of(aggType, aggId, eventType,
+                    sagaId, mapper.writeValueAsString(payload)));
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao serializar outbox", e);
+        }
+    }
+}
+```
+
+**Entidade Transferência:**
+
+```java
+package br.com.banco.transfer.domain;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+
+@Entity
+@Table(name = "transferencias")
+public class Transferencia {
+
+    @Id private String id;
+    private Long contaOrigemId;
+    private Long contaDestinoId;
+    private String chavePixDestino;
+
+    @Enumerated(EnumType.STRING)
+    private TipoTransferencia tipo;
+
+    private BigDecimal valor;
+    private String descricao;
+
+    @Enumerated(EnumType.STRING)
+    private StatusTransferencia status = StatusTransferencia.CRIADA;
+
+    private String motivoFalha;
+    private String endToEndId;
+    private Instant criadaEm = Instant.now();
+    private Instant atualizadaEm = Instant.now();
+
+    protected Transferencia() {}
+
+    public Transferencia(String id, Long contaOrigemId, Long contaDestinoId,
+                          String chavePixDestino, TipoTransferencia tipo,
+                          BigDecimal valor, String descricao) {
+        this.id = id;
+        this.contaOrigemId = contaOrigemId;
+        this.contaDestinoId = contaDestinoId;
+        this.chavePixDestino = chavePixDestino;
+        this.tipo = tipo;
+        this.valor = valor;
+        this.descricao = descricao;
+    }
+
+    public void marcarDebitada() {
+        this.status = StatusTransferencia.DEBITADA;
+        this.atualizadaEm = Instant.now();
+    }
+
+    public void concluir() {
+        this.status = StatusTransferencia.CONCLUIDA;
+        this.atualizadaEm = Instant.now();
+    }
+
+    public void cancelar(String motivo) {
+        this.status = StatusTransferencia.CANCELADA;
+        this.motivoFalha = motivo;
+        this.atualizadaEm = Instant.now();
+    }
+
+    public void setEndToEndId(String endToEndId) { this.endToEndId = endToEndId; }
+
+    // getters
+    public String getId() { return id; }
+    public Long getContaOrigemId() { return contaOrigemId; }
+    public Long getContaDestinoId() { return contaDestinoId; }
+    public String getChavePixDestino() { return chavePixDestino; }
+    public TipoTransferencia getTipo() { return tipo; }
+    public BigDecimal getValor() { return valor; }
+    public String getDescricao() { return descricao; }
+    public StatusTransferencia getStatus() { return status; }
+}
+
+public enum TipoTransferencia { INTERNA, PIX_ENVIO, PIX_RECEBIMENTO }
+public enum StatusTransferencia { CRIADA, DEBITADA, CONCLUIDA, CANCELADA }
+```
+
+**Controller REST:**
+
+```java
+package br.com.banco.transfer.api;
+
+import br.com.banco.transfer.domain.*;
+import br.com.banco.transfer.saga.TransferenciaSaga;
+import org.springframework.http.*;
+import org.springframework.web.bind.annotation.*;
+import java.math.BigDecimal;
+
+@RestController
+@RequestMapping("/api/transferencias")
+public class TransferenciaController {
+
+    private final TransferenciaSaga saga;
+    private final TransferenciaRepository transferenciaRepo;
+
+    public TransferenciaController(TransferenciaSaga saga,
+                                    TransferenciaRepository transferenciaRepo) {
+        this.saga = saga;
+        this.transferenciaRepo = transferenciaRepo;
+    }
+
+    @PostMapping("/interna")
+    public ResponseEntity<TransferenciaResponse> transferirInterna(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody TransferenciaInternaRequest req) {
+
+        // Idempotência por chave explícita (padrão Stripe)
+        if (transferenciaRepo.existsById(idempotencyKey)) {
+            Transferencia existente = transferenciaRepo.findById(idempotencyKey).orElseThrow();
+            return ResponseEntity.ok(TransferenciaResponse.from(existente));
+        }
+
+        Transferencia t = saga.iniciarInterna(
+                req.contaOrigemId(), req.contaDestinoId(), req.valor(), req.descricao());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(TransferenciaResponse.from(t));
+    }
+
+    @PostMapping("/pix")
+    public ResponseEntity<TransferenciaResponse> transferirPix(
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @RequestBody TransferenciaPixRequest req) {
+
+        if (transferenciaRepo.existsById(idempotencyKey)) {
+            Transferencia existente = transferenciaRepo.findById(idempotencyKey).orElseThrow();
+            return ResponseEntity.ok(TransferenciaResponse.from(existente));
+        }
+
+        Transferencia t = saga.iniciarPix(
+                req.contaOrigemId(), req.chavePix(), req.valor(), req.descricao());
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(TransferenciaResponse.from(t));
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<TransferenciaResponse> buscar(@PathVariable String id) {
+        return transferenciaRepo.findById(id)
+                .map(t -> ResponseEntity.ok(TransferenciaResponse.from(t)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    public record TransferenciaInternaRequest(Long contaOrigemId, Long contaDestinoId,
+                                               BigDecimal valor, String descricao) {}
+
+    public record TransferenciaPixRequest(Long contaOrigemId, String chavePix,
+                                           BigDecimal valor, String descricao) {}
+
+    public record TransferenciaResponse(String id, String tipo, String status,
+                                         BigDecimal valor, String descricao) {
+        public static TransferenciaResponse from(Transferencia t) {
+            return new TransferenciaResponse(t.getId(), t.getTipo().name(),
+                    t.getStatus().name(), t.getValor(), t.getDescricao());
+        }
+    }
+}
+```
+
+### 10.6 Gateway PIX (pix-gateway-service) — Integração Externa com Circuit Breaker
+
+O pix-gateway-service integra com o PSP (Provedor de Serviços de Pagamento) do BACEN. Como o PSP é um serviço externo com SLA próprio, usamos **Circuit Breaker** (ver System-design.md seção 10) para evitar que falhas do PSP derrubem o serviço de transferências.
+
+**Configuração do Circuit Breaker com Resilience4j:**
+
+```yaml
+# pix-gateway-service/src/main/resources/application.yml
+resilience4j:
+  circuitbreaker:
+    instances:
+      psp-pix:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50       # abre com 50% de falhas
+        wait-duration-in-open-state: 30s # aguarda 30s antes de testar
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
+
+  retry:
+    instances:
+      psp-pix:
+        max-attempts: 3
+        wait-duration: 1s
+        exponential-backoff-multiplier: 2   # 1s → 2s → 4s
+        retry-exceptions:
+          - java.net.ConnectException
+          - java.net.SocketTimeoutException
+          - org.springframework.web.client.ResourceAccessException
+
+  timelimiter:
+    instances:
+      psp-pix:
+        timeout-duration: 10s               # PIX tem SLA de até 10s
+```
+
+**Cliente do PSP com Circuit Breaker:**
+
+```java
+package br.com.banco.pixgateway.client;
+
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.github.resilience4j.retry.annotation.Retry;
+import io.github.resilience4j.timelimiter.annotation.TimeLimiter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+import java.math.BigDecimal;
+import java.util.UUID;
+
+@Component
+public class PspPixClient {
+
+    private static final Logger log = LoggerFactory.getLogger(PspPixClient.class);
+    private final RestClient restClient;
+
+    public PspPixClient(RestClient.Builder builder) {
+        this.restClient = builder.baseUrl("https://psp-api.exemplo.com.br").build();
+    }
+
+    @CircuitBreaker(name = "psp-pix", fallbackMethod = "enviarPixFallback")
+    @Retry(name = "psp-pix")
+    public PspResponse enviarPix(String chavePix, BigDecimal valor, String descricao) {
+        log.info("Enviando PIX de R$ {} para {}", valor, chavePix);
+
+        // Em produção: chamada real à API PIX do PSP
+        // Aqui simulamos: valores até R$ 5000 são aprovados
+        return restClient.post()
+                .uri("/api/v2/pix")
+                .body(new PspRequest(chavePix, valor, descricao))
+                .retrieve()
+                .body(PspResponse.class);
+    }
+
+    // Fallback quando Circuit Breaker está OPEN
+    private PspResponse enviarPixFallback(String chavePix, BigDecimal valor,
+                                           String descricao, Exception ex) {
+        log.warn("Circuit Breaker OPEN para PSP PIX. Erro: {}", ex.getMessage());
+        return new PspResponse(false, null, "PSP indisponível — tente novamente em instantes");
+    }
+
+    public record PspRequest(String chavePix, BigDecimal valor, String descricao) {}
+
+    public record PspResponse(boolean aprovado, String endToEndId, String mensagem) {}
+}
+```
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Transfer as transfer-service
+    participant Pix as pix-gateway-service
+    participant CB as Circuit Breaker<br/>(Resilience4j)
+    participant PSP as PSP BACEN<br/>(externo)
+
+    rect rgb(230, 255, 230)
+        Note over Transfer, PSP: Cenário 1 — Circuit Breaker CLOSED (PSP disponível)
+        Transfer ->> Pix: consume "EnviarPix"
+        Pix ->> CB: enviarPix(chavePix, R$300)
+        CB ->> PSP: POST /api/v2/pix
+        PSP -->> CB: 200 OK
+        CB -->> Pix: PspResponse(aprovado=true,<br/>endToEndId=E2E-abc123)
+        Pix ->> Transfer: "PixEnviado"<br/>(endToEndId=E2E-abc123)
+        Note right of Transfer: SAGA conclui transferência
+    end
+
+    rect rgb(255, 230, 230)
+        Note over Transfer, PSP: Cenário 2 — Circuit Breaker OPEN (PSP indisponível)
+        Transfer ->> Pix: consume "EnviarPix"
+        Pix ->> CB: enviarPix(chavePix, R$500)
+
+        Note right of CB: OPEN — fallback imediato,<br/>sem chamar o PSP
+        CB --x PSP: (bloqueado)
+        CB -->> Pix: PspResponse(aprovado=false,<br/>msg="PSP indisponível")
+
+        Pix ->> Transfer: "PixRecusado"<br/>(motivo: PSP indisponível)
+        Note right of Transfer: SAGA compensa:<br/>estorna débito na conta origem
+    end
+```
+
+**Service que processa o comando e publica reply:**
+
+```java
+package br.com.banco.pixgateway.service;
+
+import br.com.banco.common.events.*;
+import br.com.banco.common.outbox.*;
+import br.com.banco.pixgateway.client.PspPixClient;
+import br.com.banco.pixgateway.client.PspPixClient.PspResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class PixService {
+
+    private static final Logger log = LoggerFactory.getLogger(PixService.class);
+
+    private final PspPixClient pspClient;
+    private final OutboxEventRepository outboxRepo;
+    private final ObjectMapper mapper;
+
+    public PixService(PspPixClient pspClient, OutboxEventRepository outboxRepo,
+                      ObjectMapper mapper) {
+        this.pspClient = pspClient;
+        this.outboxRepo = outboxRepo;
+        this.mapper = mapper;
+    }
+
+    @Transactional
+    public void enviar(EnviarPixCommand cmd) {
+        PspResponse resposta = pspClient.enviarPix(
+                cmd.chavePix(), cmd.valor(), cmd.descricao());
+
+        if (resposta.aprovado()) {
+            publicarReply(cmd.sagaId(), "PixEnviado",
+                    new PixEnviadoReply(cmd.sagaId(), cmd.transferenciaId(),
+                            resposta.endToEndId()));
+            log.info("PIX enviado: {} → e2e={}", cmd.transferenciaId(), resposta.endToEndId());
+        } else {
+            publicarReply(cmd.sagaId(), "PixRecusado",
+                    new PixRecusadoReply(cmd.sagaId(), cmd.transferenciaId(),
+                            resposta.mensagem()));
+            log.warn("PIX recusado: {} — {}", cmd.transferenciaId(), resposta.mensagem());
+        }
+    }
+
+    private void publicarReply(String sagaId, String eventType, Object payload) {
+        try {
+            outboxRepo.save(OutboxEvent.of("Saga", sagaId, eventType,
+                    sagaId, mapper.writeValueAsString(payload)));
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao serializar reply PIX", e);
+        }
+    }
+}
+```
+
+**Webhook — recebimento de PIX de outros bancos:**
+
+```java
+package br.com.banco.pixgateway.api;
+
+import br.com.banco.common.events.*;
+import br.com.banco.common.outbox.*;
+import br.com.banco.pixgateway.client.HmacValidator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/webhooks/pix")
+public class PixWebhookController {
+
+    private final HmacValidator hmacValidator;
+    private final OutboxEventRepository outboxRepo;
+    private final ObjectMapper mapper;
+
+    public PixWebhookController(HmacValidator hmacValidator,
+                                 OutboxEventRepository outboxRepo, ObjectMapper mapper) {
+        this.hmacValidator = hmacValidator;
+        this.outboxRepo = outboxRepo;
+        this.mapper = mapper;
+    }
+
+    @PostMapping("/recebimento")
+    @ResponseStatus(HttpStatus.OK)
+    public void receberPix(
+            @RequestHeader("X-Webhook-Signature") String assinatura,
+            @RequestBody PixRecebimentoWebhook webhook) {
+
+        // 1. Valida assinatura HMAC (autenticidade do PSP)
+        hmacValidator.validar(webhook.toString(), assinatura);
+
+        // 2. Publica comando para creditar a conta do destinatário
+        //    O statement-service e account-service consumirão este evento
+        try {
+            outboxRepo.save(OutboxEvent.of("Pix", webhook.endToEndId(),
+                    "PixRecebido", null,
+                    mapper.writeValueAsString(new CreditarContaCommand(
+                            null, // sem sagaId — operação direta
+                            webhook.contaDestinoId(),
+                            "PIX-" + webhook.endToEndId(),
+                            webhook.valor(),
+                            webhook.pagadorNome() + " (" + webhook.pagadorDocumento() + ")"))));
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao processar webhook PIX", e);
+        }
+    }
+
+    public record PixRecebimentoWebhook(String endToEndId, Long contaDestinoId,
+                                          java.math.BigDecimal valor, String pagadorNome,
+                                          String pagadorDocumento) {}
+}
+```
+
+### 10.7 Serviço de Extrato (statement-service) — Event Sourcing + CQRS
+
+O statement-service consome eventos de movimentação (`ContaDebitada`, `ContaCreditada`, `DebitoEstornado`) e os armazena como **Event Store imutável**. A partir desses eventos, mantém uma **projeção CQRS** com saldo consolidado e extrato paginado.
+
+```mermaid
+flowchart LR
+    subgraph Write Side
+        Acc[account-service<br/>débito / crédito]
+        OutTbl[(Outbox Table)]
+    end
+
+    subgraph Broker
+        K[Apache Kafka<br/>dominio.conta.*]
+    end
+
+    subgraph statement-service
+        Proj[Projeção CQRS]
+        ES[(Event Store<br/>PostgreSQL<br/>INSERT imutável)]
+        Redis[(Redis<br/>cache de saldo)]
+    end
+
+    subgraph Consultas
+        QSaldo[GET /saldo<br/>Redis → O&#40;1&#41; &lt; 1ms]
+        QExtrato[GET /extrato<br/>PostgreSQL paginado &lt; 50ms]
+        QReconc[GET /reconciliacao<br/>SUM&#40;valor&#41; = fonte de verdade]
+    end
+
+    Acc -- "@Transactional" --> OutTbl
+    OutTbl -- "Outbox Relay" --> K
+    K -- "consume" --> Proj
+    Proj -- "1. INSERT evento" --> ES
+    Proj -- "2. SET saldo:contaId" --> Redis
+    Redis -. "leitura rápida" .-> QSaldo
+    ES -. "leitura paginada" .-> QExtrato
+    ES -. "SUM(valor)" .-> QReconc
+```
+
+**Schema do Event Store:**
+
+```sql
+-- V1__create_event_store.sql (statement-service)
+CREATE TABLE movimentacao_eventos (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conta_id            BIGINT NOT NULL,
+    transferencia_id    VARCHAR(100) NOT NULL,
+    tipo_evento         VARCHAR(50) NOT NULL,     -- ContaDebitada, ContaCreditada, DebitoEstornado
+    valor               NUMERIC(15,2) NOT NULL,
+    saldo_apos          NUMERIC(15,2) NOT NULL,
+    descricao           VARCHAR(500),
+    ocorrido_em         TIMESTAMP NOT NULL,
+    recebido_em         TIMESTAMP NOT NULL DEFAULT NOW(),
+    event_id_kafka      VARCHAR(255) NOT NULL UNIQUE  -- deduplicação (substitui inbox)
+);
+
+CREATE INDEX idx_eventos_conta ON movimentacao_eventos (conta_id, ocorrido_em DESC);
+CREATE INDEX idx_eventos_periodo ON movimentacao_eventos (conta_id, ocorrido_em)
+    WHERE ocorrido_em >= NOW() - INTERVAL '90 days';
+
+-- Snapshot de saldo — recalculado periodicamente ou sob demanda
+CREATE TABLE saldo_snapshots (
+    conta_id        BIGINT PRIMARY KEY,
+    saldo           NUMERIC(15,2) NOT NULL,
+    atualizado_em   TIMESTAMP NOT NULL DEFAULT NOW(),
+    ultimo_evento   UUID REFERENCES movimentacao_eventos(id)
+);
+```
+
+**Projeção que consome eventos e atualiza Event Store + Cache:**
+
+```java
+package br.com.banco.statement.projection;
+
+import br.com.banco.common.events.*;
+import br.com.banco.statement.domain.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+@Component
+public class MovimentacaoProjection {
+
+    private static final Logger log = LoggerFactory.getLogger(MovimentacaoProjection.class);
+
+    private final MovimentacaoEventoRepository eventoRepo;
+    private final RedisTemplate<String, String> redis;
+    private final ObjectMapper mapper;
+
+    public MovimentacaoProjection(MovimentacaoEventoRepository eventoRepo,
+                                   RedisTemplate<String, String> redis, ObjectMapper mapper) {
+        this.eventoRepo = eventoRepo;
+        this.redis = redis;
+        this.mapper = mapper;
+    }
+
+    @KafkaListener(topics = "dominio.conta.contadebitada", groupId = "statement-service")
+    @Transactional
+    public void onContaDebitada(ConsumerRecord<String, String> record) {
+        String eventId = new String(record.headers().lastHeader("event-id").value());
+
+        // Deduplicação via UNIQUE constraint no event_id_kafka (substitui Inbox Pattern)
+        if (eventoRepo.existsByEventIdKafka(eventId)) return;
+
+        try {
+            ContaDebitadaEvent evento = mapper.readValue(record.value(), ContaDebitadaEvent.class);
+
+            eventoRepo.save(new MovimentacaoEvento(
+                    evento.contaId(), evento.transferenciaId(), "ContaDebitada",
+                    evento.valor(), evento.saldoApos(), evento.descricao(),
+                    evento.ocorridoEm(), eventId));
+
+            // Atualiza cache de saldo no Redis
+            redis.opsForValue().set(
+                    "saldo:" + evento.contaId(), evento.saldoApos().toPlainString());
+
+            log.debug("Projeção: débito de {} na conta {}", evento.valor(), evento.contaId());
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao projetar ContaDebitada", e);
+        }
+    }
+
+    @KafkaListener(topics = "dominio.conta.contacreditada", groupId = "statement-service")
+    @Transactional
+    public void onContaCreditada(ConsumerRecord<String, String> record) {
+        String eventId = new String(record.headers().lastHeader("event-id").value());
+        if (eventoRepo.existsByEventIdKafka(eventId)) return;
+
+        try {
+            ContaCreditadaEvent evento = mapper.readValue(record.value(), ContaCreditadaEvent.class);
+
+            eventoRepo.save(new MovimentacaoEvento(
+                    evento.contaId(), evento.transferenciaId(), "ContaCreditada",
+                    evento.valor(), evento.saldoApos(), evento.descricao(),
+                    evento.ocorridoEm(), eventId));
+
+            redis.opsForValue().set(
+                    "saldo:" + evento.contaId(), evento.saldoApos().toPlainString());
+
+            log.debug("Projeção: crédito de {} na conta {}", evento.valor(), evento.contaId());
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao projetar ContaCreditada", e);
+        }
+    }
+
+    @KafkaListener(topics = "dominio.conta.debitoestornado", groupId = "statement-service")
+    @Transactional
+    public void onDebitoEstornado(ConsumerRecord<String, String> record) {
+        String eventId = new String(record.headers().lastHeader("event-id").value());
+        if (eventoRepo.existsByEventIdKafka(eventId)) return;
+
+        try {
+            DebitoEstornadoEvent evento = mapper.readValue(
+                    record.value(), DebitoEstornadoEvent.class);
+
+            eventoRepo.save(new MovimentacaoEvento(
+                    evento.contaId(), evento.transferenciaId(), "DebitoEstornado",
+                    evento.valor(), evento.saldoApos(), evento.motivo(),
+                    evento.ocorridoEm(), eventId));
+
+            redis.opsForValue().set(
+                    "saldo:" + evento.contaId(), evento.saldoApos().toPlainString());
+
+            log.debug("Projeção: estorno de {} na conta {}", evento.valor(), evento.contaId());
+        } catch (Exception e) {
+            throw new RuntimeException("Erro ao projetar DebitoEstornado", e);
+        }
+    }
+}
+```
+
+**API de consulta (read side):**
+
+```java
+package br.com.banco.statement.api;
+
+import br.com.banco.statement.domain.*;
+import org.springframework.data.domain.*;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+
+@RestController
+@RequestMapping("/api/contas")
+public class ExtratoController {
+
+    private final MovimentacaoEventoRepository eventoRepo;
+    private final RedisTemplate<String, String> redis;
+
+    public ExtratoController(MovimentacaoEventoRepository eventoRepo,
+                              RedisTemplate<String, String> redis) {
+        this.eventoRepo = eventoRepo;
+        this.redis = redis;
+    }
+
+    // Consulta de saldo — Redis cache, fallback para cálculo
+    @GetMapping("/{contaId}/saldo")
+    public ResponseEntity<SaldoResponse> saldo(@PathVariable Long contaId) {
+        // 1. Tenta Redis (< 1ms)
+        String saldoCache = redis.opsForValue().get("saldo:" + contaId);
+
+        if (saldoCache != null) {
+            return ResponseEntity.ok(new SaldoResponse(contaId, new BigDecimal(saldoCache), "cache"));
+        }
+
+        // 2. Fallback: recalcula a partir do Event Store
+        BigDecimal saldoCalculado = eventoRepo.calcularSaldo(contaId);
+        if (saldoCalculado != null) {
+            redis.opsForValue().set("saldo:" + contaId, saldoCalculado.toPlainString());
+            return ResponseEntity.ok(new SaldoResponse(contaId, saldoCalculado, "calculado"));
+        }
+
+        return ResponseEntity.notFound().build();
+    }
+
+    // Consulta de extrato — paginado por data
+    @GetMapping("/{contaId}/extrato")
+    public Page<ExtratoItemResponse> extrato(
+            @PathVariable Long contaId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate de,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate ate,
+            Pageable pageable) {
+
+        return eventoRepo.findByContaIdAndPeriodo(
+                contaId,
+                de.atStartOfDay().toInstant(java.time.ZoneOffset.UTC),
+                ate.plusDays(1).atStartOfDay().toInstant(java.time.ZoneOffset.UTC),
+                pageable
+        ).map(e -> new ExtratoItemResponse(
+                e.getOcorridoEm(), e.getTipoEvento(), e.getValor(),
+                e.getSaldoApos(), e.getDescricao(), e.getTransferenciaId()));
+    }
+
+    // Reconciliação — compara saldo materializado com calculado
+    @GetMapping("/{contaId}/reconciliacao")
+    public ResponseEntity<ReconciliacaoResponse> reconciliar(@PathVariable Long contaId) {
+        BigDecimal saldoCalculado = eventoRepo.calcularSaldo(contaId);
+        String saldoCache = redis.opsForValue().get("saldo:" + contaId);
+        BigDecimal saldoMaterializado = saldoCache != null ? new BigDecimal(saldoCache) : null;
+
+        boolean consistente = saldoCalculado != null && saldoMaterializado != null
+                && saldoCalculado.compareTo(saldoMaterializado) == 0;
+
+        return ResponseEntity.ok(new ReconciliacaoResponse(
+                contaId, saldoMaterializado, saldoCalculado, consistente));
+    }
+
+    public record SaldoResponse(Long contaId, BigDecimal saldo, String fonte) {}
+
+    public record ExtratoItemResponse(java.time.Instant data, String tipo, BigDecimal valor,
+                                       BigDecimal saldoApos, String descricao,
+                                       String transferenciaId) {}
+
+    public record ReconciliacaoResponse(Long contaId, BigDecimal saldoMaterializado,
+                                         BigDecimal saldoCalculado, boolean consistente) {}
+}
+```
+
+**Repository com query de cálculo de saldo:**
+
+```java
+package br.com.banco.statement.domain;
+
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.repository.*;
+import java.math.BigDecimal;
+import java.time.Instant;
+
+public interface MovimentacaoEventoRepository extends JpaRepository<MovimentacaoEvento, java.util.UUID> {
+
+    boolean existsByEventIdKafka(String eventIdKafka);
+
+    @Query("SELECT e FROM MovimentacaoEvento e WHERE e.contaId = :contaId " +
+           "AND e.ocorridoEm >= :de AND e.ocorridoEm < :ate ORDER BY e.ocorridoEm DESC")
+    Page<MovimentacaoEvento> findByContaIdAndPeriodo(
+            @Param("contaId") Long contaId,
+            @Param("de") Instant de,
+            @Param("ate") Instant ate,
+            Pageable pageable);
+
+    // Recalcula saldo somando todos os lançamentos — fonte de verdade
+    @Query("SELECT COALESCE(SUM(e.valor), 0) FROM MovimentacaoEvento e WHERE e.contaId = :contaId")
+    BigDecimal calcularSaldo(@Param("contaId") Long contaId);
+}
+```
+
+### 10.8 Fluxos Completos — Diagramas Mermaid
+
+**Transferência Interna — Happy Path:**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente
+    participant API as transfer-service<br/>(REST API)
+    participant Saga as transfer-service<br/>(Saga Orchestrator)
+    participant TxDB as PostgreSQL<br/>(transfers)
+    participant Kafka as Apache Kafka
+    participant AccIn as Inbox Guard<br/>(account-service)
+    participant Acc as account-service<br/>(ContaService)
+    participant AccDB as PostgreSQL<br/>(accounts)
+    participant Stmt as statement-service<br/>(Projeção)
+    participant Redis as Redis<br/>(Cache Saldo)
+
+    rect rgb(230, 245, 255)
+        Note over Cliente, Redis: SAGA — Transferência Interna (Happy Path)
+        Cliente ->> API: POST /api/transferencias/interna<br/>Idempotency-Key: abc-123
+        API ->> Saga: iniciarInterna(origem=1, destino=2, R$500)
+
+        Note right of Saga: Outbox Pattern — escrita atômica
+        Saga ->> TxDB: INSERT transferencia + INSERT saga_state<br/>+ INSERT outbox "DebitarConta"
+        API -->> Cliente: 202 Accepted {id, status: CRIADA}
+    end
+
+    rect rgb(230, 255, 230)
+        Note over Kafka, AccDB: Passo 1 — Debitar Conta Origem
+        Kafka ->> AccIn: consume "DebitarConta"
+        AccIn ->> AccIn: Já processou? (event-id)
+
+        Note right of Acc: Pessimistic Lock — SELECT FOR UPDATE
+        AccIn ->> Acc: debitar(contaId=1, R$500)
+        Acc ->> AccDB: SELECT ... FOR UPDATE (conta 1)<br/>UPDATE saldo = 4500<br/>INSERT lançamento (DÉBITO)<br/>INSERT outbox "ContaDebitada"
+    end
+
+    rect rgb(255, 245, 230)
+        Note over Kafka, AccDB: Passo 2 — Creditar Conta Destino (retriable)
+        Kafka ->> Saga: consume "ContaDebitada"
+        Saga ->> TxDB: UPDATE saga_state step=CREDITAR<br/>INSERT outbox "CreditarConta"
+
+        Kafka ->> AccIn: consume "CreditarConta"
+
+        Note right of Acc: Pessimistic Lock — SELECT FOR UPDATE
+        AccIn ->> Acc: creditar(contaId=2, R$500)
+        Acc ->> AccDB: SELECT ... FOR UPDATE (conta 2)<br/>UPDATE saldo = 3500<br/>INSERT lançamento (CRÉDITO)<br/>INSERT outbox "ContaCreditada"
+    end
+
+    rect rgb(230, 245, 255)
+        Note over Kafka, Redis: Conclusão + Projeções
+        Kafka ->> Saga: consume "ContaCreditada"
+        Saga ->> TxDB: UPDATE transferência CONCLUÍDA<br/>+ UPDATE saga COMPLETED
+
+        Note over Stmt, Redis: Event Sourcing + CQRS
+        Kafka ->> Stmt: consume "ContaDebitada" + "ContaCreditada"
+        Stmt ->> Stmt: INSERT movimentacao_eventos (imutável)
+        Stmt ->> Redis: SET saldo:1 = 4500<br/>SET saldo:2 = 3500
+    end
+
+    rect rgb(200, 255, 200)
+        Note over Cliente, Redis: Consultas — Read Side
+        Cliente ->> Stmt: GET /api/contas/1/saldo
+        Stmt ->> Redis: GET saldo:1
+        Stmt -->> Cliente: {saldo: 4500.00, fonte: "cache"}
+
+        Cliente ->> Stmt: GET /api/contas/1/extrato?de=2026-06-23&ate=2026-06-23
+        Stmt -->> Cliente: [{tipo: DEBITO, valor: -500, saldoApos: 4500, desc: "..."}]
+    end
+```
+
+**Transferência PIX — Fluxo com Compensação (PSP recusa):**
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Cliente
+    participant Saga as transfer-service<br/>(Saga Orchestrator)
+    participant TxDB as PostgreSQL<br/>(transfers)
+    participant Kafka as Apache Kafka
+    participant Acc as account-service
+    participant AccDB as PostgreSQL<br/>(accounts)
+    participant Pix as pix-gateway-service
+    participant CB as Circuit Breaker<br/>(Resilience4j)
+    participant PSP as PSP BACEN<br/>(externo)
+    participant Stmt as statement-service
+
+    rect rgb(230, 245, 255)
+        Note over Cliente, PSP: SAGA PIX — Débito + Envio
+        Cliente ->> Saga: POST /api/transferencias/pix<br/>{chavePix: "bob@email", valor: R$300}
+        Saga ->> TxDB: INSERT transferência PIX + saga_state<br/>+ outbox "DebitarConta"
+        Saga -->> Cliente: 202 Accepted
+
+        Kafka ->> Acc: "DebitarConta"
+        Acc ->> AccDB: SELECT FOR UPDATE → saldo OK<br/>UPDATE saldo = 4700<br/>INSERT lançamento DÉBITO
+        Acc ->> Kafka: "ContaDebitada"
+
+        Kafka ->> Saga: consume "ContaDebitada"
+        Saga ->> Kafka: "EnviarPix"
+    end
+
+    rect rgb(255, 230, 230)
+        Note over Pix, PSP: Circuit Breaker — PSP indisponível
+        Kafka ->> Pix: consume "EnviarPix"
+        Pix ->> CB: enviarPix(chavePix, R$300)
+
+        alt Circuit Breaker CLOSED — tenta chamar PSP
+            CB ->> PSP: POST /api/v2/pix
+            PSP -->> CB: 503 Service Unavailable
+            CB ->> CB: Retry 1... Retry 2... Retry 3... falha
+            CB ->> CB: failure count > threshold → OPEN
+        else Circuit Breaker OPEN — fallback imediato
+            CB -->> Pix: fallback: "PSP indisponível"
+        end
+
+        Pix ->> Kafka: "PixRecusado" (motivo: PSP indisponível)
+    end
+
+    rect rgb(255, 210, 210)
+        Note over Saga, AccDB: SAGA — Compensação (estorno de débito)
+        Kafka ->> Saga: consume "PixRecusado"
+        Note right of Saga: Compensa: estorna débito da origem
+        Saga ->> TxDB: UPDATE transferência CANCELADA<br/>+ outbox "EstornarDebito"
+
+        Kafka ->> Acc: "EstornarDebito"
+        Acc ->> AccDB: SELECT FOR UPDATE<br/>UPDATE saldo = 5000 (restaurado)<br/>INSERT lançamento CRÉDITO (estorno)
+        Acc ->> Kafka: "DebitoEstornado"
+    end
+
+    rect rgb(255, 240, 240)
+        Note over Stmt, Stmt: Projeção reflete estorno
+        Kafka ->> Stmt: consume "ContaDebitada"<br/>+ "DebitoEstornado"
+        Stmt ->> Stmt: INSERT eventos (débito + estorno)
+        Note right of Stmt: Saldo volta ao original
+
+        Cliente ->> Stmt: GET /api/contas/1/saldo
+        Stmt -->> Cliente: {saldo: 5000.00}
+
+        Cliente ->> Stmt: GET /api/contas/1/extrato
+        Stmt -->> Cliente: [<br/>  {tipo: DEBITO, valor: -300, desc: "PIX bob@email"},<br/>  {tipo: CREDITO, valor: +300, desc: "Estorno — PSP indisponível"}<br/>]
+    end
+```
+
+**Legenda — padrão por interação:**
+
+| Padrão / Técnica | Onde Aparece |
+|-------------------|-------------|
+| **SAGA Orquestrada** | `transfer-service` coordena débito → crédito (interna) ou débito → PIX (externa) |
+| **Pessimistic Locking** | `account-service` usa SELECT FOR UPDATE antes de debitar/creditar — previne double-spend |
+| **Outbox Pattern** | Toda escrita inclui INSERT outbox na mesma transação |
+| **Inbox / Deduplicação** | `account-service` verifica `transferencia_id + tipo` antes de processar; `statement-service` usa `event_id_kafka` UNIQUE |
+| **Idempotência** | Lançamentos verificam existência por `(transferencia_id, tipo)`; API usa `Idempotency-Key` |
+| **Circuit Breaker** | `pix-gateway-service` protege chamadas ao PSP com Resilience4j |
+| **Event Sourcing** | `statement-service` armazena eventos imutáveis — fonte de verdade para extrato |
+| **CQRS** | Saldo e extrato lidos do Redis/PostgreSQL do `statement-service` (read side), não do `account-service` (write side) |
+| **Compensação** | PIX recusado → estorno de débito na conta de origem |
+| **Partidas Dobradas** | Todo débito tem crédito correspondente; estorno gera novo crédito |
+
+### 10.9 Docker Compose e Testando o Fluxo
+
+**Docker Compose (adicionar Redis ao compose do e-commerce, seção 9.8):**
+
+```yaml
+# docker-compose.yml (adições ao existente)
+services:
+  postgres-accounts:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: accounts
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5435:5432"
+
+  postgres-transfers:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: transfers
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5436:5432"
+
+  postgres-statements:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: statements
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5437:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Kafka e Kafka UI reutilizados do docker-compose da seção 9.8
+```
+
+**Testando o fluxo completo:**
+
+```bash
+# 1. Consultar saldo inicial
+curl http://localhost:8084/api/contas/1/saldo
+# {"contaId": 1, "saldo": 5000.00, "fonte": "cache"}
+
+# 2. Transferência interna: Alice (conta 1) → Bob (conta 2) — R$ 500
+curl -X POST http://localhost:8082/api/transferencias/interna \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: txn-001" \
+  -d '{
+    "contaOrigemId": 1,
+    "contaDestinoId": 2,
+    "valor": 500.00,
+    "descricao": "Almoço de ontem"
+  }'
+# {"id": "...", "tipo": "INTERNA", "status": "CRIADA", "valor": 500.00}
+
+# 3. Aguardar ~2s e verificar status
+curl http://localhost:8082/api/transferencias/<id-retornado>
+# {"id": "...", "tipo": "INTERNA", "status": "CONCLUIDA", "valor": 500.00}
+
+# 4. Verificar saldos atualizados (read side — Redis)
+curl http://localhost:8084/api/contas/1/saldo
+# {"contaId": 1, "saldo": 4500.00, "fonte": "cache"}
+
+curl http://localhost:8084/api/contas/2/saldo
+# {"contaId": 2, "saldo": 3500.00, "fonte": "cache"}
+
+# 5. Consultar extrato (Event Sourcing — PostgreSQL)
+curl "http://localhost:8084/api/contas/1/extrato?de=2026-06-23&ate=2026-06-23"
+# [
+#   {"data": "...", "tipo": "ContaDebitada", "valor": -500.00,
+#    "saldoApos": 4500.00, "descricao": "Transferência para Conta 2"}
+# ]
+
+# 6. Transferência PIX: Alice (conta 1) → externo — R$ 300
+curl -X POST http://localhost:8082/api/transferencias/pix \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: txn-002" \
+  -d '{
+    "contaOrigemId": 1,
+    "chavePix": "destino@outrobanco.com",
+    "valor": 300.00,
+    "descricao": "Pagamento freelancer"
+  }'
+# {"id": "...", "tipo": "PIX_ENVIO", "status": "CRIADA", "valor": 300.00}
+
+# 7. Após ~3s (inclui chamada ao PSP):
+curl http://localhost:8082/api/transferencias/<id-pix>
+# {"id": "...", "tipo": "PIX_ENVIO", "status": "CONCLUIDA", "valor": 300.00}
+
+curl http://localhost:8084/api/contas/1/saldo
+# {"contaId": 1, "saldo": 4200.00, "fonte": "cache"}
+
+# 8. Testar idempotência — reenviar mesma transferência
+curl -X POST http://localhost:8082/api/transferencias/interna \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: txn-001" \
+  -d '{
+    "contaOrigemId": 1,
+    "contaDestinoId": 2,
+    "valor": 500.00,
+    "descricao": "Almoço de ontem"
+  }'
+# Retorna 200 com a mesma transferência anterior — NÃO debita novamente
+
+# 9. Testar saldo insuficiente
+curl -X POST http://localhost:8082/api/transferencias/interna \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: txn-003" \
+  -d '{
+    "contaOrigemId": 3,
+    "contaDestinoId": 1,
+    "valor": 9999.00,
+    "descricao": "Teste saldo insuficiente"
+  }'
+# Após ~1s:
+curl http://localhost:8082/api/transferencias/<id>
+# {"status": "CANCELADA", "valor": 9999.00}
+# SAGA detectou saldo insuficiente e cancelou sem compensação (nada foi debitado)
+
+# 10. Reconciliação — validar integridade
+curl http://localhost:8084/api/contas/1/reconciliacao
+# {
+#   "contaId": 1,
+#   "saldoMaterializado": 4200.00,
+#   "saldoCalculado": 4200.00,
+#   "consistente": true
+# }
+```
+
+**Resumo dos padrões aplicados no exemplo bancário:**
+
+| Padrão | Problema no Domínio Bancário | Implementação |
+|--------|------------------------------|---------------|
+| **SAGA Orquestrada** | Transferência cruza account-service + pix-gateway | `TransferenciaSaga` coordena débito→crédito ou débito→PIX |
+| **Outbox Pattern** | Débito no banco + evento no Kafka devem ser atômicos | Mesma transação: `UPDATE saldo` + `INSERT outbox` |
+| **Inbox / Idempotência** | Retry de débito não pode cobrar duas vezes | `lancamentos(transferencia_id, tipo)` UNIQUE |
+| **Pessimistic Locking** | Duas transferências simultâneas na mesma conta | `SELECT FOR UPDATE` antes de debitar/creditar |
+| **Event Sourcing** | Regulação exige histórico completo e imutável | `movimentacao_eventos` — INSERT only, nunca UPDATE/DELETE |
+| **CQRS** | Saldo em < 1ms vs. extrato paginado por data | Saldo no Redis (read), extrato no PostgreSQL (read), mutações no account-service (write) |
+| **Circuit Breaker** | PSP do BACEN pode ficar indisponível | Resilience4j no `pix-gateway-service` — fallback + retry |
+| **Partidas Dobradas** | Cada centavo precisa de rastreabilidade completa | Todo débito gera crédito correspondente; soma = 0 |
+| **Compensação** | PIX recusado após débito já realizado | Estorno: crédito na conta de origem com `transferencia_id-estorno` |
+| **Timeout / Stuck Saga** | Transferência presa sem resposta | `StuckSagaDetector` (mesmo padrão da seção 3.4) |
+
+---
+
+## 11. Outros Exemplos de Aplicação dos Padrões
+
+Os padrões descritos neste documento aparecem em diversos domínios além de e-commerce e banco. A seguir, exemplos que combinam múltiplas técnicas, com destaque para quais se aplicam e por quê.
+
+### Plataforma de Viagens (tipo Booking/Decolar)
+
+Reservar uma viagem envolve voo + hotel + seguro + transfer — cada um em um fornecedor diferente.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **SAGA Orquestrada** | Reservar voo → reservar hotel → contratar seguro. Se o hotel não tiver vaga, cancela a reserva do voo (compensação) |
+| **Pivot transaction** | Emissão do bilhete aéreo — após emitido, não cancela sem multa. Hotel e seguro antes são compensáveis |
+| **Circuit Breaker** | Cada fornecedor (Amadeus, Sabre, seguradoras) tem SLA próprio e pode ficar fora do ar |
+| **Outbox** | Confirmação da reserva e notificação ao cliente devem ser atômicas |
+| **Timeout / Stuck Saga** | Fornecedor de hotel pode demorar minutos para confirmar — saga precisa de deadline |
+| **CQRS** | Busca de voos (Elasticsearch com milhões de combinações) vs. escrita de reserva (PostgreSQL normalizado) |
+
+### Plataforma de Delivery (tipo iFood/Uber Eats)
+
+Pedido envolve restaurante, entregador, pagamento e cliente — todos independentes.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **SAGA Coreografada** | PedidoCriado → RestauranteAceitou → EntregadorAtribuido → PedidoRetirado → PedidoEntregue. Cada serviço reage a eventos |
+| **Compensação** | Restaurante aceita mas entregador não é encontrado em 15 min → cancela pedido, estorna pagamento, notifica restaurante |
+| **Event Sourcing** | Rastreamento completo: cada mudança de status do pedido é um evento imutável (visível ao cliente no app em tempo real) |
+| **CQRS** | Tela de "meus pedidos" lê de projeção desnormalizada; escrita passa pelo fluxo da saga |
+| **Idempotência** | Cliente aperta "pedir" duas vezes — o segundo request com mesmo Idempotency-Key não gera pedido duplicado |
+| **DLQ** | Mensagem de notificação push falha (token expirado) → vai para DLQ para reprocessamento manual |
+
+### Sistema de Matrículas Universitárias
+
+Matrícula em disciplina envolve verificar pré-requisitos, reservar vaga, gerar cobrança e registrar no histórico acadêmico.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **SAGA Orquestrada** | Validar pré-requisitos → reservar vaga na turma → gerar boleto → confirmar matrícula |
+| **Pessimistic Locking** | Vagas na turma: SELECT FOR UPDATE para evitar que 2 alunos peguem a última vaga simultaneamente |
+| **Outbox** | Reserva de vaga + evento "VagaReservada" na mesma transação |
+| **Compensação** | Boleto não pago em 48h → liberar vaga na turma, cancelar matrícula |
+| **CQRS** | Consulta de grade horária (read model desnormalizado com vagas disponíveis) vs. escrita de matrícula |
+| **Inbox** | Webhook do gateway de boleto pode enviar confirmação duplicada — processamento idempotente |
+
+### Plataforma de Seguros (Sinistro)
+
+Abertura de sinistro cruza múltiplos sistemas: análise de cobertura, vistoria, pagamento de indenização, comunicação com oficinas.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **SAGA Orquestrada (long-running)** | Abrir sinistro → validar cobertura → agendar vistoria → [aguardar dias] → aprovar → pagar indenização |
+| **Temporal Workflow** | Saga com passos que demoram dias (vistoria presencial) — Temporal persiste o estado automaticamente entre human tasks |
+| **Event Sourcing** | Regulação exige histórico completo de cada decisão no sinistro (quem aprovou, quando, por quê) |
+| **Partidas Dobradas** | Pagamento de indenização: débito na provisão técnica, crédito na conta do segurado |
+| **CDC (Debezium)** | Sistema legado de apólices não publica eventos — Debezium captura mudanças do banco legado para alimentar o sistema novo |
+| **Distributed Lock** | Dois peritos não podem aprovar o mesmo sinistro ao mesmo tempo |
+
+### Sistema de Logística e Rastreamento (tipo Correios/Transportadora)
+
+Encomenda passa por múltiplos centros de distribuição com leituras de código de barras.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **Event Sourcing** | Cada leitura de código de barras é um evento: Coletado → EmTrânsito(CD-SP) → EmTrânsito(CD-RJ) → SaiuParaEntrega → Entregue |
+| **CQRS** | Tela de rastreamento para o cliente (Elasticsearch, consulta por código) vs. sistema operacional interno (PostgreSQL) |
+| **Ordenação de eventos (Kafka)** | Chave = código da encomenda → todos os eventos da mesma encomenda na mesma partição, ordenados |
+| **Schema evolution (Avro)** | Novo campo "temperatura" adicionado para encomendas refrigeradas — consumers antigos ignoram com BACKWARD compatibility |
+| **DLQ** | Leitura de código de barras com formato inválido → DLQ para análise manual |
+| **Projeção múltipla** | Mesmos eventos geram: (1) tela de tracking, (2) dashboard operacional, (3) relatório SLA para o embarcador |
+
+### Marketplace com Múltiplos Vendedores (tipo Mercado Livre/Amazon)
+
+Pedido com itens de vendedores diferentes, cada um com estoque e fulfillment próprios.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **SAGA Orquestrada** | Para cada vendedor no pedido: reservar estoque → confirmar preço → gerar sub-pedido. Se um vendedor falhar, compensa os demais |
+| **Outbox** | Split de pagamento (repasse para cada vendedor) deve ser atômico com a confirmação do pedido |
+| **Idempotência** | Webhook de pagamento do gateway chega 2x → processamento idempotente via `transacao_id` |
+| **Circuit Breaker** | API de cada vendedor/fulfillment center pode ficar indisponível independentemente |
+| **CQRS** | Catálogo com busca full-text (Elasticsearch) vs. gestão de estoque (PostgreSQL por vendedor) |
+| **Rate Limiting** | Vendedor com API instável não pode derrubar o sistema — bulkhead + rate limiter por seller |
+
+### Sistema Hospitalar (Prontuário Eletrônico)
+
+Atendimento envolve triagem, consulta, prescrição, exames e internação — com requisitos regulatórios (LGPD, CFM).
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **Event Sourcing** | Prontuário é imutável por regulação — cada entrada (prescrição, resultado de exame, evolução) é um evento que nunca é deletado |
+| **Snapshots** | Paciente com 20 anos de histórico: snapshot do estado atual para não fazer replay de milhares de eventos |
+| **SAGA** | Internação: reservar leito → solicitar kit farmácia → notificar equipe → confirmar internação |
+| **Compensação** | Leito reservado mas cirurgia cancelada → liberar leito, cancelar kit farmácia |
+| **CQRS** | Painel de ocupação de leitos (read model atualizado em tempo real) vs. prontuário (write model normalizado) |
+| **Observabilidade** | Tracing distribuído com correlation ID para rastrear todo o fluxo de um atendimento entre triagem, laboratório e médico |
+
+### Sistema de Ingestão de Vídeo (publicação + consumo)
+
+Upload de vídeo dispara um pipeline: armazenamento do original, transcodificação em múltiplas resoluções, geração de thumbnails, moderação de conteúdo e publicação no catálogo — cada etapa pode falhar independentemente.
+
+| Padrão | Aplicação |
+|--------|-----------|
+| **SAGA Orquestrada** | Upload → armazenar original (S3) → transcodificar (720p, 1080p, 4K) → gerar thumbnails → moderar conteúdo → publicar no catálogo. Se moderação reprovar, compensa: remove do storage, marca como rejeitado |
+| **Temporal Workflow** | Transcodificação de vídeo longo pode levar horas — Temporal persiste estado entre etapas long-running sem precisar de tabela de saga manual |
+| **Pivot transaction** | Publicação no catálogo (tornar visível ao público) — após publicado e com visualizações, remoção gera impacto diferente de antes da publicação |
+| **Compensação** | Moderação reprova após transcodificação concluída → deletar arquivos transcodificados do S3, remover thumbnails, notificar criador |
+| **Timeout / Stuck Saga** | Job de transcodificação travou (codec incompatível, arquivo corrompido) — detector de sagas presas aciona retry ou cancela após deadline |
+| **CQRS** | Write side: metadados do vídeo em PostgreSQL (título, status, resolução). Read side: catálogo de busca em Elasticsearch (full-text por título, tags, canal), feed personalizado em Redis |
+| **Event Sourcing** | Lifecycle completo do vídeo: Uploaded → TranscodingStarted → Transcoded(720p) → Transcoded(1080p) → ThumbnailGenerated → ModerationApproved → Published. Permite debug de pipeline e reprocessamento |
+| **Outbox** | Quando o status muda (transcodificação concluída, vídeo publicado), evento e atualização de metadados devem ser atômicos |
+| **Circuit Breaker** | API de moderação de conteúdo (Google Video Intelligence, AWS Rekognition) pode ficar indisponível — fallback: enfileirar para moderação manual |
+| **DLQ** | Vídeo com codec não suportado falha repetidamente na transcodificação → DLQ para análise manual em vez de bloquear a fila |
+| **Idempotência** | Re-upload do mesmo vídeo (retry por timeout de rede) não deve gerar duplicata — deduplicação por hash SHA-256 do arquivo |
+| **Ordenação de eventos (Kafka)** | Chave = videoId → todos os eventos do mesmo vídeo na mesma partição. Impede que "Published" chegue antes de "Transcoded" |
+| **Schema evolution** | Novo campo "hdrMetadata" para vídeos HDR, "spatialAudio" para áudio 360° — consumers antigos ignoram campos novos com BACKWARD compatibility |
+| **Projeção múltipla** | Mesmos eventos alimentam: (1) catálogo de busca, (2) dashboard do criador com estatísticas, (3) fila de moderação, (4) sistema de recomendação |
+| **Pessimistic Locking** | Cota de armazenamento por canal: SELECT FOR UPDATE antes de aceitar upload, para evitar que uploads simultâneos excedam o limite |
+
+### Resumo — Quais padrões aparecem com mais frequência
+
+| Padrão | Onde aparece mais |
+|--------|-------------------|
+| **SAGA** | Qualquer domínio com operação multi-serviço (todos os 8 exemplos) |
+| **Outbox** | Sempre que há SAGA ou eventos — é a base (todos) |
+| **CQRS** | Domínios com leitura muito diferente da escrita (busca, dashboards, tracking, catálogo de vídeo) |
+| **Event Sourcing** | Domínios regulados ou com necessidade de auditoria e rastreabilidade de pipeline (banco, seguro, hospital, logística, vídeo) |
+| **Circuit Breaker** | Integrações com sistemas externos/terceiros (viagens, marketplace, PIX, moderação de conteúdo) |
+| **Pessimistic Locking** | Recursos escassos com alta contenção (vagas, leitos, saldo, cota de armazenamento) |
+| **Idempotência** | Em absolutamente todos — é requisito básico de sistemas distribuídos |
+
+---
+
+## 12. Tabela Comparativa dos Padrões
 
 | Aspecto | SAGA | CQRS | Outbox | Event Sourcing |
 |---------|------|------|--------|----------------|
@@ -4295,7 +6363,7 @@ dominio.pedido.pedidocancelado   ← evento de domínio (CQRS)
 
 ---
 
-## 11. Quando Usar (e Quando Não Usar)
+## 13. Quando Usar (e Quando Não Usar)
 
 ```
 Árvore de Decisão:
@@ -4345,7 +6413,7 @@ dominio.pedido.pedidocancelado   ← evento de domínio (CQRS)
 
 ---
 
-## 12. Referências e Leitura Complementar
+## 14. Referências e Leitura Complementar
 
 - **Chris Richardson** — *Microservices Patterns* (Manning) — referência definitiva para SAGA, CQRS, Event Sourcing e Outbox
 - **Vaughn Vernon** — *Implementing Domain-Driven Design* (Addison-Wesley) — DDD + Event Sourcing
@@ -4358,7 +6426,7 @@ dominio.pedido.pedidocancelado   ← evento de domínio (CQRS)
 
 ---
 
-## 13. Glossário
+## 15. Glossário
 
 | Termo | Definição |
 |-------|-----------|
@@ -4393,3 +6461,8 @@ dominio.pedido.pedidocancelado   ← evento de domínio (CQRS)
 | **Stale read** | Leitura que retorna dados desatualizados porque a projeção de leitura ainda não processou os eventos mais recentes |
 | **WAL (Write-Ahead Log)** | Log de transações do PostgreSQL onde todas as mudanças são registradas antes de serem aplicadas — base para CDC com Debezium |
 | **Write model** | Banco normalizado usado para escrita no padrão CQRS (ex: PostgreSQL com tabelas normalizadas) |
+| **Double-entry bookkeeping** | Princípio contábil onde toda movimentação gera dois lançamentos (débito e crédito) cuja soma é zero — base de sistemas financeiros |
+| **Ledger** | Livro razão — registro imutável e ordenado de todas as movimentações financeiras de uma conta |
+| **Pessimistic locking** | Estratégia que bloqueia o registro no banco (SELECT FOR UPDATE) impedindo leitura/escrita concorrente até o fim da transação |
+| **Circuit Breaker** | Padrão de resiliência que interrompe chamadas a um serviço após N falhas consecutivas, evitando cascata de falhas |
+| **PSP** | Provedor de Serviços de Pagamento — entidade autorizada pelo BACEN a intermediar transações PIX |

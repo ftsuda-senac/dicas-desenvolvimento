@@ -3961,13 +3961,89 @@ public class EventoController {
 
 ### 10.4 HandlerMethodArgumentResolver — Argumento Customizado
 
+#### O que é e por que usar
+
+`HandlerMethodArgumentResolver` é a interface que o Spring MVC usa internamente para converter **cada parâmetro** de um método de controller em um objeto concreto. Toda vez que você escreve `@RequestParam`, `@PathVariable`, `@ModelAttribute`, `Model`, `HttpServletRequest` ou qualquer outro tipo como parâmetro de controller, existe um resolver registrado que sabe extrair esse valor da requisição.
+
+O Spring Boot já registra dezenas de resolvers nativos (veja a tabela abaixo). Criar um resolver customizado permite **inventar seus próprios parâmetros de controller**, eliminando código repetitivo e centralizando lógica transversal.
+
+#### Como funciona o pipeline de resolução
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Requisição HTTP chega                        │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│        DispatcherServlet identifica o HandlerMethod             │
+│   (controller + método com seus parâmetros anotados)           │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│     Para CADA parâmetro do método, percorre a lista de         │
+│     HandlerMethodArgumentResolver registrados:                 │
+│                                                                │
+│     for (resolver : resolvers) {                               │
+│         if (resolver.supportsParameter(param)) {               │
+│             return resolver.resolveArgument(param, ...);       │
+│         }                                                      │
+│     }                                                          │
+└──────────────────────────┬──────────────────────────────────────┘
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│   Método do Controller é invocado com todos os parâmetros      │
+│   já resolvidos — o developer não percebe a mágica             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### Interface — dois métodos
+
 ```java
-/**
- * Resolve automaticamente o usuário logado como parâmetro de método.
- * Uso: public ResponseEntity<?> meuMetodo(@CurrentUser UsuarioInfo usuario)
- *
- * Elimina o boilerplate de injetar Authentication em todos os métodos.
- */
+public interface HandlerMethodArgumentResolver {
+
+    // "Eu sei resolver esse tipo de parâmetro?"
+    boolean supportsParameter(MethodParameter parameter);
+
+    // "Extraia o valor concreto da requisição"
+    @Nullable
+    Object resolveArgument(MethodParameter parameter,
+                           @Nullable ModelAndViewContainer mavContainer,
+                           NativeWebRequest webRequest,
+                           @Nullable WebDataBinderFactory binderFactory) throws Exception;
+}
+```
+
+| Método | Responsabilidade |
+|---|---|
+| `supportsParameter` | Retorna `true` se este resolver sabe tratar o parâmetro. Normalmente verifica anotação e/ou tipo. |
+| `resolveArgument` | Extrai/constrói o objeto. Tem acesso completo à requisição via `NativeWebRequest`. |
+
+#### Resolvers nativos mais importantes
+
+| Resolver | O que resolve | Anotação/Tipo |
+|---|---|---|
+| `RequestParamMethodArgumentResolver` | `@RequestParam` | `@RequestParam String nome` |
+| `PathVariableMethodArgumentResolver` | `@PathVariable` | `@PathVariable Long id` |
+| `ModelAttributeMethodProcessor` | `@ModelAttribute` (form binding) | `@ModelAttribute ProdutoForm form` |
+| `RequestResponseBodyMethodProcessor` | `@RequestBody` (JSON) | `@RequestBody ProdutoDto dto` |
+| `PageableHandlerMethodArgumentResolver` | `Pageable` (Spring Data) | `Pageable pageable` |
+| `SortHandlerMethodArgumentResolver` | `Sort` (Spring Data) | `Sort sort` |
+| `ServletRequestMethodArgumentResolver` | `HttpServletRequest` | `HttpServletRequest request` |
+| `PrincipalMethodArgumentResolver` | `Principal` | `Principal principal` |
+| `ModelMethodProcessor` | `Model`, `ModelMap` | `Model model` |
+| `RedirectAttributesMethodArgumentResolver` | `RedirectAttributes` | `RedirectAttributes attrs` |
+| `SessionAttributeMethodArgumentResolver` | `@SessionAttribute` | `@SessionAttribute("cart") Cart c` |
+| `ExpressionValueMethodArgumentResolver` | `@Value` em controllers | `@Value("${app.name}") String n` |
+
+#### Exemplo 1 — @CurrentUser (eliminar boilerplate de autenticação)
+
+```java
+// 1. Anotação customizada
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface CurrentUser {}
+
+// 2. Resolver
 @Component
 public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolver {
 
@@ -3989,18 +4065,210 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
     }
 }
 
-// Registro em WebMvcConfigurer
-@Override
-public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
-    resolvers.add(currentUserArgumentResolver);
+// 3. Registro em WebMvcConfigurer
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    private final CurrentUserArgumentResolver currentUserArgumentResolver;
+
+    public WebConfig(CurrentUserArgumentResolver currentUserArgumentResolver) {
+        this.currentUserArgumentResolver = currentUserArgumentResolver;
+    }
+
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(currentUserArgumentResolver);
+    }
 }
 
-// Uso limpo no Controller (sem Authentication como parâmetro)
+// 4. Uso limpo no Controller
 @GetMapping("/meu-perfil")
 public ResponseEntity<PerfilResponse> meuPerfil(@CurrentUser UsuarioInfo usuario) {
     return ResponseEntity.ok(perfilService.buscar(usuario.getId()));
 }
 ```
+
+#### Exemplo 2 — @ClientIP (extrair IP real do cliente, mesmo atrás de proxy/load balancer)
+
+```java
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface ClientIP {}
+
+@Component
+public class ClientIPArgumentResolver implements HandlerMethodArgumentResolver {
+
+    @Override
+    public boolean supportsParameter(MethodParameter parameter) {
+        return parameter.hasParameterAnnotation(ClientIP.class)
+            && parameter.getParameterType().equals(String.class);
+    }
+
+    @Override
+    public Object resolveArgument(MethodParameter parameter,
+                                   ModelAndViewContainer mavContainer,
+                                   NativeWebRequest webRequest,
+                                   WebDataBinderFactory binderFactory) {
+
+        HttpServletRequest request = (HttpServletRequest) webRequest.getNativeRequest();
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip != null && !ip.isBlank()) {
+            return ip.split(",")[0].trim(); // primeiro IP da cadeia
+        }
+        ip = request.getHeader("X-Real-IP");
+        return (ip != null && !ip.isBlank()) ? ip : request.getRemoteAddr();
+    }
+}
+
+// Uso
+@PostMapping("/api/auth/login")
+public ResponseEntity<TokenResponse> login(@RequestBody LoginRequest request,
+                                            @ClientIP String ip) {
+    auditService.registrarTentativaLogin(request.getEmail(), ip);
+    return ResponseEntity.ok(authService.autenticar(request));
+}
+```
+
+#### Exemplo 3 — @TenantId (multi-tenancy via header ou subdomínio)
+
+```java
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface TenantId {}
+
+@Component
+public class TenantIdArgumentResolver implements HandlerMethodArgumentResolver {
+
+    @Override
+    public boolean supportsParameter(MethodParameter parameter) {
+        return parameter.hasParameterAnnotation(TenantId.class)
+            && parameter.getParameterType().equals(String.class);
+    }
+
+    @Override
+    public Object resolveArgument(MethodParameter parameter,
+                                   ModelAndViewContainer mavContainer,
+                                   NativeWebRequest webRequest,
+                                   WebDataBinderFactory binderFactory) {
+
+        HttpServletRequest request = (HttpServletRequest) webRequest.getNativeRequest();
+
+        // Estratégia 1: header
+        String tenant = request.getHeader("X-Tenant-Id");
+        if (tenant != null && !tenant.isBlank()) return tenant;
+
+        // Estratégia 2: subdomínio (acme.meuapp.com → acme)
+        String host = request.getServerName();
+        if (host.contains(".")) {
+            return host.substring(0, host.indexOf('.'));
+        }
+
+        throw new IllegalStateException("Tenant não identificado na requisição");
+    }
+}
+
+// Uso
+@GetMapping("/api/produtos")
+public ResponseEntity<List<ProdutoResponse>> listar(@TenantId String tenant) {
+    return ResponseEntity.ok(produtoService.listarPorTenant(tenant));
+}
+```
+
+#### Exemplo 4 — @PaginationDefaults (Pageable customizado sem depender do Spring Data)
+
+```java
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface PaginationDefaults {
+    int page() default 0;
+    int size() default 20;
+    int maxSize() default 100;
+}
+
+public record PaginationRequest(int page, int size) {
+    public int offset() { return page * size; }
+}
+
+@Component
+public class PaginationArgumentResolver implements HandlerMethodArgumentResolver {
+
+    @Override
+    public boolean supportsParameter(MethodParameter parameter) {
+        return parameter.getParameterType().equals(PaginationRequest.class);
+    }
+
+    @Override
+    public Object resolveArgument(MethodParameter parameter,
+                                   ModelAndViewContainer mavContainer,
+                                   NativeWebRequest webRequest,
+                                   WebDataBinderFactory binderFactory) {
+
+        PaginationDefaults defaults = parameter.getParameterAnnotation(PaginationDefaults.class);
+        int defaultPage = defaults != null ? defaults.page() : 0;
+        int defaultSize = defaults != null ? defaults.size() : 20;
+        int maxSize = defaults != null ? defaults.maxSize() : 100;
+
+        String pageStr = webRequest.getParameter("page");
+        String sizeStr = webRequest.getParameter("size");
+
+        int page = pageStr != null ? Math.max(0, Integer.parseInt(pageStr)) : defaultPage;
+        int size = sizeStr != null
+            ? Math.min(maxSize, Math.max(1, Integer.parseInt(sizeStr)))
+            : defaultSize;
+
+        return new PaginationRequest(page, size);
+    }
+}
+
+// Uso
+@GetMapping("/api/relatorios")
+public ResponseEntity<List<RelatorioResponse>> listar(
+        @PaginationDefaults(size = 50) PaginationRequest paginacao) {
+    return ResponseEntity.ok(relatorioService.listar(paginacao.offset(), paginacao.size()));
+}
+```
+
+#### Registro — não esqueça do WebMvcConfigurer
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    private final CurrentUserArgumentResolver currentUserResolver;
+    private final ClientIPArgumentResolver clientIPResolver;
+    private final TenantIdArgumentResolver tenantIdResolver;
+    private final PaginationArgumentResolver paginationResolver;
+
+    // construtor com injeção...
+
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(currentUserResolver);
+        resolvers.add(clientIPResolver);
+        resolvers.add(tenantIdResolver);
+        resolvers.add(paginationResolver);
+    }
+}
+```
+
+#### Ordem de precedência e cuidados
+
+| Aspecto | Detalhe |
+|---|---|
+| **Ordem** | Resolvers customizados registrados via `addArgumentResolvers` são avaliados **depois** dos nativos do Spring. Se um resolver nativo já trata o tipo/anotação, o customizado não será chamado. |
+| **Conflito de tipos** | Se dois resolvers retornam `true` para o mesmo parâmetro, o **primeiro** na lista vence. Use anotações customizadas (`@CurrentUser`, `@ClientIP`) para evitar ambiguidade. |
+| **Performance** | `supportsParameter` é chamado para cada parâmetro de cada requisição. Mantenha a lógica leve (apenas checar anotação/tipo). |
+| **Testabilidade** | O resolver é um bean Spring — pode ser testado unitariamente passando `MockNativeWebRequest`. |
+| **null vs exceção** | Retornar `null` de `resolveArgument` é válido — o parâmetro recebe `null`. Se o parâmetro é obrigatório, lance exceção para erro claro. |
+
+#### Quando usar (e quando NÃO usar)
+
+| ✅ Usar quando | ❌ Preferir alternativa |
+|---|---|
+| Extrair dado transversal da requisição (usuário, tenant, IP, locale) | Binding simples de query params → `@RequestParam` |
+| Eliminar código repetitivo em muitos controllers | Lógica em um único controller → método privado ou `@ModelAttribute` local |
+| Criar abstração tipada com anotação própria | Transformação de DTO → converter/`@InitBinder` |
+| Resolver dados de headers customizados | Acesso pontual a header → `@RequestHeader` |
 
 ### 10.5 @RequestScope e @SessionScope Beans
 

@@ -1069,6 +1069,73 @@ System.out.println(sb); // Pedido [NUMERO] e pedido [NUMERO]
 
 ---
 
+### Escapando metacaracteres com `Pattern.quote()`
+
+Quando você precisa usar uma string literal como padrão de busca — e essa string pode conter metacaracteres como `.`, `*`, `(`, `[`, `$` etc. — o método `Pattern.quote()` envolve o texto entre `\Q` e `\E`, fazendo com que todo o conteúdo seja tratado literalmente.
+
+#### Problema sem `Pattern.quote()`
+
+```java
+String busca = "valor (R$)";
+Pattern pattern = Pattern.compile(busca); // ERRO: parênteses e $ são metacaracteres
+```
+
+Esse código lança `PatternSyntaxException` porque `(`, `)` e `$` têm significado especial em regex.
+
+#### Solução com `Pattern.quote()`
+
+```java
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
+String busca = "valor (R$)";
+Pattern pattern = Pattern.compile(Pattern.quote(busca));
+Matcher matcher = pattern.matcher("O campo valor (R$) é obrigatório");
+
+System.out.println(matcher.find()); // true
+```
+
+#### Exemplo: substituir texto literal que contém metacaracteres
+
+```java
+String texto = "Preço: 10.50 + taxa";
+String de = "10.50";
+String para = "15.00";
+
+String resultado = texto.replaceAll(Pattern.quote(de), para);
+System.out.println(resultado); // Preço: 15.00 + taxa
+```
+
+Sem `Pattern.quote()`, o `.` em `"10.50"` seria interpretado como "qualquer caractere", podendo casar com strings indesejadas como `"10X50"`.
+
+#### Combinando `Pattern.quote()` com `Matcher.quoteReplacement()`
+
+Quando o texto de substituição também contém caracteres especiais (como `$` ou `\`), use `Matcher.quoteReplacement()` para evitar que sejam interpretados como referências a grupos.
+
+```java
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+String texto = "Total: valor (R$)";
+String de = "valor (R$)";
+String para = "100,00 (R$)";
+
+String resultado = texto.replaceAll(
+    Pattern.quote(de),
+    Matcher.quoteReplacement(para)
+);
+
+System.out.println(resultado); // Total: 100,00 (R$)
+```
+
+#### Quando usar?
+
+- Sempre que o padrão de busca vier de **entrada do usuário**, configuração ou banco de dados
+- Quando a string contém caracteres como `.`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`, `}`, `^`, `$`, `|`, `\`
+- Em substituições onde tanto o padrão quanto o texto de troca podem conter metacaracteres
+
+---
+
 ### 6.1 Tabela com símbolos mais usados em regex no dia a dia
 
 A tabela abaixo resume vários símbolos e atalhos muito usados com `Pattern` e `Matcher`.

@@ -1932,6 +1932,84 @@ List<Object[]> findRankingDoCurso(@Param("cursoId") Long cursoId);
 List<Object[]> findAlunosComMediaAcimaDe(@Param("mediaMinima") BigDecimal mediaMinima);
 ```
 
+### Pivot — Transformar Linhas em Colunas
+
+Uma operação de pivotamento transforma valores de linhas em colunas — útil para relatórios e dashboards. O JPQL não suporta essa operação; é necessário usar queries nativas.
+
+**Abordagem 1 — CASE WHEN com agregação (funciona em qualquer banco relacional)**
+
+Exemplo: gerar um relatório com a nota de cada aluno por curso, onde cada curso vira uma coluna.
+
+```java
+// DTO para o resultado pivotado
+public record NotasPorCursoDTO(
+    String nomeAluno,
+    BigDecimal notaCursoA,
+    BigDecimal notaCursoB,
+    BigDecimal notaCursoC
+) {}
+```
+
+```java
+@Query(value = """
+    SELECT a.nome AS nome_aluno,
+           MAX(CASE WHEN c.nome = 'Programação Web' THEN m.nota END) AS nota_curso_a,
+           MAX(CASE WHEN c.nome = 'Banco de Dados'  THEN m.nota END) AS nota_curso_b,
+           MAX(CASE WHEN c.nome = 'Estrutura de Dados' THEN m.nota END) AS nota_curso_c
+    FROM aluno a
+    JOIN matricula m ON m.aluno_id = a.id
+    JOIN curso c ON c.id = m.curso_id
+    WHERE m.status = 'ATIVA'
+    GROUP BY a.id, a.nome
+    ORDER BY a.nome
+    """, nativeQuery = true)
+List<Object[]> findNotasPivotadasPorCurso();
+```
+
+> O `MAX` (ou qualquer função de agregação) é necessário porque o `GROUP BY` colapsa múltiplas linhas em uma — sem ele, o banco rejeita a query. Como cada aluno tem no máximo uma nota por curso, o `MAX` retorna exatamente esse valor único.
+
+**Abordagem 2 — `crosstab()` do PostgreSQL (extensão `tablefunc`)**
+
+O `crosstab()` é mais declarativo e escala melhor quando os valores das colunas são dinâmicos. Requer ativar a extensão uma única vez:
+
+```sql
+-- executar uma vez no banco
+CREATE EXTENSION IF NOT EXISTS tablefunc;
+```
+
+```java
+@Query(value = """
+    SELECT * FROM crosstab(
+        $$
+        SELECT a.nome, c.nome AS curso, m.nota
+        FROM aluno a
+        JOIN matricula m ON m.aluno_id = a.id
+        JOIN curso c ON c.id = m.curso_id
+        WHERE m.status = 'ATIVA'
+        ORDER BY a.nome, c.nome
+        $$,
+        $$ SELECT nome FROM curso WHERE ativo = true ORDER BY nome $$
+    ) AS pivot(
+        nome_aluno TEXT,
+        "Banco de Dados" NUMERIC,
+        "Estrutura de Dados" NUMERIC,
+        "Programação Web" NUMERIC
+    )
+    """, nativeQuery = true)
+List<Object[]> findNotasCrosstab();
+```
+
+> O primeiro argumento do `crosstab` é a query de dados (deve retornar exatamente 3 colunas: identificador da linha, categoria, valor). O segundo argumento define as categorias que viram colunas. A cláusula `AS pivot(...)` precisa listar as colunas na mesma ordem alfabética retornada pela query de categorias.
+
+**Quando usar cada abordagem:**
+
+| Critério | CASE WHEN | crosstab() |
+|---|---|---|
+| Portabilidade | Qualquer banco relacional | Apenas PostgreSQL |
+| Colunas conhecidas em compile-time | Sim (obrigatório) | Sim (obrigatório no Java) |
+| Legibilidade com muitas colunas | Baixa (um CASE por coluna) | Alta (declarativo) |
+| Performance com muitas categorias | Boa | Melhor (otimizado internamente) |
+
 ### Operadores PostgreSQL específicos
 
 ```java

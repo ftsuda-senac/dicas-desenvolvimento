@@ -4,16 +4,21 @@ Este documento reúne informações e exemplos práticos sobre recursos avançad
 
 - envio de e-mails com configuração padrão, configuração dinâmica de servidores SMTP e templates Thymeleaf;
 - execução de jobs com Quartz, incluindo persistencia em banco, controle dinâmico e disparo manual;
-- uso de JMS com Artemis, cobrindo filas, pub-sub, filas duráveis, uso de `pooled-jms` e mensagens com resposta.
+- uso de JMS com Artemis, cobrindo filas, pub-sub, filas duráveis, uso de `pooled-jms` e mensagens com resposta;
+- mensageria distribuída com Kafka e RabbitMQ, incluindo produtores, consumidores, DLQ e boas práticas;
 - uso de Spring Events para comunicação interna desacoplada, com listeners síncronos, assíncronos e transacionais;
+- GraphQL com Spring for GraphQL, incluindo schema, controllers, `@BatchMapping` e resolução do problema N+1;
+- gRPC com Spring Boot, incluindo Protocol Buffers, implementação de servidor e cliente, e tipos de streaming;
+- documentação de APIs com SpringDoc OpenAPI, incluindo Swagger UI, anotações e agrupamento de APIs;
 - mecanismos de resiliência, incluindo timeout, retry, circuit breaker, bulkhead, rate limiter e fallback;
-- rate limiting com Bucket4j para controle de acesso por IP, usuário, tenant ou chave de negocio.
-- processamento em lote com Spring Batch, incluindo `Job`, `Step`, chunk processing, restart, skip e retry.
-- cache e Spring Session, incluindo `@Cacheable`, `@CachePut`, `@CacheEvict`, Caffeine, Redis e sessão distribuída.
-- upload e download de arquivos, incluindo `MultipartFile`, streaming, armazenamento local, validações de segurança e detecção de tipo real com Apache Tika.
-- leitura e exportação de dados em CSV e Excel com Apache Commons CSV, Apache POI e `excel-streaming-reader`.
-- concorrência com `java.util.concurrent`, incluindo locks (`ReentrantLock`, `ReentrantReadWriteLock`, `StampedLock`), classes atômicas (`AtomicInteger`, `LongAdder`, `AtomicReference`), coleções concorrentes (`ConcurrentHashMap`, `CopyOnWriteArrayList`, filas bloqueantes) e sincronizadores (`CountDownLatch`, `Semaphore`, `CyclicBarrier`, `Phaser`).
-- Actuator e métricas customizadas, incluindo endpoints de saúde, health indicators, métricas técnicas e de negócio com Micrometer (`Counter`, `Timer`, `Gauge`, `DistributionSummary`), e integração com OpenTelemetry para traces, métricas e logs distribuídos.
+- rate limiting com Bucket4j para controle de acesso por IP, usuário, tenant ou chave de negócio;
+- processamento em lote com Spring Batch, incluindo `Job`, `Step`, chunk processing, restart, skip e retry;
+- cache e Spring Session, incluindo `@Cacheable`, `@CachePut`, `@CacheEvict`, Caffeine, Redis e sessão distribuída;
+- upload e download de arquivos, incluindo `MultipartFile`, streaming, armazenamento local, validações de segurança e detecção de tipo real com Apache Tika;
+- leitura e exportação de dados em CSV e Excel com Apache Commons CSV, Apache POI e `excel-streaming-reader`;
+- concorrência com `java.util.concurrent`, incluindo locks (`ReentrantLock`, `ReentrantReadWriteLock`, `StampedLock`), classes atômicas (`AtomicInteger`, `LongAdder`, `AtomicReference`), coleções concorrentes (`ConcurrentHashMap`, `CopyOnWriteArrayList`, filas bloqueantes) e sincronizadores (`CountDownLatch`, `Semaphore`, `CyclicBarrier`, `Phaser`);
+- Actuator e métricas customizadas, incluindo endpoints de saúde, health indicators, métricas técnicas e de negócio com Micrometer (`Counter`, `Timer`, `Gauge`, `DistributionSummary`), e integração com OpenTelemetry para traces, métricas e logs distribuídos;
+- feature flags e estratégias de deploy, incluindo Blue-Green, Canary, Rolling Update e implementação de toggles com Spring.
 
 Os exemplos abaixo seguem um estilo compatível com Spring Boot 3.x e Jakarta EE.
 
@@ -1911,7 +1916,307 @@ public DefaultJmsListenerContainerFactory jmsListenerContainerFactory(Connection
 | `convertAndSend()` (sender) | Opcional | Só para desacoplar o envio da thread da requisição |
 | Outbox relay (`@Scheduled`) | Não | `@Scheduled` já roda em thread separada |
 
-## 4. Events do Spring
+## 4. Mensageria com Kafka e RabbitMQ
+
+A seção anterior cobre mensageria embarcada com JMS e Artemis, adequada para cenários onde o broker faz parte da própria aplicação ou do mesmo cluster. Para cenários distribuídos com maior throughput, desacoplamento entre serviços independentes e retenção de eventos, as alternativas mais usadas no ecossistema Java são RabbitMQ e Apache Kafka.
+
+### 4.1. Quando usar mensageria
+
+| Cenário | Benefício |
+|---------|-----------|
+| Processamento assíncrono | Resposta imediata ao usuário; trabalho pesado em background |
+| Desacoplamento de serviços | Produtor e consumidor evoluem independentemente |
+| Picos de carga | Fila absorve a demanda e processa no ritmo do consumidor |
+| Event-driven architecture | Serviços reagem a eventos de domínio |
+| Garantia de entrega | Mensagens persistidas até serem consumidas com sucesso |
+
+### 4.2. RabbitMQ vs Kafka
+
+| Aspecto | RabbitMQ | Kafka |
+|---------|----------|-------|
+| **Modelo** | Message broker (fila) | Event streaming (log distribuído) |
+| **Mensagem após consumo** | Removida da fila | Retida por período configurado |
+| **Ordenação** | Por fila | Por partição |
+| **Throughput** | Milhares/s | Milhões/s |
+| **Replay** | Não | Sim (consumer offset) |
+| **Caso de uso típico** | Tarefas assíncronas, RPC, notificações | Streaming, event sourcing, analytics |
+| **Complexidade operacional** | Baixa | Alta |
+| **Protocolo** | AMQP | Protocolo próprio sobre TCP |
+
+### 4.3. RabbitMQ com Spring Boot
+
+#### Dependência
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-amqp</artifactId>
+</dependency>
+```
+
+#### Configuração
+
+```yaml
+spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+```
+
+#### Configuração de fila, exchange e binding
+
+```java
+package br.com.exemplo.mensageria.rabbit;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.amqp.core.*;
+import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class RabbitConfig {
+
+    public static final String PEDIDO_QUEUE = "pedido.criado";
+    public static final String PEDIDO_DLQ = "pedido.criado.dlq";
+    public static final String PEDIDO_EXCHANGE = "pedido.exchange";
+
+    @Bean
+    public Queue pedidoQueue() {
+        return QueueBuilder.durable(PEDIDO_QUEUE)
+                .deadLetterExchange("")
+                .deadLetterRoutingKey(PEDIDO_DLQ)
+                .build();
+    }
+
+    @Bean
+    public Queue pedidoDlq() {
+        return QueueBuilder.durable(PEDIDO_DLQ).build();
+    }
+
+    @Bean
+    public TopicExchange pedidoExchange() {
+        return new TopicExchange(PEDIDO_EXCHANGE);
+    }
+
+    @Bean
+    public Binding binding(Queue pedidoQueue, TopicExchange pedidoExchange) {
+        return BindingBuilder.bind(pedidoQueue).to(pedidoExchange).with("pedido.#");
+    }
+
+    @Bean
+    public Jackson2JsonMessageConverter messageConverter(ObjectMapper mapper) {
+        return new Jackson2JsonMessageConverter(mapper);
+    }
+}
+```
+
+A Dead Letter Queue (DLQ) recebe mensagens que falharam após as tentativas de retry, evitando que mensagens com erro bloqueiem o processamento das demais.
+
+#### Produtor
+
+```java
+package br.com.exemplo.mensageria.rabbit;
+
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PedidoEventPublisher {
+
+    private final RabbitTemplate rabbitTemplate;
+
+    public PedidoEventPublisher(RabbitTemplate rabbitTemplate) {
+        this.rabbitTemplate = rabbitTemplate;
+    }
+
+    public void publicarPedidoCriado(PedidoCriadoEvent evento) {
+        rabbitTemplate.convertAndSend(
+                RabbitConfig.PEDIDO_EXCHANGE,
+                "pedido.criado",
+                evento
+        );
+    }
+}
+```
+
+#### Consumidor
+
+```java
+package br.com.exemplo.mensageria.rabbit;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.stereotype.Component;
+
+@Component
+public class PedidoEventConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(PedidoEventConsumer.class);
+
+    private final NotificacaoService notificacaoService;
+
+    public PedidoEventConsumer(NotificacaoService notificacaoService) {
+        this.notificacaoService = notificacaoService;
+    }
+
+    @RabbitListener(queues = RabbitConfig.PEDIDO_QUEUE)
+    public void processarPedidoCriado(PedidoCriadoEvent evento) {
+        log.info("Pedido recebido: {}", evento.pedidoId());
+        notificacaoService.enviarConfirmacao(evento);
+    }
+}
+```
+
+### 4.4. Kafka com Spring Boot
+
+#### Dependência
+
+```xml
+<dependency>
+    <groupId>org.springframework.kafka</groupId>
+    <artifactId>spring-kafka</artifactId>
+</dependency>
+```
+
+#### Configuração
+
+```yaml
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: pedido-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "br.com.exemplo.mensageria.eventos"
+```
+
+#### Produtor
+
+```java
+package br.com.exemplo.mensageria.kafka;
+
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PedidoKafkaProducer {
+
+    private final KafkaTemplate<String, PedidoCriadoEvent> kafkaTemplate;
+
+    public PedidoKafkaProducer(KafkaTemplate<String, PedidoCriadoEvent> kafkaTemplate) {
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+    public void publicar(PedidoCriadoEvent evento) {
+        kafkaTemplate.send("pedido.criado", evento.pedidoId(), evento);
+    }
+}
+```
+
+A chave da mensagem (`evento.pedidoId()`) garante que todas as mensagens do mesmo pedido sejam enviadas para a mesma partição, preservando a ordem de processamento para aquele pedido.
+
+#### Consumidor
+
+```java
+package br.com.exemplo.mensageria.kafka;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.stereotype.Component;
+
+@Component
+public class PedidoKafkaConsumer {
+
+    private static final Logger log = LoggerFactory.getLogger(PedidoKafkaConsumer.class);
+
+    @KafkaListener(topics = "pedido.criado", groupId = "notificacao-service")
+    public void processar(PedidoCriadoEvent evento) {
+        log.info("Evento recebido: pedido={}", evento.pedidoId());
+        // processar evento
+    }
+}
+```
+
+No Kafka, cada consumer group recebe todas as mensagens do tópico de forma independente. Isso permite que serviços diferentes (notificação, analytics, auditoria) consumam o mesmo evento sem interferência.
+
+```java
+// Outro consumer group processa o mesmo evento independentemente
+@KafkaListener(topics = "pedido.criado", groupId = "analytics-service")
+public void registrarAnalytics(PedidoCriadoEvent evento) {
+    // registrar métricas e analytics
+}
+```
+
+### 4.5. Boas práticas
+
+#### Idempotência no consumidor
+
+Mensagens podem ser entregues mais de uma vez (at-least-once delivery). O consumidor deve ser idempotente — processar a mesma mensagem duas vezes não pode causar efeitos duplicados.
+
+```java
+@RabbitListener(queues = RabbitConfig.PEDIDO_QUEUE)
+public void processar(PedidoCriadoEvent evento) {
+    if (registroProcessamento.jaProcessou(evento.pedidoId())) {
+        log.info("Evento já processado, ignorando: {}", evento.pedidoId());
+        return;
+    }
+    // processar evento
+    registroProcessamento.marcarComoProcessado(evento.pedidoId());
+}
+```
+
+#### Serialização
+
+Prefira JSON com `Jackson2JsonMessageConverter` (RabbitMQ) ou `JsonSerializer` (Kafka) para facilitar debugging e compatibilidade entre versões. Avro e Protobuf são alternativas para cenários de alta performance com schema registry.
+
+#### Docker Compose para ambiente local
+
+```yaml
+services:
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.7.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+
+  kafka:
+    image: confluentinc/cp-kafka:7.7.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+```
+
+#### Monitoramento
+
+- RabbitMQ: painel de administração em `http://localhost:15672` (guest/guest) para acompanhar filas, mensagens pendentes e consumidores conectados.
+- Kafka: ferramentas como Kafka UI, AKHQ ou Conduktor para visualizar tópicos, partições, consumer groups e lag.
+- Em ambos os casos, exponha métricas via Micrometer/Actuator para integração com Prometheus e Grafana.
+
+---
+
+## 5. Events do Spring
 
 Os Events do Spring são um mecanismo simples para comunicação interna entre componentes da mesma aplicação. Eles ajudam a reduzir acoplamento entre services e são muito uteis quando uma ação de negócio precisa disparar reações adicionais, como auditoria, notificação ou integrações internas.
 
@@ -1922,7 +2227,7 @@ Casos comuns:
 - para auditoria interna;
 - para disparar tarefas complementares sem acoplar tudo no mesmo service.
 
-### 4.1. Quando usar Spring Events
+### 5.1. Quando usar Spring Events
 
 Spring Events funcionam muito bem quando:
 
@@ -1938,7 +2243,7 @@ Não são a melhor escolha quando:
 - há necessidade de garantia de entrega entre processos;
 - o caso pede mensageria distribuída, como JMS, Kafka ou AMQP.
 
-### 4.2. Eventos padrão do Spring mais usados
+### 5.2. Eventos padrão do Spring mais usados
 
 O Spring Framework publica alguns eventos padrão ligados ao ciclo de vida do `ApplicationContext` e, em aplicações web baseadas em `DispatcherServlet`, também eventos ligados ao processamento de requests.
 
@@ -1996,7 +2301,7 @@ public class RequestHandledListener {
 }
 ```
 
-### 4.3. Publicando eventos com `ApplicationEventPublisher`
+### 5.3. Publicando eventos com `ApplicationEventPublisher`
 
 Evento:
 
@@ -2041,7 +2346,7 @@ public class PedidoService {
 
 O Spring permite publicar tanto objetos comuns quanto classes que estendem `ApplicationEvent`. Em projetos modernos, usar `record` ou POJO simples costuma ser mais limpo.
 
-### 4.4. Consumindo eventos com `@EventListener`
+### 5.4. Consumindo eventos com `@EventListener`
 
 ```java
 package br.com.exemplo.events;
@@ -2099,7 +2404,7 @@ public class PedidoAltoValorEventListener {
 
 Nesse caso, o listener só e executado quando a expressao SpEL retornar `true`.
 
-### 4.5. Eventos síncronos
+### 5.5. Eventos síncronos
 
 Por padrão, o processamento de eventos do Spring é síncrono. Isso significa:
 
@@ -2114,7 +2419,7 @@ Esse comportamento é adequado para:
 - validações complementares;
 - fluxos que precisam participar da mesma transação logica.
 
-### 4.6. Eventos assíncronos com `@Async`
+### 5.6. Eventos assíncronos com `@Async`
 
 Quando o processamento não deve bloquear o fluxo principal, pode-se combinar eventos com execução assíncrona.
 
@@ -2172,7 +2477,7 @@ Cuidados:
 - é importante monitorar falhas e tempo de execução;
 - para tarefas críticas, pode ser melhor usar fila ou broker.
 
-### 4.7. Eventos transacionais com `@TransactionalEventListener`
+### 5.7. Eventos transacionais com `@TransactionalEventListener`
 
 Quando o evento depende do sucesso da transação, a melhor opção costuma ser `@TransactionalEventListener`.
 
@@ -2244,7 +2549,7 @@ Fases mais comuns:
 
 Na maioria dos casos de integração ou notificação, `AFTER_COMMIT` é a opção mais segura.
 
-### 4.8. Ordenação e condições
+### 5.8. Ordenação e condições
 
 Se houver vários listeners para o mesmo evento, é possível controlar ordem:
 
@@ -2284,7 +2589,7 @@ public class PedidoAltoValorListener {
 }
 ```
 
-### 4.9. Event listeners retornando novos eventos
+### 5.9. Event listeners retornando novos eventos
 
 Um listener também pode retornar outro evento, permitindo encadear reações:
 
@@ -2313,7 +2618,7 @@ public record NotaFiscalGeradaEvent(Long pedidoId, String numeroNota) {
 
 Esse recurso é útil, mas deve ser usado com moderação para não tornar o fluxo difícil de rastrear.
 
-### 4.10. Comparando Spring Events e JMS
+### 5.10. Comparando Spring Events e JMS
 
 Use Spring Events quando:
 
@@ -2332,7 +2637,7 @@ Em muitos sistemas corporativos, os dois coexistem:
 - Spring Events para comunicação interna entre services;
 - JMS para integração externa ou comunicação entre sistemas.
 
-### 4.11. Boas práticas com Spring Events
+### 5.11. Boas práticas com Spring Events
 
 - mantenha os eventos pequenos e focados no fato de negócio;
 - não coloque regra complexa diretamente no listener;
@@ -2341,7 +2646,7 @@ Em muitos sistemas corporativos, os dois coexistem:
 - para carga alta ou necessidade de resiliência, considere mensageria externa;
 - documente quais eventos são internos e quais disparam integrações.
 
-### 4.12. Eventos padrão relacionados ao Spring Security
+### 5.12. Eventos padrão relacionados ao Spring Security
 
 O Spring Security também publica eventos padrão para autenticação, autorização, logout e aspectos da sessão. Eles são muito uteis para:
 
@@ -2517,7 +2822,1585 @@ Isso é especialmente importante para evitar exemplos baseados em APIs antigas d
 - diferencie falha de autenticação de negação de autorização;
 - ao contar tentativas de login, considere IP, usuário, horário e contexto da aplicação.
 
-## 5. Mecanismos de resiliência
+## 6. GraphQL com Spring Boot
+
+GraphQL é uma linguagem de consulta para APIs criada pelo Facebook que permite ao cliente especificar exatamente quais dados precisa. Com o módulo Spring for GraphQL, o Spring Boot oferece suporte nativo para expor APIs GraphQL usando a mesma infraestrutura de controllers, validação e segurança.
+
+### 6.1. GraphQL vs REST
+
+| Aspecto | REST | GraphQL |
+|---------|------|---------|
+| **Endpoints** | Múltiplos (`/users`, `/orders`) | Único (`/graphql`) |
+| **Dados retornados** | Fixos por endpoint | Cliente escolhe os campos |
+| **Over-fetching** | Comum | Eliminado |
+| **Under-fetching** | Requer múltiplas chamadas | Uma query resolve |
+| **Versionamento** | URLs (`/v1/`, `/v2/`) | Schema evolui sem versão |
+| **Caching** | HTTP nativo (GET + ETag) | Requer estratégia específica |
+| **Curva de aprendizado** | Baixa | Moderada |
+
+### 6.2. Dependência e configuração
+
+```xml
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-graphql</artifactId>
+</dependency>
+```
+
+```yaml
+spring:
+  graphql:
+    graphiql:
+      enabled: true
+    schema:
+      printer:
+        enabled: true
+```
+
+Com essa configuração, o Spring Boot disponibiliza:
+- Endpoint GraphQL: `POST /graphql`
+- GraphiQL (interface interativa): `http://localhost:8080/graphiql`
+
+### 6.3. Definição do schema
+
+O schema define os tipos, queries e mutations disponíveis na API. Deve ser colocado em `src/main/resources/graphql/`.
+
+```graphql
+# src/main/resources/graphql/schema.graphqls
+type Query {
+    produtos(categoria: String, page: Int = 0, size: Int = 10): ProdutoPage!
+    produto(id: ID!): Produto
+}
+
+type Mutation {
+    criarProduto(input: ProdutoInput!): Produto!
+    atualizarEstoque(id: ID!, quantidade: Int!): Produto!
+}
+
+type Produto {
+    id: ID!
+    nome: String!
+    preco: BigDecimal!
+    categoria: Categoria!
+    avaliacoes: [Avaliacao!]!
+}
+
+type Categoria {
+    id: ID!
+    nome: String!
+}
+
+type Avaliacao {
+    id: ID!
+    nota: Int!
+    comentario: String
+    autor: String!
+}
+
+type ProdutoPage {
+    content: [Produto!]!
+    totalElements: Int!
+    totalPages: Int!
+}
+
+input ProdutoInput {
+    nome: String!
+    preco: BigDecimal!
+    categoriaId: ID!
+}
+
+scalar BigDecimal
+```
+
+### 6.4. Controllers GraphQL
+
+Diferente de REST, o controller GraphQL usa `@Controller` (não `@RestController`) porque a serialização da resposta é gerenciada pelo framework GraphQL, não pelo Spring MVC. Todas as requisições passam por um único endpoint — `POST /graphql` — e o framework roteia para o método correto com base na query ou mutation recebida.
+
+```java
+package br.com.exemplo.graphql;
+
+import org.springframework.data.domain.PageRequest;
+import org.springframework.graphql.data.method.annotation.*;
+import org.springframework.stereotype.Controller;
+
+import java.util.List;
+import java.util.Map;
+
+@Controller
+public class ProdutoGraphQLController {
+
+    private final ProdutoService produtoService;
+    private final AvaliacaoService avaliacaoService;
+
+    public ProdutoGraphQLController(ProdutoService produtoService,
+                                     AvaliacaoService avaliacaoService) {
+        this.produtoService = produtoService;
+        this.avaliacaoService = avaliacaoService;
+    }
+
+    @QueryMapping
+    public ProdutoPage produtos(@Argument String categoria,
+                                 @Argument int page,
+                                 @Argument int size) {
+        return produtoService.buscar(categoria, PageRequest.of(page, size));
+    }
+
+    @QueryMapping
+    public Produto produto(@Argument Long id) {
+        return produtoService.buscarPorId(id);
+    }
+
+    @MutationMapping
+    public Produto criarProduto(@Argument ProdutoInput input) {
+        return produtoService.criar(input);
+    }
+
+    @BatchMapping
+    public Map<Produto, List<Avaliacao>> avaliacoes(List<Produto> produtos) {
+        return avaliacaoService.buscarPorProdutos(produtos);
+    }
+}
+```
+
+#### Como o framework conecta schema e controller
+
+O Spring for GraphQL usa convenção de nomes para vincular o schema ao controller. Cada método anotado com `@QueryMapping` ou `@MutationMapping` deve ter o **mesmo nome** da query ou mutation declarada no arquivo `.graphqls`:
+
+```
+Schema                                  Controller
+──────────────────────                  ──────────────────────
+type Query {
+    produtos(...): ProdutoPage!    ──▶  @QueryMapping produtos(...)
+    produto(id: ID!): Produto      ──▶  @QueryMapping produto(...)
+}
+
+type Mutation {
+    criarProduto(...): Produto!    ──▶  @MutationMapping criarProduto(...)
+}
+
+type Produto {
+    avaliacoes: [Avaliacao!]!      ──▶  @BatchMapping avaliacoes(...)
+}
+```
+
+| Elemento no schema | Anotação no controller | Vinculação |
+|---|---|---|
+| `Query.produtos` | `@QueryMapping` no método `produtos()` | Pelo nome do método |
+| `Query.produto` | `@QueryMapping` no método `produto()` | Pelo nome do método |
+| `Mutation.criarProduto` | `@MutationMapping` no método `criarProduto()` | Pelo nome do método |
+| `Produto.avaliacoes` | `@BatchMapping` no método `avaliacoes()` | Pelo nome do método + tipo de retorno |
+
+O `@BatchMapping` no método `avaliacoes()` é acionado automaticamente sempre que uma query solicita o campo `avaliacoes` de um `Produto`. O Spring agrupa todos os produtos retornados e chama o método uma única vez com a lista completa, evitando o problema N+1.
+
+Os parâmetros anotados com `@Argument` são mapeados a partir dos argumentos da query. O tipo Java deve ser compatível com o tipo GraphQL declarado no schema (`ID` → `Long`, `String` → `String`, `Int` → `int`, `BigDecimal` → `BigDecimal`, `input` → record/classe Java).
+
+#### Anotações principais
+
+| Anotação | Função |
+|----------|--------|
+| `@QueryMapping` | Mapeia um método para uma query do schema |
+| `@MutationMapping` | Mapeia um método para uma mutation do schema |
+| `@SchemaMapping` | Resolve um campo de um tipo (equivalente a field resolver) |
+| `@BatchMapping` | Resolve um campo para uma lista de objetos de uma vez (resolve N+1) |
+| `@Argument` | Injeta um argumento da query/mutation |
+
+### 6.5. Resolvendo o problema N+1 com `@BatchMapping`
+
+Sem `@BatchMapping`, ao buscar 10 produtos com suas avaliações, o framework faria 1 query para os produtos + 10 queries para as avaliações (uma por produto). Com `@BatchMapping`, o Spring agrupa todas as chamadas em uma única operação:
+
+```java
+@BatchMapping
+public Map<Produto, List<Avaliacao>> avaliacoes(List<Produto> produtos) {
+    List<Long> ids = produtos.stream().map(Produto::getId).toList();
+    List<Avaliacao> todas = avaliacaoRepository.findByProdutoIdIn(ids);
+
+    return produtos.stream().collect(Collectors.toMap(
+            p -> p,
+            p -> todas.stream()
+                    .filter(a -> a.getProdutoId().equals(p.getId()))
+                    .toList()
+    ));
+}
+```
+
+### 6.6. Exemplo de query e mutation via GraphiQL
+
+O endpoint GraphQL fica disponível em:
+
+```
+POST http://localhost:8080/graphql
+```
+
+Para testar interativamente, acesse o GraphiQL no navegador:
+
+```
+http://localhost:8080/graphiql
+```
+
+#### Query — buscar produtos com avaliações
+
+```graphql
+query {
+  produtos(categoria: "ELETRONICOS", page: 0, size: 5) {
+    content {
+      id
+      nome
+      preco
+      avaliacoes {
+        nota
+        comentario
+      }
+    }
+    totalElements
+  }
+}
+```
+
+Resposta:
+
+```json
+{
+  "data": {
+    "produtos": {
+      "content": [
+        {
+          "id": "1",
+          "nome": "Notebook Dell XPS 15",
+          "preco": 4999.90,
+          "avaliacoes": [
+            { "nota": 5, "comentario": "Excelente!" },
+            { "nota": 4, "comentario": "Bom, mas caro" }
+          ]
+        }
+      ],
+      "totalElements": 1
+    }
+  }
+}
+```
+
+#### Query — buscar produto por ID
+
+```graphql
+query {
+  produto(id: 1) {
+    id
+    nome
+    preco
+    categoria {
+      nome
+    }
+  }
+}
+```
+
+#### Mutation — criar produto
+
+```graphql
+mutation {
+  criarProduto(input: { nome: "Monitor 4K", preco: 1899.90, categoriaId: 2 }) {
+    id
+    nome
+    preco
+  }
+}
+```
+
+#### Mutation — atualizar estoque
+
+```graphql
+mutation {
+  atualizarEstoque(id: 1, quantidade: 50) {
+    id
+    nome
+    preco
+  }
+}
+```
+
+O cliente recebe exatamente os campos solicitados — sem over-fetching de dados desnecessários e sem under-fetching que exigiria chamadas adicionais.
+
+### 6.7. Consumindo a API GraphQL com JavaScript/TypeScript
+
+Toda comunicação com o endpoint GraphQL é feita via `POST /graphql` com um corpo JSON contendo a query (ou mutation) e opcionalmente as variáveis. Os exemplos abaixo mostram como consumir o `ProdutoGraphQLController` a partir de uma aplicação frontend.
+
+#### Usando Fetch API (sem dependências)
+
+```typescript
+const GRAPHQL_URL = 'http://localhost:8080/graphql';
+
+async function graphqlRequest<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  const response = await fetch(GRAPHQL_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  const json = await response.json();
+
+  if (json.errors) {
+    throw new Error(json.errors.map((e: { message: string }) => e.message).join(', '));
+  }
+
+  return json.data;
+}
+```
+
+#### Query — buscar produtos
+
+```typescript
+interface Produto {
+  id: string;
+  nome: string;
+  preco: number;
+  avaliacoes: { nota: number; comentario: string | null }[];
+}
+
+interface ProdutoPage {
+  produtos: {
+    content: Produto[];
+    totalElements: number;
+    totalPages: number;
+  };
+}
+
+async function buscarProdutos(categoria: string, page = 0, size = 10): Promise<ProdutoPage> {
+  const query = `
+    query BuscarProdutos($categoria: String, $page: Int, $size: Int) {
+      produtos(categoria: $categoria, page: $page, size: $size) {
+        content {
+          id
+          nome
+          preco
+          avaliacoes {
+            nota
+            comentario
+          }
+        }
+        totalElements
+        totalPages
+      }
+    }
+  `;
+
+  return graphqlRequest<ProdutoPage>(query, { categoria, page, size });
+}
+
+// uso
+const resultado = await buscarProdutos('ELETRONICOS', 0, 5);
+console.log(resultado.produtos.content);
+```
+
+#### Query — buscar produto por ID
+
+```typescript
+interface ProdutoDetalhe {
+  produto: {
+    id: string;
+    nome: string;
+    preco: number;
+    categoria: { nome: string };
+    avaliacoes: { nota: number; comentario: string | null; autor: string }[];
+  } | null;
+}
+
+async function buscarProdutoPorId(id: number): Promise<ProdutoDetalhe> {
+  const query = `
+    query BuscarProduto($id: ID!) {
+      produto(id: $id) {
+        id
+        nome
+        preco
+        categoria {
+          nome
+        }
+        avaliacoes {
+          nota
+          comentario
+          autor
+        }
+      }
+    }
+  `;
+
+  return graphqlRequest<ProdutoDetalhe>(query, { id });
+}
+```
+
+#### Mutation — criar produto
+
+```typescript
+interface CriarProdutoResult {
+  criarProduto: {
+    id: string;
+    nome: string;
+    preco: number;
+  };
+}
+
+async function criarProduto(nome: string, preco: number, categoriaId: number): Promise<CriarProdutoResult> {
+  const mutation = `
+    mutation CriarProduto($input: ProdutoInput!) {
+      criarProduto(input: $input) {
+        id
+        nome
+        preco
+      }
+    }
+  `;
+
+  return graphqlRequest<CriarProdutoResult>(mutation, {
+    input: { nome, preco, categoriaId },
+  });
+}
+
+// uso
+const novo = await criarProduto('Monitor 4K', 1899.90, 2);
+console.log(`Produto criado com ID: ${novo.criarProduto.id}`);
+```
+
+#### Usando com React (exemplo com hook)
+
+```tsx
+import { useState, useEffect } from 'react';
+
+function ProdutoList({ categoria }: { categoria: string }) {
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    buscarProdutos(categoria)
+      .then((data) => {
+        setProdutos(data.produtos.content);
+        setTotal(data.produtos.totalElements);
+      })
+      .finally(() => setLoading(false));
+  }, [categoria]);
+
+  if (loading) return <p>Carregando...</p>;
+
+  return (
+    <div>
+      <h2>Produtos ({total})</h2>
+      <ul>
+        {produtos.map((p) => (
+          <li key={p.id}>
+            {p.nome} — R$ {p.preco.toFixed(2)}
+            <ul>
+              {p.avaliacoes.map((a, i) => (
+                <li key={i}>{'⭐'.repeat(a.nota)} {a.comentario}</li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+#### Diferenças em relação ao consumo de APIs REST
+
+| Aspecto | REST (Fetch API) | GraphQL (Fetch API) |
+|---|---|---|
+| **URL** | Uma URL por recurso (`/api/produtos`, `/api/produtos/1`) | URL única (`/graphql`) |
+| **Método HTTP** | GET, POST, PUT, DELETE | Sempre POST |
+| **Corpo da requisição** | Dados do recurso (JSON) | Query/mutation + variáveis (JSON) |
+| **Campos da resposta** | Todos os campos do recurso | Apenas os campos solicitados na query |
+| **Múltiplos recursos** | Múltiplas requisições | Uma única query com campos aninhados |
+
+### 6.8. Quando usar GraphQL vs REST
+
+| Cenário | Recomendação |
+|---------|-------------|
+| API pública simples com recursos bem definidos | REST |
+| Frontend precisa de dados de múltiplas entidades relacionadas | GraphQL |
+| Mobile com banda limitada (evitar over-fetching) | GraphQL |
+| API interna entre microsserviços | REST ou gRPC |
+| CRUD simples com poucos campos | REST |
+| Dashboard com consultas complexas e variáveis | GraphQL |
+| Necessidade de cache HTTP nativo | REST |
+
+Em muitos projetos, GraphQL e REST coexistem: REST para endpoints simples e operações CRUD, GraphQL para consultas complexas e agregação de dados.
+
+---
+
+## 7. gRPC com Spring Boot
+
+O gRPC (Google Remote Procedure Call) é um framework de comunicação entre serviços de alto desempenho, amplamente utilizado em arquiteturas de microsserviços. Ele utiliza HTTP/2 como protocolo de transporte e Protocol Buffers (protobuf) como linguagem de definição de interface (IDL) e formato de serialização binária.
+
+### 7.1. O que é gRPC
+
+O gRPC foi desenvolvido pelo Google e posteriormente disponibilizado como projeto open source. Diferente do REST tradicional, onde a comunicação é baseada em JSON sobre HTTP/1.1, o gRPC utiliza serialização binária e aproveita os recursos avançados do HTTP/2.
+
+Protocol Buffers (protobuf) é a linguagem utilizada para definir a estrutura das mensagens e os contratos dos serviços. A partir de um arquivo `.proto`, o compilador `protoc` gera automaticamente o código-fonte (stubs e skeletons) em diversas linguagens.
+
+```
+┌──────────────┐                                      ┌──────────────┐
+│   Cliente     │                                      │   Servidor    │
+│              │                                      │              │
+│  Stub gerado │──── Chamada RPC (protobuf binário) ──▶│  Skeleton    │
+│  (protoc)    │◀─── Resposta (protobuf binário) ──────│  (protoc)    │
+│              │                                      │              │
+│              │         Transporte: HTTP/2            │              │
+└──────────────┘                                      └──────────────┘
+```
+
+| Característica | Descrição |
+|---|---|
+| **Serialização binária** | Protobuf é significativamente mais compacto e rápido que JSON |
+| **HTTP/2 multiplexing** | Múltiplas requisições simultâneas em uma única conexão TCP |
+| **Streaming** | Suporte nativo a streaming unidirecional e bidirecional |
+| **Geração de código** | Stubs e skeletons gerados automaticamente a partir do `.proto` |
+| **Contrato forte** | O arquivo `.proto` serve como contrato tipado entre cliente e servidor |
+| **Multilinguagem** | Geração de código para Java, Go, Python, C#, Kotlin, entre outras |
+
+### 7.2. gRPC vs REST vs GraphQL
+
+| Aspecto | gRPC | REST | GraphQL |
+|---|---|---|---|
+| **Protocolo de transporte** | HTTP/2 | HTTP/1.1 ou HTTP/2 | HTTP/1.1 ou HTTP/2 |
+| **Formato de dados** | Protobuf (binário) | JSON / XML (texto) | JSON (texto) |
+| **Tipagem / Contrato** | Forte (arquivo `.proto`) | Fraca (OpenAPI opcional) | Forte (schema GraphQL) |
+| **Streaming** | Nativo (4 tipos) | Não nativo (SSE, WebSocket) | Subscriptions (WebSocket) |
+| **Performance** | Alta (binário + HTTP/2) | Moderada | Moderada |
+| **Suporte a browser** | Limitado (requer grpc-web/proxy) | Nativo | Nativo |
+| **Ferramentas de debug** | grpcurl, BloomRPC, Postman | curl, Postman, browser | GraphiQL, Playground |
+| **Curva de aprendizado** | Alta (protobuf, geração de código) | Baixa | Média |
+| **Ideal para** | Comunicação entre microsserviços | APIs públicas / CRUD | APIs com consultas flexíveis |
+
+### 7.3. Tipos de comunicação gRPC
+
+O gRPC suporta quatro padrões de comunicação:
+
+| Tipo | Cliente | Servidor | Descrição |
+|---|---|---|---|
+| **Unary** | 1 mensagem | 1 mensagem | Request-response simples, similar a REST |
+| **Server Streaming** | 1 mensagem | N mensagens | Cliente envia uma requisição, servidor responde com um fluxo |
+| **Client Streaming** | N mensagens | 1 mensagem | Cliente envia um fluxo, servidor responde com uma única mensagem |
+| **Bidirectional Streaming** | N mensagens | N mensagens | Ambos enviam e recebem fluxos simultaneamente |
+
+```
+Unary:              Client ──req──▶ Server ──res──▶ Client
+
+Server Streaming:   Client ──req──▶ Server ══res══▶ Client
+                                           ══res══▶
+                                           ══res══▶
+
+Client Streaming:   Client ══req══▶ Server
+                           ══req══▶
+                           ══req══▶        ──res──▶ Client
+
+Bidirectional:      Client ══req══▶ Server
+                           ══req══▶        ══res══▶
+                           ══req══▶        ══res══▶ Client
+```
+
+Definição no arquivo `.proto`:
+
+```protobuf
+service ExemploService {
+  rpc Buscar (Request) returns (Response);              // Unary
+  rpc Listar (Request) returns (stream Response);       // Server Streaming
+  rpc EnviarLote (stream Request) returns (Response);   // Client Streaming
+  rpc Chat (stream Request) returns (stream Response);  // Bidirectional
+}
+```
+
+### 7.4. Dependências e configuração
+
+```xml
+<properties>
+    <grpc.version>1.68.0</grpc.version>
+    <protobuf.version>4.28.3</protobuf.version>
+    <grpc-spring-boot.version>3.1.0.RELEASE</grpc-spring-boot.version>
+</properties>
+
+<dependencies>
+    <!-- gRPC Server -->
+    <dependency>
+        <groupId>net.devh</groupId>
+        <artifactId>grpc-server-spring-boot-starter</artifactId>
+        <version>${grpc-spring-boot.version}</version>
+    </dependency>
+
+    <!-- gRPC Client (em projetos que consomem serviços gRPC) -->
+    <dependency>
+        <groupId>net.devh</groupId>
+        <artifactId>grpc-client-spring-boot-starter</artifactId>
+        <version>${grpc-spring-boot.version}</version>
+    </dependency>
+
+    <!-- Protobuf -->
+    <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+        <version>${protobuf.version}</version>
+    </dependency>
+
+    <!-- gRPC Stub e Protobuf -->
+    <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-stub</artifactId>
+        <version>${grpc.version}</version>
+    </dependency>
+    <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-protobuf</artifactId>
+        <version>${grpc.version}</version>
+    </dependency>
+
+    <!-- Necessário para geração de código com Java 21+ -->
+    <dependency>
+        <groupId>org.apache.tomcat</groupId>
+        <artifactId>annotations-api</artifactId>
+        <version>6.0.53</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+
+<build>
+    <extensions>
+        <extension>
+            <groupId>kr.motd.maven</groupId>
+            <artifactId>os-maven-plugin</artifactId>
+            <version>1.7.1</version>
+        </extension>
+    </extensions>
+    <plugins>
+        <plugin>
+            <groupId>org.xolstice.maven.plugins</groupId>
+            <artifactId>protobuf-maven-plugin</artifactId>
+            <version>0.6.1</version>
+            <configuration>
+                <protocArtifact>
+                    com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}
+                </protocArtifact>
+                <pluginId>grpc-java</pluginId>
+                <pluginArtifact>
+                    io.grpc:protoc-gen-grpc-java:${grpc.version}:exe:${os.detected.classifier}
+                </pluginArtifact>
+            </configuration>
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>compile</goal>
+                        <goal>compile-custom</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
+    </plugins>
+</build>
+```
+
+O plugin `protobuf-maven-plugin` compila automaticamente os arquivos `.proto` localizados em `src/main/proto/` durante o build, gerando as classes Java em `target/generated-sources/protobuf/`.
+
+#### Configuração do servidor
+
+```yaml
+grpc:
+  server:
+    port: 9090
+
+spring:
+  application:
+    name: produto-grpc-server
+```
+
+#### Configuração do cliente
+
+```yaml
+grpc:
+  client:
+    produto-service:
+      address: static://localhost:9090
+      negotiation-type: plaintext
+      enable-keep-alive: true
+      keep-alive-time: 30s
+      keep-alive-timeout: 5s
+```
+
+Em produção, utilize `negotiation-type: tls` com certificados configurados para comunicação segura.
+
+### 7.5. Definição do serviço (.proto)
+
+O arquivo `.proto` define o contrato do serviço, incluindo as mensagens de entrada/saída e os métodos RPC disponíveis.
+
+```protobuf
+// src/main/proto/produto.proto
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "br.com.exemplo.grpc";
+option java_outer_classname = "ProdutoProto";
+
+package produto;
+
+message ProdutoRequest {
+  int64 id = 1;
+}
+
+message CriarProdutoRequest {
+  string nome = 1;
+  string descricao = 2;
+  double preco = 3;
+  int32 quantidade_estoque = 4;
+}
+
+message ProdutoResponse {
+  int64 id = 1;
+  string nome = 2;
+  string descricao = 3;
+  double preco = 4;
+  int32 quantidade_estoque = 5;
+  bool ativo = 6;
+}
+
+message ProdutoListResponse {
+  repeated ProdutoResponse produtos = 1;
+}
+
+message Empty {}
+
+service ProdutoService {
+  rpc BuscarPorId (ProdutoRequest) returns (ProdutoResponse);
+  rpc Listar (Empty) returns (stream ProdutoResponse);
+  rpc Criar (CriarProdutoRequest) returns (ProdutoResponse);
+}
+```
+
+Após executar `mvn compile`, as seguintes classes serão geradas automaticamente:
+
+- `ProdutoRequest`, `ProdutoResponse`, `CriarProdutoRequest`, etc. — classes das mensagens
+- `ProdutoServiceGrpc` — classe com os stubs e a base de implementação do servidor
+
+### 7.6. Implementação do servidor
+
+A implementação do servidor estende a classe base gerada pelo protobuf e utiliza a anotação `@GrpcService` do starter.
+
+```java
+package br.com.exemplo.grpc.server;
+
+import br.com.exemplo.grpc.*;
+import br.com.exemplo.service.ProdutoService;
+import br.com.exemplo.model.Produto;
+import io.grpc.Status;
+import io.grpc.stub.StreamObserver;
+import net.devh.boot.grpc.server.service.GrpcService;
+
+import java.util.List;
+
+@GrpcService
+public class ProdutoGrpcServer extends ProdutoServiceGrpc.ProdutoServiceImplBase {
+
+    private final ProdutoService produtoService;
+
+    public ProdutoGrpcServer(ProdutoService produtoService) {
+        this.produtoService = produtoService;
+    }
+
+    @Override
+    public void buscarPorId(ProdutoRequest request,
+                            StreamObserver<ProdutoResponse> responseObserver) {
+        try {
+            Produto produto = produtoService.buscarPorId(request.getId());
+
+            ProdutoResponse response = ProdutoResponse.newBuilder()
+                    .setId(produto.getId())
+                    .setNome(produto.getNome())
+                    .setDescricao(produto.getDescricao())
+                    .setPreco(produto.getPreco())
+                    .setQuantidadeEstoque(produto.getQuantidadeEstoque())
+                    .setAtivo(produto.isAtivo())
+                    .build();
+
+            responseObserver.onNext(response);
+            responseObserver.onCompleted();
+
+        } catch (RuntimeException e) {
+            responseObserver.onError(
+                Status.NOT_FOUND
+                    .withDescription("Produto não encontrado: " + request.getId())
+                    .asRuntimeException()
+            );
+        }
+    }
+
+    @Override
+    public void listar(Empty request,
+                       StreamObserver<ProdutoResponse> responseObserver) {
+        List<Produto> produtos = produtoService.listarTodos();
+
+        for (Produto produto : produtos) {
+            ProdutoResponse response = ProdutoResponse.newBuilder()
+                    .setId(produto.getId())
+                    .setNome(produto.getNome())
+                    .setDescricao(produto.getDescricao())
+                    .setPreco(produto.getPreco())
+                    .setQuantidadeEstoque(produto.getQuantidadeEstoque())
+                    .setAtivo(produto.isAtivo())
+                    .build();
+
+            responseObserver.onNext(response);
+        }
+
+        responseObserver.onCompleted();
+    }
+
+    @Override
+    public void criar(CriarProdutoRequest request,
+                      StreamObserver<ProdutoResponse> responseObserver) {
+        Produto novoProduto = new Produto();
+        novoProduto.setNome(request.getNome());
+        novoProduto.setDescricao(request.getDescricao());
+        novoProduto.setPreco(request.getPreco());
+        novoProduto.setQuantidadeEstoque(request.getQuantidadeEstoque());
+
+        Produto salvo = produtoService.salvar(novoProduto);
+
+        ProdutoResponse response = ProdutoResponse.newBuilder()
+                .setId(salvo.getId())
+                .setNome(salvo.getNome())
+                .setDescricao(salvo.getDescricao())
+                .setPreco(salvo.getPreco())
+                .setQuantidadeEstoque(salvo.getQuantidadeEstoque())
+                .setAtivo(salvo.isAtivo())
+                .build();
+
+        responseObserver.onNext(response);
+        responseObserver.onCompleted();
+    }
+}
+```
+
+O gRPC utiliza códigos de status próprios, similares aos HTTP status codes:
+
+| Código gRPC | Equivalente HTTP | Uso |
+|---|---|---|
+| `Status.OK` | 200 | Sucesso |
+| `Status.NOT_FOUND` | 404 | Recurso não encontrado |
+| `Status.INVALID_ARGUMENT` | 400 | Parâmetro inválido |
+| `Status.ALREADY_EXISTS` | 409 | Recurso já existe |
+| `Status.INTERNAL` | 500 | Erro interno do servidor |
+| `Status.UNAUTHENTICATED` | 401 | Não autenticado |
+| `Status.PERMISSION_DENIED` | 403 | Sem permissão |
+
+### 7.7. Implementação do cliente
+
+O starter do gRPC para Spring Boot facilita a criação de clientes com a anotação `@GrpcClient`.
+
+#### Cliente síncrono (blocking stub)
+
+```java
+package br.com.exemplo.grpc.client;
+
+import br.com.exemplo.grpc.*;
+import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+
+@Service
+public class ProdutoGrpcClient {
+
+    @GrpcClient("produto-service")
+    private ProdutoServiceGrpc.ProdutoServiceBlockingStub blockingStub;
+
+    public ProdutoResponse buscarPorId(Long id) {
+        ProdutoRequest request = ProdutoRequest.newBuilder()
+                .setId(id)
+                .build();
+
+        return blockingStub.buscarPorId(request);
+    }
+
+    public List<ProdutoResponse> listarTodos() {
+        Iterator<ProdutoResponse> iterator = blockingStub.listar(
+                Empty.newBuilder().build()
+        );
+
+        List<ProdutoResponse> produtos = new ArrayList<>();
+        iterator.forEachRemaining(produtos::add);
+        return produtos;
+    }
+
+    public ProdutoResponse criar(String nome, String descricao,
+                                  double preco, int quantidade) {
+        CriarProdutoRequest request = CriarProdutoRequest.newBuilder()
+                .setNome(nome)
+                .setDescricao(descricao)
+                .setPreco(preco)
+                .setQuantidadeEstoque(quantidade)
+                .build();
+
+        return blockingStub.criar(request);
+    }
+}
+```
+
+#### Cliente assíncrono (async stub)
+
+```java
+package br.com.exemplo.grpc.client;
+
+import br.com.exemplo.grpc.*;
+import com.google.common.util.concurrent.ListenableFuture;
+import io.grpc.stub.StreamObserver;
+import net.devh.boot.grpc.client.inject.GrpcClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.util.concurrent.ExecutionException;
+
+@Service
+public class ProdutoGrpcAsyncClient {
+
+    private static final Logger log = LoggerFactory.getLogger(ProdutoGrpcAsyncClient.class);
+
+    @GrpcClient("produto-service")
+    private ProdutoServiceGrpc.ProdutoServiceFutureStub futureStub;
+
+    @GrpcClient("produto-service")
+    private ProdutoServiceGrpc.ProdutoServiceStub asyncStub;
+
+    public ProdutoResponse buscarPorIdAsync(Long id)
+            throws ExecutionException, InterruptedException {
+        ProdutoRequest request = ProdutoRequest.newBuilder()
+                .setId(id)
+                .build();
+
+        ListenableFuture<ProdutoResponse> future = futureStub.buscarPorId(request);
+        return future.get();
+    }
+
+    public void buscarPorIdComCallback(Long id) {
+        ProdutoRequest request = ProdutoRequest.newBuilder()
+                .setId(id)
+                .build();
+
+        asyncStub.buscarPorId(request, new StreamObserver<>() {
+            @Override
+            public void onNext(ProdutoResponse response) {
+                log.info("Produto recebido: {} - {}", response.getId(), response.getNome());
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                log.error("Erro ao buscar produto: {}", t.getMessage());
+            }
+
+            @Override
+            public void onCompleted() {
+                log.info("Chamada gRPC concluída");
+            }
+        });
+    }
+}
+```
+
+#### Expondo gRPC via REST
+
+Em muitos cenários, o backend usa gRPC internamente entre microsserviços mas expõe REST para o frontend. Um controller intermediário faz a tradução:
+
+```java
+package br.com.exemplo.controller;
+
+import br.com.exemplo.grpc.ProdutoResponse;
+import br.com.exemplo.grpc.client.ProdutoGrpcClient;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/produtos")
+public class ProdutoController {
+
+    private final ProdutoGrpcClient grpcClient;
+
+    public ProdutoController(ProdutoGrpcClient grpcClient) {
+        this.grpcClient = grpcClient;
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<ProdutoResponse> buscarPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(grpcClient.buscarPorId(id));
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ProdutoResponse>> listarTodos() {
+        return ResponseEntity.ok(grpcClient.listarTodos());
+    }
+}
+```
+
+### 7.8. Quando usar gRPC
+
+| Cenário | Justificativa |
+|---|---|
+| Comunicação entre microsserviços | Alta performance com serialização binária e HTTP/2 |
+| Streaming de dados em tempo real | Suporte nativo a streaming bidirecional |
+| Ambientes poliglotas | Geração de código para múltiplas linguagens a partir do mesmo `.proto` |
+| Baixa latência / alto throughput | Protobuf é até 10x mais rápido que JSON para serialização |
+| Contratos fortemente tipados | O arquivo `.proto` garante compatibilidade entre cliente e servidor |
+
+**Quando NÃO usar gRPC:**
+
+| Cenário | Motivo |
+|---|---|
+| APIs públicas acessadas por browsers | Browsers não suportam gRPC nativamente (requer proxy) |
+| APIs REST simples (CRUD) | REST é mais simples, amplamente suportado e suficiente |
+| Necessidade de debug fácil | JSON é legível por humanos; protobuf binário requer ferramentas |
+| Comunicação com sistemas legados | Sistemas mais antigos geralmente suportam apenas REST/SOAP |
+
+Para cenários onde o backend utiliza gRPC internamente mas precisa expor APIs para browsers ou clientes REST, as alternativas mais comuns são o Envoy Proxy (transcoding automático REST→gRPC), o grpc-gateway (gerador de reverse proxy REST a partir do `.proto`) ou um controller intermediário como mostrado acima.
+
+```
+┌──────────┐     REST/JSON      ┌──────────────────┐    gRPC/Protobuf    ┌──────────────┐
+│  Browser  │──────────────────▶│  Envoy / Gateway  │───────────────────▶│  Serviço gRPC │
+│  Mobile   │◀──────────────────│  REST Controller  │◀───────────────────│  Spring Boot  │
+└──────────┘                    └──────────────────┘                     └──────────────┘
+```
+
+Em arquiteturas de microsserviços, uma abordagem comum é utilizar gRPC para comunicação interna entre serviços e REST para APIs externas consumidas por frontends e parceiros.
+
+---
+
+## 8. SpringDoc OpenAPI — Documentação de APIs
+
+O SpringDoc gera automaticamente a documentação OpenAPI 3.0 a partir dos controllers REST do Spring, disponibilizando a especificação em JSON/YAML e uma interface interativa via Swagger UI. Isso elimina a necessidade de manter a documentação manualmente e garante que ela esteja sempre sincronizada com o código.
+
+### 8.1. Dependência e configuração
+
+```xml
+<dependency>
+    <groupId>org.springdoc</groupId>
+    <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+    <version>2.8.0</version>
+</dependency>
+```
+
+```yaml
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method
+```
+
+Após subir a aplicação:
+- Swagger UI interativo: `http://localhost:8080/swagger-ui.html`
+- Especificação JSON: `http://localhost:8080/api-docs`
+- Especificação YAML: `http://localhost:8080/api-docs.yaml`
+
+### 8.2. Anotações para documentação
+
+```java
+package br.com.exemplo.api;
+
+import io.swagger.v3.oas.annotations.*;
+import io.swagger.v3.oas.annotations.responses.*;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/produtos")
+@Tag(name = "Produtos", description = "Gerenciamento de produtos do catálogo")
+public class ProdutoController {
+
+    private final ProdutoService produtoService;
+
+    public ProdutoController(ProdutoService produtoService) {
+        this.produtoService = produtoService;
+    }
+
+    @Operation(
+        summary = "Buscar produtos",
+        description = "Retorna lista paginada de produtos com filtro opcional por categoria"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Parâmetros inválidos")
+    })
+    @GetMapping
+    public Page<ProdutoResponse> listar(
+            @Parameter(description = "Nome da categoria para filtrar")
+            @RequestParam(required = false) String categoria,
+            @ParameterObject Pageable pageable) {
+        return produtoService.buscar(categoria, pageable);
+    }
+
+    @Operation(summary = "Criar produto")
+    @ApiResponse(responseCode = "201", description = "Produto criado com sucesso")
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProdutoResponse criar(
+            @Valid @RequestBody CriarProdutoRequest request) {
+        return produtoService.criar(request);
+    }
+}
+```
+
+| Anotação | Onde usar | Função |
+|----------|-----------|--------|
+| `@Tag` | Classe do controller | Agrupa endpoints em seções na documentação |
+| `@Operation` | Método do controller | Descreve o endpoint (summary e description) |
+| `@ApiResponse` | Método do controller | Documenta códigos de resposta HTTP |
+| `@Parameter` | Parâmetro do método | Descreve query params e path variables |
+| `@ParameterObject` | Parâmetro composto (Pageable) | Expande os campos do objeto na documentação |
+
+### 8.3. Separando documentação do controller com interface
+
+Quando um controller tem muitos endpoints, as anotações do SpringDoc (`@Operation`, `@ApiResponse`, `@Parameter`, etc.) acabam poluindo a classe e dificultando a leitura da lógica real. Uma abordagem comum é extrair toda a documentação para uma interface que o controller implementa.
+
+#### Interface de documentação
+
+```java
+package br.com.exemplo.api.doc;
+
+import br.com.exemplo.api.CriarProdutoRequest;
+import br.com.exemplo.api.ProdutoResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
+
+@Tag(name = "Produtos", description = "Gerenciamento de produtos do catálogo")
+public interface ProdutoControllerDoc {
+
+    @Operation(
+        summary = "Buscar produtos",
+        description = "Retorna lista paginada de produtos com filtro opcional por categoria"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Parâmetros inválidos",
+                content = @Content(schema = @Schema(hidden = true)))
+    })
+    Page<ProdutoResponse> listar(
+            @Parameter(description = "Nome da categoria para filtrar")
+            String categoria,
+            @ParameterObject Pageable pageable);
+
+    @Operation(summary = "Buscar produto por ID")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Produto encontrado"),
+        @ApiResponse(responseCode = "404", description = "Produto não encontrado",
+                content = @Content(schema = @Schema(hidden = true)))
+    })
+    ResponseEntity<ProdutoResponse> buscarPorId(
+            @Parameter(description = "ID do produto", required = true)
+            Long id);
+
+    @Operation(summary = "Criar produto")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Produto criado com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Dados inválidos",
+                content = @Content(schema = @Schema(hidden = true)))
+    })
+    ResponseEntity<ProdutoResponse> criar(@Valid CriarProdutoRequest request);
+
+    @Operation(summary = "Atualizar produto")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Produto atualizado"),
+        @ApiResponse(responseCode = "404", description = "Produto não encontrado",
+                content = @Content(schema = @Schema(hidden = true)))
+    })
+    ResponseEntity<ProdutoResponse> atualizar(Long id, @Valid CriarProdutoRequest request);
+
+    @Operation(summary = "Remover produto")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Produto removido"),
+        @ApiResponse(responseCode = "404", description = "Produto não encontrado",
+                content = @Content(schema = @Schema(hidden = true)))
+    })
+    ResponseEntity<Void> remover(Long id);
+}
+```
+
+#### Controller limpo
+
+O controller implementa a interface e herda automaticamente todas as anotações de documentação. Ele fica focado apenas na lógica de entrada/saída:
+
+```java
+package br.com.exemplo.api;
+
+import br.com.exemplo.api.doc.ProdutoControllerDoc;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/produtos")
+public class ProdutoController implements ProdutoControllerDoc {
+
+    private final ProdutoService produtoService;
+
+    public ProdutoController(ProdutoService produtoService) {
+        this.produtoService = produtoService;
+    }
+
+    @GetMapping
+    @Override
+    public Page<ProdutoResponse> listar(
+            @RequestParam(required = false) String categoria,
+            Pageable pageable) {
+        return produtoService.buscar(categoria, pageable);
+    }
+
+    @GetMapping("/{id}")
+    @Override
+    public ResponseEntity<ProdutoResponse> buscarPorId(@PathVariable Long id) {
+        return ResponseEntity.ok(produtoService.buscarPorId(id));
+    }
+
+    @PostMapping
+    @Override
+    public ResponseEntity<ProdutoResponse> criar(@RequestBody CriarProdutoRequest request) {
+        ProdutoResponse criado = produtoService.criar(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(criado);
+    }
+
+    @PutMapping("/{id}")
+    @Override
+    public ResponseEntity<ProdutoResponse> atualizar(
+            @PathVariable Long id,
+            @RequestBody CriarProdutoRequest request) {
+        return ResponseEntity.ok(produtoService.atualizar(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    @Override
+    public ResponseEntity<Void> remover(@PathVariable Long id) {
+        produtoService.remover(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+Nesse modelo, as anotações do Spring Web (`@GetMapping`, `@RequestParam`, `@PathVariable`, `@RequestBody`) ficam no controller, enquanto as anotações do SpringDoc (`@Operation`, `@ApiResponse`, `@Parameter`, `@Tag`) ficam na interface. O SpringDoc reconhece as anotações herdadas da interface e gera a documentação normalmente.
+
+#### Organização sugerida
+
+```text
+br.com.exemplo.api/
+├── doc/
+│   ├── ProdutoControllerDoc.java
+│   ├── PedidoControllerDoc.java
+│   └── CategoriaControllerDoc.java
+├── ProdutoController.java
+├── PedidoController.java
+├── CategoriaController.java
+├── CriarProdutoRequest.java
+└── ProdutoResponse.java
+```
+
+Essa abordagem é especialmente útil quando os endpoints têm documentação extensa (múltiplos `@ApiResponse` com schemas de erro, `@Content`, exemplos) — situações em que as anotações inline tornam o controller difícil de ler.
+
+### 8.4. Documentação de DTOs com `@Schema`
+
+```java
+package br.com.exemplo.api;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.*;
+import java.math.BigDecimal;
+
+@Schema(description = "Dados para criação de um produto")
+public record CriarProdutoRequest(
+    @Schema(description = "Nome do produto", example = "Notebook Dell XPS 15")
+    @NotBlank
+    String nome,
+
+    @Schema(description = "Preço unitário", example = "4999.90")
+    @NotNull @Positive
+    BigDecimal preco,
+
+    @Schema(description = "ID da categoria", example = "1")
+    @NotNull
+    Long categoriaId
+) {}
+```
+
+O SpringDoc reconhece automaticamente as anotações do Bean Validation (`@NotBlank`, `@NotNull`, `@Positive`) e inclui as restrições na documentação gerada.
+
+### 8.5. Configuração global e segurança
+
+```java
+package br.com.exemplo.api;
+
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.info.*;
+import io.swagger.v3.oas.models.security.*;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiConfig {
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+        return new OpenAPI()
+                .info(new Info()
+                        .title("API do E-Commerce")
+                        .version("1.0")
+                        .description("API REST para gerenciamento de produtos e pedidos")
+                        .contact(new Contact()
+                                .name("Equipe Backend")
+                                .email("backend@exemplo.com")))
+                .addSecurityItem(new SecurityRequirement().addList("Bearer"))
+                .components(new Components()
+                        .addSecuritySchemes("Bearer",
+                                new SecurityScheme()
+                                        .type(SecurityScheme.Type.HTTP)
+                                        .scheme("bearer")
+                                        .bearerFormat("JWT")));
+    }
+}
+```
+
+Com essa configuração, o Swagger UI exibe o botão "Authorize" que permite informar o token JWT manualmente para testar endpoints protegidos.
+
+#### Integração com OAuth2 / OpenID Connect (Keycloak, Auth0, etc.)
+
+Quando a aplicação utiliza um Identity Provider (IdP) externo com OAuth2 e OpenID Connect, o Swagger UI pode ser configurado para executar o fluxo de autenticação diretamente pelo navegador — sem necessidade de copiar tokens manualmente.
+
+```java
+package br.com.exemplo.api;
+
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.info.*;
+import io.swagger.v3.oas.models.security.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiOAuth2Config {
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
+    private String issuerUri;
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+        String authUrl = issuerUri + "/protocol/openid-connect/auth";
+        String tokenUrl = issuerUri + "/protocol/openid-connect/token";
+
+        return new OpenAPI()
+                .info(new Info()
+                        .title("API do E-Commerce")
+                        .version("1.0")
+                        .description("API REST protegida com OAuth2/OIDC"))
+                .addSecurityItem(new SecurityRequirement().addList("oauth2"))
+                .components(new Components()
+                        .addSecuritySchemes("oauth2",
+                                new SecurityScheme()
+                                        .type(SecurityScheme.Type.OAUTH2)
+                                        .flows(new OAuthFlows()
+                                                .authorizationCode(new OAuthFlow()
+                                                        .authorizationUrl(authUrl)
+                                                        .tokenUrl(tokenUrl)
+                                                        .scopes(new Scopes()
+                                                                .addString("openid", "OpenID Connect")
+                                                                .addString("profile", "Dados do perfil")
+                                                                .addString("email", "Endereço de e-mail"))))));
+    }
+}
+```
+
+Configuração complementar no `application.yml`:
+
+```yaml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.exemplo.com/realms/meu-realm
+
+springdoc:
+  swagger-ui:
+    oauth:
+      client-id: swagger-ui-client
+      use-pkce-with-authorization-code-flow: true
+```
+
+| Configuração | Descrição |
+|---|---|
+| `SecurityScheme.Type.OAUTH2` | Indica que a autenticação usa o protocolo OAuth2 |
+| `authorizationCode` | Fluxo recomendado para aplicações com interação de usuário (Authorization Code + PKCE) |
+| `authorizationUrl` | URL do IdP para iniciar o login (redireciona o navegador) |
+| `tokenUrl` | URL do IdP para trocar o authorization code por um access token |
+| `scopes` | Escopos solicitados durante o login |
+| `use-pkce-with-authorization-code-flow` | Habilita PKCE — obrigatório para clientes públicos como o Swagger UI |
+
+Com essa configuração, o botão "Authorize" do Swagger UI abre a tela de login do IdP (Keycloak, Auth0, Entra ID, etc.) no navegador. Após o login, o token é obtido automaticamente e incluído nas requisições de teste.
+
+As URLs do exemplo seguem o padrão do Keycloak. Para outros IdPs, ajuste os paths:
+
+| IdP | Authorization URL | Token URL |
+|-----|------------------|-----------|
+| **Keycloak** | `{issuer}/protocol/openid-connect/auth` | `{issuer}/protocol/openid-connect/token` |
+| **Auth0** | `https://{domain}/authorize` | `https://{domain}/oauth/token` |
+| **Entra ID** | `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize` | `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token` |
+| **Google** | `https://accounts.google.com/o/oauth2/v2/auth` | `https://oauth2.googleapis.com/token` |
+
+#### Configuração via OpenID Connect Discovery (well-known)
+
+O exemplo anterior exige montar manualmente as URLs de autorização e token. Com `SecurityScheme.Type.OPENIDCONNECT`, basta informar a URL do endpoint de discovery (`.well-known/openid-configuration`) e o Swagger UI resolve automaticamente todas as URLs do IdP:
+
+```java
+package br.com.exemplo.api;
+
+import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.info.*;
+import io.swagger.v3.oas.models.security.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiOidcConfig {
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
+    private String issuerUri;
+
+    @Bean
+    public OpenAPI customOpenAPI() {
+        String discoveryUrl = issuerUri + "/.well-known/openid-configuration";
+
+        return new OpenAPI()
+                .info(new Info()
+                        .title("API do E-Commerce")
+                        .version("1.0")
+                        .description("API REST protegida com OpenID Connect"))
+                .addSecurityItem(new SecurityRequirement().addList("oidc"))
+                .components(new Components()
+                        .addSecuritySchemes("oidc",
+                                new SecurityScheme()
+                                        .type(SecurityScheme.Type.OPENIDCONNECT)
+                                        .openIdConnectUrl(discoveryUrl)));
+    }
+}
+```
+
+A configuração YAML permanece a mesma:
+
+```yaml
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://idp.exemplo.com/realms/meu-realm
+
+springdoc:
+  swagger-ui:
+    oauth:
+      client-id: swagger-ui-client
+      use-pkce-with-authorization-code-flow: true
+```
+
+O endpoint `.well-known/openid-configuration` retorna um JSON com todos os metadados do IdP — authorization endpoint, token endpoint, escopos suportados, algoritmos de assinatura, etc. O Swagger UI lê esse JSON e configura o fluxo OAuth2 automaticamente.
+
+Exemplo de resposta do well-known (resumido):
+
+```json
+{
+  "issuer": "https://idp.exemplo.com/realms/meu-realm",
+  "authorization_endpoint": "https://idp.exemplo.com/realms/meu-realm/protocol/openid-connect/auth",
+  "token_endpoint": "https://idp.exemplo.com/realms/meu-realm/protocol/openid-connect/token",
+  "userinfo_endpoint": "https://idp.exemplo.com/realms/meu-realm/protocol/openid-connect/userinfo",
+  "jwks_uri": "https://idp.exemplo.com/realms/meu-realm/protocol/openid-connect/certs",
+  "scopes_supported": ["openid", "profile", "email"],
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"]
+}
+```
+
+#### Comparação das três abordagens
+
+| Abordagem | Tipo do `SecurityScheme` | Quando usar |
+|---|---|---|
+| **JWT Bearer** | `HTTP` / `bearer` | Token já obtido externamente; cole no Swagger UI para testar |
+| **OAuth2 (URLs explícitas)** | `OAUTH2` | Fluxo completo pelo Swagger UI; útil quando o IdP não expõe well-known ou quando se quer controle total sobre as URLs |
+| **OpenID Connect Discovery** | `OPENIDCONNECT` | Fluxo completo pelo Swagger UI com configuração mínima; o IdP precisa expor `/.well-known/openid-configuration` (Keycloak, Auth0, Entra ID e Google expõem por padrão) |
+
+### 8.6. Agrupamento de APIs com `GroupedOpenApi`
+
+Em aplicações maiores, é útil separar a documentação em grupos para facilitar a navegação:
+
+```java
+package br.com.exemplo.api;
+
+import org.springdoc.core.models.GroupedOpenApi;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class OpenApiGroupConfig {
+
+    @Bean
+    public GroupedOpenApi publicApi() {
+        return GroupedOpenApi.builder()
+                .group("publico")
+                .pathsToMatch("/api/produtos/**", "/api/categorias/**")
+                .build();
+    }
+
+    @Bean
+    public GroupedOpenApi adminApi() {
+        return GroupedOpenApi.builder()
+                .group("admin")
+                .pathsToMatch("/admin/**")
+                .build();
+    }
+
+    @Bean
+    public GroupedOpenApi actuatorApi() {
+        return GroupedOpenApi.builder()
+                .group("actuator")
+                .pathsToMatch("/actuator/**")
+                .build();
+    }
+}
+```
+
+No Swagger UI, um seletor dropdown permite alternar entre os grupos de APIs.
+
+### 8.7. Boas práticas
+
+- em controllers com muitas anotações de documentação, extraia-as para uma interface `*ControllerDoc` — mantém o controller legível e a documentação organizada;
+- use `@Tag` para agrupar endpoints por domínio de negócio, não por controller;
+- documente `@Schema` nos records/DTOs de entrada e saída com `description` e `example`;
+- configure `GroupedOpenApi` para separar APIs públicas de administrativas;
+- em produção, considere desabilitar o Swagger UI por perfil (`springdoc.swagger-ui.enabled=false`);
+- use `@Hidden` para ocultar endpoints internos que não devem aparecer na documentação pública.
+
+---
+
+## 9. Mecanismos de resiliência
 
 Aplicações corporativas normalmente dependem de APIs, bancos, brokers e serviços externos. Por isso, é importante aplicar mecanismos de resiliência para evitar que falhas temporárias derrubem fluxos inteiros ou sobrecarreguem o sistema.
 
@@ -2536,7 +4419,7 @@ Em Spring Boot, a combinação mais comum para esses casos é:
 - Resilience4j para circuit breaker, bulkhead, rate limiter, retry e timeout;
 - observabilidade para acompanhar falhas, latência e degradação.
 
-### 5.1. Quando aplicar resiliência
+### 9.1. Quando aplicar resiliência
 
 Esses mecanismos costumam ser aplicados em chamadas para:
 
@@ -2554,7 +4437,7 @@ Nem toda operação deve ter retry ou fallback. Em geral:
 - use rate limiter quando for necessário controlar volume de chamadas;
 - use fallback apenas quando houver uma resposta degradada aceitável.
 
-### 5.2. Dependências mais comuns
+### 9.2. Dependências mais comuns
 
 Exemplo com Resilience4j e Spring Retry:
 
@@ -2579,7 +4462,7 @@ Exemplo com Resilience4j e Spring Retry:
 
 O starter AOP e necessário porque boa parte dessas anotações funciona por proxy.
 
-### 5.3. Timeout
+### 9.3. Timeout
 
 O timeout impede que uma chamada fique presa por tempo indeterminado.
 
@@ -2657,7 +4540,7 @@ resilience4j:
         cancelRunningFuture: true
 ```
 
-### 5.4. Retry com Resilience4j
+### 9.4. Retry com Resilience4j
 
 O retry deve ser usado quando a falha é temporária, por exemplo:
 
@@ -2720,7 +4603,7 @@ Boas praticas:
 - combinar retry com timeout;
 - observar o impacto de repetição em operações não idempotentes.
 
-### 5.5. Retry com Spring Retry
+### 9.5. Retry com Spring Retry
 
 Para casos mais simples, o Spring Retry ainda e uma opção bastante prática.
 
@@ -2769,7 +4652,7 @@ public class EstoqueIntegracaoService {
 
 Essa abordagem e boa quando o foco é apenas repetição de tentativa em um service local.
 
-### 5.6. Circuit breaker
+### 9.6. Circuit breaker
 
 O circuit breaker evita que a aplicação continue insistindo em um serviço que está falhando de forma recorrente.
 
@@ -2829,7 +4712,7 @@ resilience4j:
 
 Esse mecanismo protege a aplicação e também reduz carga sobre o sistema externo problemático.
 
-### 5.7. Bulkhead
+### 9.7. Bulkhead
 
 O bulkhead isola recursos para que a falha ou lentidão de uma integração não consuma todas as threads da aplicação.
 
@@ -2872,7 +4755,7 @@ Quando usar:
 - operações que podem monopolizar threads;
 - isolamento entre fluxos críticos e secundários.
 
-### 5.8. Rate limiter
+### 9.8. Rate limiter
 
 O rate limiter controla a quantidade de chamadas em determinado intervalo.
 
@@ -2916,7 +4799,7 @@ Esse mecanismo é útil para:
 - evitar estouro de consumo em parceiros externos;
 - reduzir picos causados por rajadas de requisições.
 
-### 5.9. Rate limiter com Bucket4j
+### 9.9. Rate limiter com Bucket4j
 
 Outra abordagem bastante popular em Spring Boot é usar Bucket4j, uma biblioteca baseada no algoritmo de token bucket. Ela é especialmente útil quando o limite precisa ser aplicado diretamente sobre endpoints HTTP, usuários, IPs ou chaves de negócio.
 
@@ -3112,7 +4995,7 @@ O `RateLimiter` do Resilience4j costuma ser mais natural quando:
 - o controle está acoplado a um método específico;
 - a política de resiliência faz parte de uma chamada remota do service.
 
-### 5.10. Fallback
+### 9.10. Fallback
 
 O fallback define o comportamento degradado quando a chamada principal falha.
 
@@ -3152,7 +5035,7 @@ Cuidados:
 - a resposta degradada precisa ser coerente com o negócio;
 - em fluxos financeiros ou críticos, talvez o correto seja falhar explicitamente.
 
-### 5.11. Combinando mecanismos
+### 9.11. Combinando mecanismos
 
 Em muitos cenários, os mecanismos são usados juntos. Um arranjo comum para chamadas HTTP externas é:
 
@@ -3191,7 +5074,7 @@ public class ClienteScoreService {
 
 Ao combinar mecanismos, evite exagero. Muitas camadas de resiliência mal calibradas podem aumentar latência, mascarar problemas ou gerar tempestade de tentativas.
 
-### 5.12. Resiliencia em consumidores JMS e jobs
+### 9.12. Resiliencia em consumidores JMS e jobs
 
 Os mesmos conceitos valem para jobs e mensageria:
 
@@ -3221,7 +5104,7 @@ public class PedidoResilienteConsumer {
 }
 ```
 
-### 5.13. Observabilidade e monitoramento
+### 9.13. Observabilidade e monitoramento
 
 Não existe resiliencia boa sem visibilidade operacional. O ideal é acompanhar:
 
@@ -3238,7 +5121,7 @@ Isso ajuda a responder perguntas como:
 - o fallback está sendo usado demais?
 - o gargalo está no provedor externo ou na própria aplicação?
 
-### 5.14. Boas práticas
+### 9.14. Boas práticas
 
 - aplique resiliência apenas onde existe dependência instável ou remota;
 - diferencie erro transiente de erro funcional;
@@ -3249,7 +5132,7 @@ Isso ajuda a responder perguntas como:
 - revise periodicamente os parâmetros de retry, timeout e circuit breaker.
 
 
-## 6. Cache e Spring Session
+## 10. Cache e Spring Session
 
 Cache e gerenciamento de sessão são dois temas muito relevantes em aplicações Spring Boot tradicionais. Embora resolvam problemas diferentes, eles frequentemente usam tecnologias parecidas, como Redis:
 
@@ -3262,7 +5145,7 @@ Em geral:
 - use Spring Session para estado de usuário em aplicações web stateful;
 - evite misturar os dois conceitos no desenho de chaves e TTLs.
 
-### 8.1. Dependências
+### 10.1. Dependências
 
 Para suporte geral a cache:
 
@@ -3296,7 +5179,7 @@ Para cache com Redis e sessão distribuída:
 </dependency>
 ```
 
-### 6.2. Habilitando cache
+### 10.2. Habilitando cache
 
 ```java
 package br.com.exemplo.cache;
@@ -3312,7 +5195,7 @@ public class CacheConfig {
 
 Com `@EnableCaching`, o Spring passa a interceptar os métodos anotados com `@Cacheable`, `@CachePut` e `@CacheEvict`.
 
-### 6.3. Uso de `@Cacheable`
+### 10.3. Uso de `@Cacheable`
 
 `@Cacheable` e usado quando queremos:
 
@@ -3360,7 +5243,7 @@ public ProdutoDto buscarPorId(Long id) {
 }
 ```
 
-### 6.4. Uso de `@CachePut`
+### 10.4. Uso de `@CachePut`
 
 `@CachePut` sempre executa o método e atualiza o cache com o retorno mais recente.
 
@@ -3401,7 +5284,7 @@ public class ProdutoCadastroService {
 }
 ```
 
-### 6.5. Uso de `@CacheEvict`
+### 10.5. Uso de `@CacheEvict`
 
 `@CacheEvict` remove entradas do cache, o que é importante quando o dado original mudou ou foi excluído.
 
@@ -3437,7 +5320,7 @@ public void limparCacheProdutos() {
 }
 ```
 
-### 6.6. Configuração com Caffeine
+### 10.6. Configuração com Caffeine
 
 Caffeine é uma excelente opção para cache local em memória:
 
@@ -3491,7 +5374,7 @@ Quando preferir Caffeine:
 - necessidade de latência mínima;
 - cache local como camada complementar.
 
-### 6.7. Configuração com Redis para cache
+### 10.7. Configuração com Redis para cache
 
 Redis é uma boa opção quando:
 
@@ -3553,7 +5436,7 @@ Pontos importantes:
 - diferentes caches podem ter TTLs diferentes;
 - serialização JSON costuma ser mais amigável para manutenção e diagnostico.
 
-### 6.8. Estratégias de invalidação
+### 10.8. Estratégias de invalidação
 
 Cache sem estratégia de invalidação costuma gerar inconsistências.
 
@@ -3608,7 +5491,7 @@ Boas práticas:
 - documentar TTL e estratégia de remoção;
 - medir hit ratio antes de expandir uso de cache.
 
-### 6.9. Cache em aplicações Spring Boot tradicionais
+### 10.9. Cache em aplicações Spring Boot tradicionais
 
 Em aplicações web tradicionais, o cache costuma ser aplicado em:
 
@@ -3624,7 +5507,7 @@ Uma combinação prática é:
 - Redis para cache compartilhado entre instancias;
 - invalidação orientada a evento ou alteração de dados.
 
-### 6.10. Spring Session e sessão distribuída
+### 10.10. Spring Session e sessão distribuída
 
 Spring Session abstrai o armazenamento da sessão HTTP e permite mover esse estado para um backend compartilhado, como Redis ou JDBC.
 
@@ -3637,7 +5520,7 @@ Isso é especialmente útil quando:
 
 Segundo a documentação oficial do Spring Boot, em aplicações servlet o store de sessão pode ser autoconfigurado com Redis ou JDBC, sem necessidade de `@Enable*HttpSession` quando há um único modulo Spring Session no classpath.
 
-### 6.11. Configurando Spring Session com Redis
+### 10.11. Configurando Spring Session com Redis
 
 Exemplo para aplicação web tradicional:
 
@@ -3696,7 +5579,7 @@ Nesse modelo:
 - por baixo, os dados passam a ser persistidos no backend configurado;
 - a aplicação segue com a mesma API de sessão.
 
-### 6.12. Persistência em Redis e integração com Spring Security
+### 10.12. Persistência em Redis e integração com Spring Security
 
 Em aplicações web com login tradicional, o Spring Session integra-se muito bem com Spring Security. Quando o `SecurityContext` e salvo na sessão, ele também passa a ser persistido no Redis.
 
@@ -3708,7 +5591,7 @@ Isso permite:
 
 Segundo a documentação do Spring Session, um cookie `SESSION` e usado para apontar para a sessão persistida. O backend Redis armazena os atributos da sessão e cuida da expiração conforme a configuração.
 
-### 6.13. Estratégias para aplicações web tradicionais
+### 10.13. Estratégias para aplicações web tradicionais
 
 Em aplicações web stateful, algumas estratégias são bastante comuns:
 
@@ -3725,7 +5608,7 @@ Recomendações práticas:
 - configurar timeout coerente com a experiencia esperada;
 - invalidar sessão explicitamente no logout.
 
-### 6.14. Encontrando e invalidando sessões por usuário
+### 10.14. Encontrando e invalidando sessões por usuário
 
 Quando a aplicação precisa listar sessões ativas de um usuário ou derrubar sessões remotamente, o Spring Session com repositório indexada ajuda bastante.
 
@@ -3767,7 +5650,7 @@ Esse tipo de recurso é especialmente útil em:
 - controle de sessões simultâneas;
 - auditoria de acesso.
 
-### 6.15. Eventos de sessão
+### 10.15. Eventos de sessão
 
 Quando o repositório indexado está configurado, o Spring Session também pode publicar eventos como:
 
@@ -3801,7 +5684,7 @@ public class SessionEventsListener {
 }
 ```
 
-### 6.16. Boas práticas com cache e Spring Session
+### 10.16. Boas práticas com cache e Spring Session
 
 - escolha Caffeine para cache local e Redis para cache ou sessão compartilhada;
 - não use cache como substituto de consistência de negócio;
@@ -3812,7 +5695,7 @@ public class SessionEventsListener {
 - teste invalidação de cache e expiração de sessão em cenários reais;
 - evite salvar objetos não serializáveis ou muito grandes na sessão.
 
-## 7. Spring Batch
+## 11. Spring Batch
 
 Spring Batch e o modulo do ecossistema Spring voltado para processamento em lote. Ele e muito útil quando a aplicação precisa processar grande volume de dados de forma controlada, reexecutavel e auditavel.
 
@@ -3833,7 +5716,7 @@ Segundo a documentação oficial, alguns dos componentes centrais são:
 - `ItemProcessor`, para transformar ou validar itens;
 - `ItemWriter`, para gravar itens.
 
-### 7.1. Dependências
+### 11.1. Dependências
 
 ```xml
 <dependency>
@@ -3844,7 +5727,7 @@ Segundo a documentação oficial, alguns dos componentes centrais são:
 
 Se o projeto vai usar persistencia real dos metadados do Batch, normalmente também havera um banco com `spring-boot-starter-data-jdbc` ou `spring-boot-starter-data-jpa`, dependendo da arquitetura adotada.
 
-### 7.2. Conceitos principais
+### 11.2. Conceitos principais
 
 #### `Job`
 
@@ -3876,7 +5759,7 @@ E o modelo mais comum no Spring Batch. Nele:
 
 Esse modelo e muito bom para alto volume com commit controlado.
 
-### 7.3. Configuração basica de Job e Step
+### 11.3. Configuração basica de Job e Step
 
 ```java
 package br.com.exemplo.batch;
@@ -3921,7 +5804,7 @@ public class BatchConfig {
 }
 ```
 
-### 7.4. Exemplo completo de `ItemReader`, `ItemProcessor` e `ItemWriter`
+### 11.4. Exemplo completo de `ItemReader`, `ItemProcessor` e `ItemWriter`
 
 Objetos de exemplo:
 
@@ -4016,7 +5899,7 @@ public class PedidoItemWriter implements ItemWriter<PedidoProcessado> {
 }
 ```
 
-### 7.5. Leitura de arquivo CSV com Spring Batch
+### 11.5. Leitura de arquivo CSV com Spring Batch
 
 Um dos cenarios mais comuns é importar dados de CSV com `FlatFileItemReader`.
 
@@ -4048,7 +5931,7 @@ public class BatchCsvReaderConfig {
 
 Esse tipo de reader e bastante usado em importacoes administrativas ou integrações legadas.
 
-### 7.6. Writer para banco de dados
+### 11.6. Writer para banco de dados
 
 Exemplo com `JdbcBatchItemWriter`:
 
@@ -4078,7 +5961,7 @@ public class BatchWriterConfig {
 }
 ```
 
-### 7.7. Restart e reprocessamento
+### 11.7. Restart e reprocessamento
 
 Um dos grandes diferenciais do Spring Batch é a persistencia dos metadados de execução no `JobRepository`. Isso permite:
 
@@ -4127,7 +6010,7 @@ public class BatchJobService {
 
 Se o objetivo for sempre criar uma nova execução, adicionar um `timestamp` ou identificador unico nos parâmetros e uma abordagem comum.
 
-### 7.8. Skip e retry
+### 11.8. Skip e retry
 
 Em importacoes reais, alguns registros podem vir invalidos e outros podem falhar temporariamente. O Spring Batch suporta ambos os cenarios.
 
@@ -4177,7 +6060,7 @@ Interpretacao:
 - falhas transientes de banco podem ser tentadas novamente;
 - se o limite for ultrapassado, o step falha.
 
-### 7.9. Tasklet step
+### 11.9. Tasklet step
 
 Nem todo processamento batch precisa de chunk. Para tarefas simples e pontuais, pode-se usar `Tasklet`.
 
@@ -4218,7 +6101,7 @@ Use `Tasklet` quando:
 - não houver processamento item a item;
 - a logica for unica, como mover arquivo, limpar diretorio ou gerar marcador de execução.
 
-### 7.10. Boas praticas com Spring Batch
+### 11.10. Boas praticas com Spring Batch
 
 - persista metadados do Batch em banco relacional;
 - mantenha jobs idempotentes sempre que possivel;
@@ -4229,7 +6112,7 @@ Use `Tasklet` quando:
 - para jobs pesados, considere disparo por scheduler ou operacao administrativa;
 - para arquivos grandes, combine Spring Batch com leitores aprópriados, como CSV ou leitura streaming de XLSX.
 
-### 7.11. Quando Spring Batch faz mais sentido
+### 11.11. Quando Spring Batch faz mais sentido
 
 Spring Batch costuma ser uma excelente escolha quando:
 
@@ -4244,7 +6127,7 @@ Em contrapartida, talvez ele seja excessivo quando:
 - um service comum ou job Quartz resolve com menos complexidade;
 - não há estado de execução, checkpoint ou necessidade de restart.
 
-## 8. Exportação de dados em CSV e Excel
+## 12. Exportação de dados em CSV e Excel
 
 Exportação de dados é uma necessidade muito comum em sistemas corporativos, especialmente para:
 
@@ -4261,7 +6144,7 @@ Em Spring Boot, duas bibliotecas muito comuns para esse cenario são:
 
 Conforme a documentação oficial do Apache Commons CSV, a biblioteca é voltada para leitura e escrita de variacoes do formato CSV. Ja o Apache POI informa oficialmente que `poi` cobre o ecossistema OLE2 e `poi-ooxml` cobre os formatos OOXML, incluindo Excel `.xlsx`.
 
-### 6.1. Dependências
+### 12.1. Dependências
 
 ```xml
 <dependencies>
@@ -4291,7 +6174,7 @@ Observacoes:
 - para Excel `.xlsx`, normalmente basta `poi-ooxml`, que ja puxa o necessario para OOXML;
 - manter `poi` explicito pode ser útil para deixar claro o suporte ao ecossistema base do POI.
 
-### 8.2. Quando usar CSV e quando usar Excel
+### 12.2. Quando usar CSV e quando usar Excel
 
 Use CSV quando:
 
@@ -4307,7 +6190,7 @@ Use Excel quando:
 - usuarios de negocio esperarem uma planilha mais amigavel;
 - houver necessidade de formulas, filtros ou organizacao visual.
 
-### 8.3. Exemplo de DTO para exportação
+### 12.3. Exemplo de DTO para exportação
 
 ```java
 package br.com.exemplo.exportacao;
@@ -4325,7 +6208,7 @@ public record PedidoExportacaoDto(
 }
 ```
 
-### 8.4. Exportando CSV com Apache Commons CSV
+### 12.4. Exportando CSV com Apache Commons CSV
 
 Servico:
 
@@ -4376,7 +6259,7 @@ Pontos importantes:
 - usar UTF-8 evita problemas com acentos;
 - `CSVPrinter` ajuda a lidar corretamente com escape e aspas.
 
-### 8.5. Lendo arquivos CSV com Apache Commons CSV
+### 12.5. Lendo arquivos CSV com Apache Commons CSV
 
 Para importacao de dados, o Apache Commons CSV também oferece uma API simples e segura para parsing de arquivos CSV.
 
@@ -4436,7 +6319,7 @@ Boas praticas na leitura de CSV:
 - tratar linhas vazias, colunas faltantes e valores invalidos;
 - registrar erros de importacao com numero da linha quando possivel.
 
-### 8.6. Endpoint HTTP para download de CSV
+### 12.6. Endpoint HTTP para download de CSV
 
 ```java
 package br.com.exemplo.exportacao;
@@ -4499,7 +6382,7 @@ public class ExportacaoController {
 
 Esse controller mostra os dois formatos no mesmo endpoint de exportação.
 
-### 8.7. Exportando Excel com Apache POI
+### 12.7. Exportando Excel com Apache POI
 
 Exemplo usando `XSSFWorkbook` para gerar `.xlsx`:
 
@@ -4580,7 +6463,7 @@ Esse exemplo cobre:
 - celulas de data com estilo;
 - ajuste automatico de largura das colunas.
 
-### 8.8. Lendo arquivos XLSX com Apache POI
+### 12.8. Lendo arquivos XLSX com Apache POI
 
 Quando o arquivo Excel não é muito grande, `XSSFWorkbook` ou `WorkbookFactory` costumam ser suficientes para leitura.
 
@@ -4650,7 +6533,7 @@ Esse modelo funciona bem quando:
 
 Para leitura, `DataFormatter` é útil porque ajuda a obter o valor textual exibido na celula sem precisar tratar todos os tipos manualmente em cada caso.
 
-### 8.9. Diferencas entre `XSSFWorkbook` e `SXSSFWorkbook`
+### 12.9. Diferencas entre `XSSFWorkbook` e `SXSSFWorkbook`
 
 Na prática, os dois servem para gerar arquivos `.xlsx`, mas o comportamento é o custo de memória são diferentes.
 
@@ -4724,7 +6607,7 @@ Uma regra pratica bastante usada:
 
 Essa regra e apenas uma referencia. O ponto real de troca depende da memória disponivel, da quantidade de colunas e da complexidade da planilha.
 
-### 8.10. Exemplo de exportação com `SXSSFWorkbook`
+### 12.10. Exemplo de exportação com `SXSSFWorkbook`
 
 ```java
 package br.com.exemplo.exportacao;
@@ -4784,7 +6667,7 @@ Nesse exemplo:
 
 Para exportacoes muito grandes, esse modelo costuma ser mais seguro que `XSSFWorkbook`.
 
-### 8.11. Leitura de arquivos grandes com `excel-streaming-reader`
+### 12.11. Leitura de arquivos grandes com `excel-streaming-reader`
 
 Quando o problema não e exportar, mas sim importar ou ler planilhas `.xlsx` muito grandes, uma opcao bastante recomendada e o fork mantido por `pjfanning` da biblioteca `excel-streaming-reader`.
 
@@ -4944,7 +6827,7 @@ Na prática:
 - `SXSSFWorkbook` é melhor para escrita streaming de grandes arquivos;
 - `excel-streaming-reader` e melhor para leitura streaming de `.xlsx` grandes.
 
-### 8.12. Comparando abordagens de leitura para XLSX
+### 12.12. Comparando abordagens de leitura para XLSX
 
 Resumo prática:
 
@@ -4958,7 +6841,7 @@ Escolha rápida:
 - importar planilha muito grande: `excel-streaming-reader`;
 - gerar planilha muito grande: `SXSSFWorkbook`.
 
-### 8.13. Exportação com mais de uma aba
+### 12.13. Exportação com mais de uma aba
 
 Quando o relatório é mais complexo, uma planilha Excel pode conter varias abas.
 
@@ -4976,7 +6859,7 @@ Isso é útil quando:
 - existem dados analiticos e resumo executivo;
 - o usuário precisa navegar por categorias ou períodos.
 
-### 8.14. Cuidados com memória e volume
+### 12.14. Cuidados com memória e volume
 
 Arquivos CSV geralmente são leves, mas planilhas Excel podem consumir bastante memória, principalmente com muitas linhas e estilos.
 
@@ -4989,7 +6872,7 @@ Boas praticas:
 - para escrita massiva em `.xlsx`, avaliar `SXSSFWorkbook`;
 - lembrar que `SXSSFWorkbook` cria arquivos temporários e exige limpeza adequada.
 
-### 8.15. Diferencas práticas entre CSV e Excel
+### 12.15. Diferencas práticas entre CSV e Excel
 
 CSV:
 
@@ -5005,7 +6888,7 @@ Excel:
 - normalmente mais pesado;
 - mais apropriado para relatórios gerenciais.
 
-### 8.16. Boas práticas para exportação
+### 12.16. Boas práticas para exportação
 
 - usar nomes de arquivo claros, por exemplo `pedidos-2026-03-19.xlsx`;
 - aplicar `Content-Disposition: attachment`;
@@ -5014,7 +6897,7 @@ Excel:
 - considerar paginação, filtros e exportação assíncrona para grandes volumes;
 - registrar auditoria quando a exportação envolver dados sensíveis.
 
-## 9. Upload e download de arquivos
+## 13. Upload e download de arquivos
 
 Upload e download de arquivos são requisitos muito comuns em aplicações Spring Boot tradicionais, especialmente em cenários como:
 
@@ -5032,7 +6915,7 @@ Os cuidados principais normalmente envolvem:
 - estratégia de armazenamento;
 - autorização de acesso ao arquivo.
 
-### 9.1. Suporte básico a multipart no Spring Boot
+### 13.1. Suporte básico a multipart no Spring Boot
 
 Em aplicações servlet, o Spring Boot configura automaticamente o suporte a upload multipart quando o suporte multipart está habilitado e as classes necessárias estão no classpath.
 
@@ -5056,7 +6939,7 @@ Na pratica:
 - `file-size-threshold` define quando o upload vai para disco temporário;
 - `location` define onde os temporários podem ser gravados.
 
-### 9.2. Upload simples com `MultipartFile`
+### 13.2. Upload simples com `MultipartFile`
 
 Exemplo de controller:
 
@@ -5103,7 +6986,7 @@ public record ArquivoSalvo(String nomeOriginal, String caminho) {
 }
 ```
 
-### 9.3. Armazenamento local de arquivos
+### 13.3. Armazenamento local de arquivos
 
 Serviço de armazenamento local:
 
@@ -5169,7 +7052,7 @@ Esse modelo é útil quando:
 - a aplicação roda em um ambiente com disco acessível;
 - não há necessidade imediata de armazenamento externo.
 
-### 9.4. Validação de tipo e tamanho
+### 13.4. Validação de tipo e tamanho
 
 Validações importantes no upload:
 
@@ -5215,7 +7098,7 @@ public class FileValidationService {
 
 Em cenários sensíveis, o ideal é validar também a assinatura binária do arquivo e não apenas a extensão ou o content type informado pelo cliente. A biblioteca Apache Tika resolve exatamente isso.
 
-### 9.5. Validação de conteúdo com Apache Tika
+### 13.5. Validação de conteúdo com Apache Tika
 
 O `Content-Type` enviado pelo cliente em um upload é definido pelo próprio cliente e pode ser facilmente falsificado — um arquivo `.exe` renomeado para `.pdf` passaria sem problemas por qualquer verificação baseada somente em extensão ou cabeçalho HTTP. O **Apache Tika** detecta o tipo real do arquivo inspecionando seus **magic bytes** (sequência de bytes no início do arquivo que identifica o formato), independentemente do nome ou do `Content-Type` declarado.
 
@@ -5436,7 +7319,7 @@ public class ArquivoUploadController {
 }
 ```
 
-### 9.6. Upload com metadados
+### 13.6. Upload com metadados
 
 Muitas vezes o upload vem junto com outros campos do formulário.
 
@@ -5465,7 +7348,7 @@ public class DocumentoUploadController {
 }
 ```
 
-### 9.7. Upload de JSON e arquivo com `@RequestPart`
+### 13.7. Upload de JSON e arquivo com `@RequestPart`
 
 Para APIs REST, essa costuma ser a abordagem mais recomendada quando a requisicao envia:
 
@@ -5513,7 +7396,7 @@ Pontos importantes:
 - a part `binaryFile` deve ter o mesmo nome esperado no backend;
 - essa abordagem é mais explicita e previsível para APIs REST.
 
-### 9.8. Fetch API para `/upload/v1` com `@RequestPart`
+### 13.8. Fetch API para `/upload/v1` com `@RequestPart`
 
 Quando o endpoint usa `@RequestPart("data")` para receber JSON e `@RequestPart("binaryFile")` para receber o arquivo, um ponto importante no frontend é que o JSON deve ser enviado como `Blob` com `type: "application/json"`.
 
@@ -5564,7 +7447,7 @@ Pontos de atenção:
 
 Esse detalhe do `Blob` e especialmente importante em integrações com Spring MVC quando a API recebe JSON estruturado e arquivo na mesma requisição.
 
-### 9.9. Upload de JSON e arquivo com `@ModelAttribute`
+### 13.9. Upload de JSON e arquivo com `@ModelAttribute`
 
 Em alguns cenários, a aplicação recebe um `multipart/form-data` com:
 
@@ -5646,7 +7529,7 @@ Pontos importantes nessa abordagem:
 - `binaryFile` continua sendo recebido como `MultipartFile`;
 - o binding depende do nome do campo `data` coincidir com o nome do atributo do record ou DTO.
 
-### 9.10. Fetch API para `/upload/v2` com `@ModelAttribute`
+### 13.10. Fetch API para `/upload/v2` com `@ModelAttribute`
 
 Quando o backend usa `@ModelAttribute`, o JSON normalmente deve ser enviado como texto simples no `FormData`, e não como `Blob` `application/json`.
 
@@ -5692,7 +7575,7 @@ Pontos de atenção:
 - se o nome do campo não for exatamente `data`, o binding falha;
 - essa abordagem é menos explicita para APIs REST.
 
-### 9.11. Comparando `@ModelAttribute` e `@RequestPart`
+### 13.11. Comparando `@ModelAttribute` e `@RequestPart`
 
 `@ModelAttribute`:
 
@@ -5713,7 +7596,7 @@ Na prática:
 - se o caso for formulário clássico, `@ModelAttribute` pode ser suficiente;
 - se o caso for API REST com JSON estruturado, prefira `@RequestPart`.
 
-### 9.12. Upload resumível com TUS
+### 13.12. Upload resumível com TUS
 
 TUS e um protocolo HTTP aberto para uploads resumíveis. Ele e especialmente útil quando:
 
@@ -5884,7 +7767,7 @@ O TUS resolve o protocolo de upload resumível, mas o backend de armazenamento a
 - TUS para transporte resumível;
 - storage em disco temporário ou objeto;
 - processo posterior para consolidar metadados e mover o arquivo ao destino final.
-### 9.13. Download simples com `Resource`
+### 13.13. Download simples com `Resource`
 
 Uma forma comum de download e retornar um `Resource` com `Content-Disposition`.
 
@@ -5925,7 +7808,7 @@ public class FileDownloadController {
 }
 ```
 
-### 9.14. Download em streaming
+### 13.14. Download em streaming
 
 Quando o arquivo pode ser grande, o ideal e evitar carregar tudo em memória.
 
@@ -5980,7 +7863,7 @@ Esse formato costuma ser melhor para:
 - downloads frequentes;
 - menor pressão sobre heap da aplicação.
 
-### 9.15. Armazenamento em banco ou armazenamento externo
+### 13.15. Armazenamento em banco ou armazenamento externo
 
 Em geral, existem três estratégias comuns:
 
@@ -5999,7 +7882,7 @@ Uma estratégia muito comum e:
 - salvar o binário em storage externo;
 - persistir no banco apenas os metadados e o identificador do arquivo.
 
-### 9.16. Cuidados de segurança
+### 13.16. Cuidados de segurança
 
 Em upload e download, alguns cuidados são essenciais:
 
@@ -6013,7 +7896,7 @@ Em upload e download, alguns cuidados são essenciais:
 
 Se a aplicação usa Spring Security, o endpoint de download deve validar se o usuário tem acesso ao recurso solicitado.
 
-### 9.17. Tratamento de erros
+### 13.17. Tratamento de erros
 
 Erros comuns:
 
@@ -6050,7 +7933,7 @@ public class FileExceptionHandler {
 }
 ```
 
-### 9.18. Boas práticas
+### 13.18. Boas práticas
 
 - defina limites de upload no `application.yml`;
 - valide tamanho, extensão e conteúdo;
@@ -6061,7 +7944,7 @@ public class FileExceptionHandler {
 - monitore uso de disco, temporários e falhas de upload;
 - em aplicações distribuídas, prefira storage compartilhado ou externo.
 
-## 10. Concorrência com `java.util.concurrent`
+## 14. Concorrência com `java.util.concurrent`
 
 Os pacotes `java.util.concurrent`, `java.util.concurrent.locks` e `java.util.concurrent.atomic` formam o núcleo de concorrência da plataforma Java. Em aplicações Spring Boot, eles costumam aparecer em cenários como:
 
@@ -6112,7 +7995,7 @@ Os principais grupos de tipos são:
 | `Exchanger` | Trocar objetos entre dois threads |
 | `Phaser` | Barreira reutilizável com participantes dinâmicos |
 
-### 10.1. `ReentrantLock`
+### 14.1. `ReentrantLock`
 
 `ReentrantLock` é a alternativa explícita ao `synchronized`. O mesmo thread pode adquirir o lock mais de uma vez sem se bloquear (reentrada), e deve liberá-lo a mesma quantidade de vezes.
 
@@ -6195,7 +8078,7 @@ public class RecursoExclusivoService {
 
 `tryLock` é especialmente útil em cenários onde não faz sentido bloquear indefinidamente, por exemplo em endpoints de processamento manual ou jobs concorrentes.
 
-### 10.2. `ReentrantReadWriteLock`
+### 14.2. `ReentrantReadWriteLock`
 
 `ReentrantReadWriteLock` mantém dois locks internos:
 
@@ -6262,7 +8145,7 @@ Nesse modelo:
 - `atualizar` e `limpar` esperam todos os leitores terminarem antes de adquirir o lock de escrita;
 - após o lock de escrita ser adquirido, novas leituras também ficam bloqueadas.
 
-### 10.3. `StampedLock`
+### 14.3. `StampedLock`
 
 `StampedLock` foi introduzido no Java 8 e oferece três modos de operação:
 
@@ -6325,7 +8208,7 @@ public class SaldoService {
 
 O padrão "tenta otimista, cai para pessimista se inválido" é o idioma mais comum com `StampedLock`. Quando escritas são raras, a maioria das leituras passa pelo caminho otimista sem qualquer bloqueio.
 
-### 10.4. `Condition`
+### 14.4. `Condition`
 
 `Condition` é usado junto com `ReentrantLock` para coordenar threads que precisam esperar por uma condição específica antes de prosseguir. Equivale ao `wait/notify` do `synchronized`, mas com mais flexibilidade:
 
@@ -6397,7 +8280,7 @@ public class FilaLimitada<T> {
 
 Ter duas condições separadas (`naoCheia` e `naoVazia`) é mais eficiente do que uma única condição com `signalAll`, porque só acorda os threads relevantes para cada situação.
 
-### 10.5. `LockSupport`
+### 14.5. `LockSupport`
 
 `LockSupport` é um utilitário de baixo nível que permite suspender (`park`) e retomar (`unpark`) threads diretamente, sem necessidade de monitor ou lock. É a base sobre a qual os outros mecanismos do `java.util.concurrent` são construídos.
 
@@ -6444,7 +8327,7 @@ public class ExemploLockSupport {
 
 Diferente de `Thread.sleep` ou `Object.wait`, `LockSupport.park` não lança `InterruptedException` — apenas retorna quando interrompido, e o thread deve verificar `Thread.interrupted()` se precisar tratar isso.
 
-### 10.6. Classes atômicas (`java.util.concurrent.atomic`)
+### 14.6. Classes atômicas (`java.util.concurrent.atomic`)
 
 O pacote `java.util.concurrent.atomic` oferece tipos que realizam operações de leitura, modificação e escrita de forma atômica, sem necessidade de lock explícito. Internamente, usam instruções CAS (compare-and-swap) da CPU, o que os torna muito eficientes em cenários de baixa a média contução.
 
@@ -6633,7 +8516,7 @@ public class PicoLatenciaMonitor {
 }
 ```
 
-### 10.7. Coleções concorrentes (`java.util.concurrent`)
+### 14.7. Coleções concorrentes (`java.util.concurrent`)
 
 O pacote `java.util.concurrent` traz implementações de coleções projetadas para acesso concorrente, sem necessidade de sincronização externa.
 
@@ -6808,7 +8691,7 @@ Situações de uso:
 - leaderboards ou rankings em memória;
 - índices in-memory ordenados com leitura e escrita simultâneas.
 
-### 10.8. Sincronizadores
+### 14.8. Sincronizadores
 
 O pacote `java.util.concurrent` também inclui sincronizadores de alto nível para coordenação entre threads.
 
@@ -6986,7 +8869,7 @@ public class ProcessamentoDinamicoParalelo {
 }
 ```
 
-### 10.9. Comparação prática
+### 14.9. Comparação prática
 
 | Cenário | Tipo recomendado |
 | --- | --- |
@@ -7010,7 +8893,7 @@ public class ProcessamentoDinamicoParalelo {
 | Coordenação com número variável de participantes | `Phaser` |
 | Recurso já thread-safe ou acessado por thread único | Nenhum |
 
-### 10.10. Locks explícitos vs `synchronized`
+### 14.10. Locks explícitos vs `synchronized`
 
 `synchronized` continua sendo uma boa escolha quando:
 
@@ -7025,7 +8908,7 @@ Locks explícitos valem mais quando:
 - são necessárias múltiplas condições de espera;
 - o lock precisa ser transferido entre métodos (o `synchronized` está preso ao escopo léxico).
 
-### 10.11. Boas práticas
+### 14.11. Boas práticas
 
 - sempre liberar o lock em bloco `finally`;
 - preferir `tryLock` com timeout quando bloqueio indefinido for inaceitável;
@@ -7040,13 +8923,13 @@ Locks explícitos valem mais quando:
 - calibrar capacidade de `ArrayBlockingQueue` e `Semaphore` conforme o recurso que protegem;
 - documentar qual invariante o lock ou sincronizador protege, para facilitar manutenção.
 
-## 11. Actuator e métricas customizadas
+## 15. Actuator e métricas customizadas
 
 O Spring Boot Actuator expõe endpoints operacionais que ajudam a monitorar e gerenciar a aplicação em produção. Com ele é possível verificar saúde, métricas, configurações, informações do ambiente e muito mais.
 
 Além dos endpoints padrão, o Actuator se integra com o Micrometer, permitindo criar métricas customizadas — tanto técnicas quanto de negócio — que podem ser exportadas para sistemas como Prometheus, Datadog, New Relic ou Grafana.
 
-### 11.1. Dependências
+### 15.1. Dependências
 
 ```xml
 <dependency>
@@ -7064,7 +8947,7 @@ Para exportar métricas para Prometheus:
 </dependency>
 ```
 
-### 11.2. Configuração básica
+### 15.2. Configuração básica
 
 ```yaml
 management:
@@ -7096,7 +8979,7 @@ Notas importantes:
 - `show-details: when-authorized` exige autenticação para ver detalhes de saúde;
 - o endpoint `/actuator/prometheus` só aparece quando o `micrometer-registry-prometheus` está no classpath.
 
-### 11.3. Endpoints mais usados
+### 15.3. Endpoints mais usados
 
 | Endpoint | Descrição | Uso comum |
 | --- | --- | --- |
@@ -7109,7 +8992,7 @@ Notas importantes:
 | `/actuator/loggers` | níveis de log atuais e alteração em runtime | ajustar log sem restart |
 | `/actuator/caches` | caches registrados | monitoramento de caches ativos |
 
-### 11.4. Protegendo endpoints com Spring Security
+### 15.4. Protegendo endpoints com Spring Security
 
 Em produção, os endpoints do Actuator devem ser protegidos:
 
@@ -7142,7 +9025,7 @@ public class ActuatorSecurityConfig {
 
 Essa configuração permite acesso público ao `/health` e `/info`, mas exige role `ACTUATOR` para os demais endpoints.
 
-### 11.5. Health indicators customizados
+### 15.5. Health indicators customizados
 
 O Actuator já inclui health indicators para banco de dados, Redis, disk space, JMS e outros. Para verificar dependências específicas da aplicação, é possível criar indicadores customizados.
 
@@ -7393,7 +9276,7 @@ public class FilaProcessamentoHealthIndicator implements HealthIndicator {
 
 O nome do componente no endpoint `/actuator/health` é derivado do nome da classe: `ApiPagamentoHealthIndicator` aparece como `apiPagamento`, `FilaProcessamentoHealthIndicator` aparece como `filaProcessamento`.
 
-### 11.6. Métricas customizadas com Micrometer
+### 15.6. Métricas customizadas com Micrometer
 
 O Micrometer é a fachada de métricas do Spring Boot. Ele fornece uma API uniforme para registrar métricas que podem ser exportadas para diferentes backends. Os tipos mais usados são:
 
@@ -7404,7 +9287,7 @@ O Micrometer é a fachada de métricas do Spring Boot. Ele fornece uma API unifo
 | `Gauge` | medir valor instantâneo que sobe e desce | itens na fila, conexões ativas, memória usada |
 | `DistributionSummary` | medir distribuição de valores (não tempo) | tamanho de payload, valor monetário de pedidos |
 
-### 11.7. Counter — contando ocorrências
+### 15.7. Counter — contando ocorrências
 
 Exemplo técnico — contando erros de integração:
 
@@ -7499,7 +9382,7 @@ public class PedidoMetricsService {
 
 Com tags, é possível filtrar e agrupar métricas no dashboard. A métrica `negocio.pedidos.total` aparece com a tag `operacao`, permitindo visualizar cada tipo separadamente.
 
-### 11.8. Timer — medindo duração de operações
+### 15.8. Timer — medindo duração de operações
 
 Exemplo técnico — medindo latência de chamada externa:
 
@@ -7572,7 +9455,7 @@ public class ProcessamentoPedidoTimedService {
 
 O `publishPercentiles` permite acompanhar distribuição de latência: p50 (mediana), p95 e p99 ajudam a identificar problemas de cauda longa.
 
-### 11.9. Gauge — medindo valores instantâneos
+### 15.9. Gauge — medindo valores instantâneos
 
 Exemplo técnico — monitorando tamanho de fila interna:
 
@@ -7668,7 +9551,7 @@ Essa abordagem é especialmente útil quando:
 - o scrape de métricas ocorre com frequência alta;
 - há vários gauges que dependem de consultas ao banco ou a serviços externos.
 
-### 11.10. DistributionSummary — distribuição de valores
+### 15.10. DistributionSummary — distribuição de valores
 
 Exemplo de negócio — distribuição de valores de pedidos:
 
@@ -7730,7 +9613,7 @@ public class PayloadMetricsService {
 
 O `DistributionSummary` é semelhante ao `Timer`, mas mede valores arbitrários em vez de duração.
 
-### 11.11. Usando `@Timed` para métricas automáticas em métodos
+### 15.11. Usando `@Timed` para métricas automáticas em métodos
 
 O Micrometer oferece a anotação `@Timed` para registrar automaticamente duração e contagem de chamadas a métodos. Para que funcione, é necessário registrar um `TimedAspect`:
 
@@ -7773,7 +9656,7 @@ public class RelatorioService {
 
 Essa abordagem é conveniente para adicionar métricas de tempo sem alterar a lógica do método.
 
-### 11.12. Exemplo completo — métricas de negócio integradas ao fluxo
+### 15.12. Exemplo completo — métricas de negócio integradas ao fluxo
 
 Um cenário realista é um service de pedidos que combina counter, timer e distribution summary para capturar volume, tempo e valor de operações:
 
@@ -7864,7 +9747,7 @@ Com isso, cada faturamento registra automaticamente:
 - tempo gasto em cada operação (`Timer`);
 - distribuição dos valores faturados (`DistributionSummary`).
 
-### 11.13. Contagem por entidade — visualizações e likes de produtos
+### 15.13. Contagem por entidade — visualizações e likes de produtos
 
 Um caso muito comum em aplicações de negócio é contar interações por item, como visualizações e likes de produtos. O desafio é que o ID do produto é um discriminador de alta cardinalidade — criar uma série temporal por produto no Micrometer pode sobrecarregar o backend de métricas quando o catálogo é grande.
 
@@ -8088,7 +9971,7 @@ Essa abordagem é mais simples, mas cria uma série temporal por produto. Ela s�
 
 Para catálogos grandes ou dinâmicos, a abordagem com `ConcurrentHashMap` + contadores agregados é mais adequada e escalável.
 
-### 11.14. Convenções de nomenclatura para métricas
+### 15.14. Convenções de nomenclatura para métricas
 
 Uma boa prática é adotar um padrão consistente de nomes:
 
@@ -8112,7 +9995,7 @@ Evitar:
 - misturar idiomas no mesmo projeto;
 - tags com cardinalidade alta demais, como IDs de usuário ou UUIDs.
 
-### 11.15. Integração com OpenTelemetry (OTEL)
+### 15.15. Integração com OpenTelemetry (OTEL)
 
 OpenTelemetry é um padrão aberto e vendor-neutral para observabilidade. Ele unifica três pilares:
 
@@ -8127,7 +10010,7 @@ O Spring Boot 3.x oferece suporte a OpenTelemetry de duas formas principais:
 
 Ambas as abordagens podem coexistir, mas em projetos Spring Boot o caminho mais comum é usar o suporte nativo via Micrometer Tracing.
 
-### 11.16. Dependências para OTEL via Micrometer Tracing
+### 15.16. Dependências para OTEL via Micrometer Tracing
 
 ```xml
 <dependencies>
@@ -8163,7 +10046,7 @@ Notas:
 - `opentelemetry-exporter-otlp` envia traces via protocolo OTLP para coletores como Jaeger, Tempo ou o próprio OpenTelemetry Collector;
 - `micrometer-registry-otlp` exporta métricas do Micrometer via OTLP, permitindo centralizar métricas e traces no mesmo coletor.
 
-### 11.17. Configuração para exportação via OTLP
+### 15.17. Configuração para exportação via OTLP
 
 ```yaml
 management:
@@ -8199,7 +10082,7 @@ Notas importantes:
 - `management.metrics.tags` adiciona tags globais a todas as métricas, útil para distinguir ambientes e instâncias;
 - o endpoint `4318` é a porta HTTP padrão do OTLP; para gRPC, use `4317` e o exporter correspondente.
 
-### 11.18. Propagação de contexto entre serviços
+### 15.18. Propagação de contexto entre serviços
 
 Quando uma requisição passa por vários serviços, o trace é propagado automaticamente via headers HTTP. O Spring Boot 3.x suporta os formatos mais comuns:
 
@@ -8217,7 +10100,7 @@ Tipos disponíveis:
 
 Na prática, quando o serviço A chama o serviço B via `RestClient`, `RestTemplate` ou `WebClient`, os headers de propagação são injetados automaticamente. Nenhuma configuração adicional é necessária desde que os beans sejam criados via injeção de dependência do Spring.
 
-### 11.19. Instrumentação automática com `@Observed`
+### 15.19. Instrumentação automática com `@Observed`
 
 O Micrometer Observation API permite instrumentar métodos com `@Observed`, gerando automaticamente traces e métricas.
 
@@ -8275,7 +10158,7 @@ O que `@Observed` gera automaticamente:
 
 Isso reduz código boilerplate quando o objetivo é observabilidade básica de um método.
 
-### 11.20. Spans customizados com Observation API
+### 15.20. Spans customizados com Observation API
 
 Quando é necessário criar spans manualmente com mais controle, a Observation API permite isso diretamente:
 
@@ -8315,7 +10198,7 @@ Diferença entre chaves de baixa e alta cardinalidade:
 - `lowCardinalityKeyValue`: valores com poucas variações (tipo, fornecedor, status) — seguros para métricas e tags;
 - `highCardinalityKeyValue`: valores com muitas variações (IDs, códigos) — incluídos apenas nos traces, não nas métricas, para evitar explosão de séries temporais.
 
-### 11.21. Correlação de logs com trace ID
+### 15.21. Correlação de logs com trace ID
 
 Para correlacionar logs com traces distribuídos, o Micrometer Tracing injeta automaticamente `traceId` e `spanId` no MDC do SLF4J. Basta configurar o padrão de log:
 
@@ -8338,7 +10221,7 @@ Com isso, é possível:
 - correlacionar logs com spans no Jaeger, Tempo ou Grafana;
 - identificar qual etapa do fluxo gerou cada linha de log.
 
-### 11.22. Infraestrutura local com Docker Compose
+### 15.22. Infraestrutura local com Docker Compose
 
 Para desenvolvimento local, um setup típico com OpenTelemetry Collector, Jaeger (traces) e Prometheus (métricas):
 
@@ -8412,7 +10295,7 @@ Esse setup permite:
 - consultar métricas no Prometheus em `http://localhost:9090`;
 - montar dashboards no Grafana em `http://localhost:3000`.
 
-### 11.23. OpenTelemetry Java Agent como alternativa
+### 15.23. OpenTelemetry Java Agent como alternativa
 
 Para aplicações que precisam de instrumentação sem mudança de código, o OpenTelemetry Java Agent é uma alternativa. Ele é um agente JVM que instrumenta automaticamente bibliotecas populares (Spring MVC, JDBC, JMS, RestTemplate, etc.).
 
@@ -8451,7 +10334,7 @@ Quando preferir Micrometer Tracing nativo:
 
 Na prática, muitos projetos começam com Micrometer Tracing nativo e adicionam o Java Agent apenas quando precisam de instrumentação automática de bibliotecas que o Spring não cobre diretamente.
 
-### 11.24. Boas práticas
+### 15.24. Boas práticas
 
 - exponha apenas os endpoints necessários em produção e proteja com autenticação;
 - use health indicators para verificar dependências críticas;
@@ -8469,7 +10352,238 @@ Na prática, muitos projetos começam com Micrometer Tracing nativo e adicionam 
 - prefira o formato W3C Trace Context para novos projetos;
 - correlacione logs com `traceId` e `spanId` para facilitar depuração de problemas em produção.
 
-## 12. Sugestão de organização do projeto
+## 16. Feature Flags e estratégias de deploy
+
+Feature flags (ou feature toggles) permitem ativar e desativar funcionalidades sem necessidade de novo deploy, separando o conceito de **deploy** (colocar código em produção) do conceito de **release** (tornar a funcionalidade visível para os usuários). Este tópico também cobre as estratégias de deploy mais comuns para minimizar riscos em atualizações de produção.
+
+### 16.1. Estratégias de deploy
+
+```
+Blue-Green Deploy:
+┌──────────┐     ┌──────────┐
+│  Blue    │ ──▶ │  Green   │     Load Balancer alterna 100% do tráfego
+│  (v1.0)  │     │  (v2.0)  │     de um ambiente para outro
+└──────────┘     └──────────┘
+
+Canary Deploy:
+┌──────────┐     ┌──────────┐
+│  Stable  │ 90% │  Canary  │ 10%   Tráfego gradual: 10% → 25% → 50% → 100%
+│  (v1.0)  │ ──▶ │  (v2.0)  │ ──▶   Rollback automático se erro > threshold
+└──────────┘     └──────────┘
+
+Rolling Update:
+Pod1 [v1] → [v2]
+Pod2 [v1] → [v2]     Atualiza um pod por vez sem downtime
+Pod3 [v1] → [v2]
+```
+
+| Estratégia | Downtime | Rollback | Custo | Risco |
+|------------|----------|----------|-------|-------|
+| **Blue-Green** | Zero | Instantâneo | 2x recursos | Baixo |
+| **Canary** | Zero | Rápido | +10-20% recursos | Muito baixo |
+| **Rolling** | Zero | Moderado | Mesmo | Moderado |
+| **Recreate** | Sim | Lento | Mesmo | Alto |
+
+### 16.2. Feature Flags — conceito
+
+A ideia central é encapsular uma funcionalidade em uma condição controlada externamente:
+
+```java
+package br.com.exemplo.checkout;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/checkout")
+public class CheckoutController {
+
+    private final FeatureFlagService featureFlags;
+    private final CheckoutService checkoutService;
+
+    public CheckoutController(FeatureFlagService featureFlags,
+                               CheckoutService checkoutService) {
+        this.featureFlags = featureFlags;
+        this.checkoutService = checkoutService;
+    }
+
+    @PostMapping
+    public ResponseEntity<?> checkout(@RequestBody CheckoutRequest request) {
+        if (featureFlags.isEnabled("novo-gateway-pagamento")) {
+            return ResponseEntity.ok(checkoutService.processarComNovoGateway(request));
+        }
+        return ResponseEntity.ok(checkoutService.processarComGatewayAtual(request));
+    }
+}
+```
+
+Isso permite:
+- fazer deploy do código novo em produção sem ativá-lo;
+- ativar a feature para um grupo restrito de usuários antes do rollout completo;
+- desativar instantaneamente se um problema for detectado — sem rollback de deploy.
+
+### 16.3. Implementação simples com `@ConfigurationProperties`
+
+```java
+package br.com.exemplo.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
+import java.util.Map;
+
+@Component
+@ConfigurationProperties(prefix = "features")
+public class FeatureFlagService {
+
+    private Map<String, Boolean> flags = new HashMap<>();
+
+    public Map<String, Boolean> getFlags() {
+        return flags;
+    }
+
+    public void setFlags(Map<String, Boolean> flags) {
+        this.flags = flags;
+    }
+
+    public boolean isEnabled(String flag) {
+        return flags.getOrDefault(flag, false);
+    }
+}
+```
+
+```yaml
+features:
+  flags:
+    novo-gateway-pagamento: false
+    redesign-checkout: true
+    relatorio-v2: false
+```
+
+Para alterar uma flag sem redeploy, combine com Spring Cloud Config ou com um endpoint administrativo que atualize o valor em banco de dados.
+
+### 16.4. Feature flags com Spring Profiles
+
+Para cenários mais simples, Spring Profiles pode funcionar como um mecanismo básico de feature toggle:
+
+```yaml
+# application.yml
+app:
+  features:
+    novo-relatorio: false
+
+---
+# application-homolog.yml
+app:
+  features:
+    novo-relatorio: true
+```
+
+```java
+package br.com.exemplo.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
+
+import java.util.Map;
+
+@Component
+@ConfigurationProperties(prefix = "app.features")
+public class ProfileFeatureFlags {
+
+    private boolean novoRelatorio;
+
+    public boolean isNovoRelatorio() {
+        return novoRelatorio;
+    }
+
+    public void setNovoRelatorio(boolean novoRelatorio) {
+        this.novoRelatorio = novoRelatorio;
+    }
+}
+```
+
+A limitação é que a alteração exige restart da aplicação — diferente de uma solução com banco ou serviço externo.
+
+### 16.5. Ferramentas externas
+
+Para cenários mais avançados — segmentação por usuário, A/B testing, porcentagem de rollout ou auditoria de quem ativou cada flag — considere ferramentas especializadas:
+
+| Ferramenta | Modelo | Destaque |
+|------------|--------|----------|
+| **Unleash** | Open source | Self-hosted, SDK para Java, dashboard web |
+| **Flagsmith** | Open source / SaaS | API REST, segmentação de usuários |
+| **LaunchDarkly** | SaaS | Feature management completo, targeting avançado |
+| **Split** | SaaS | A/B testing integrado, métricas de impacto |
+
+Exemplo de integração com Unleash:
+
+```xml
+<dependency>
+    <groupId>io.getunleash</groupId>
+    <artifactId>unleash-client-java</artifactId>
+    <version>9.2.4</version>
+</dependency>
+```
+
+```java
+package br.com.exemplo.config;
+
+import io.getunleash.DefaultUnleash;
+import io.getunleash.Unleash;
+import io.getunleash.util.UnleashConfig;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class UnleashConfiguration {
+
+    @Bean
+    public Unleash unleash() {
+        UnleashConfig config = UnleashConfig.builder()
+                .appName("minha-aplicacao")
+                .instanceId("instancia-1")
+                .unleashAPI("http://unleash-server:4242/api")
+                .build();
+
+        return new DefaultUnleash(config);
+    }
+}
+```
+
+```java
+@Service
+public class CheckoutService {
+
+    private final Unleash unleash;
+
+    public CheckoutService(Unleash unleash) {
+        this.unleash = unleash;
+    }
+
+    public void processar(CheckoutRequest request) {
+        if (unleash.isEnabled("novo-gateway-pagamento")) {
+            processarComNovoGateway(request);
+        } else {
+            processarComGatewayAtual(request);
+        }
+    }
+}
+```
+
+### 16.6. Boas práticas
+
+- feature flags são código temporário — remova a flag e o branch condicional assim que a funcionalidade estiver estável em produção;
+- nomeie as flags de forma descritiva e padronizada (`novo-gateway-pagamento`, não `flag1`);
+- documente quem criou cada flag, quando e qual o critério para remoção;
+- mantenha um inventário de flags ativas — flags esquecidas se acumulam e dificultam a manutenção;
+- para flags de longa duração (kill switches, ops toggles), trate como configuração de infraestrutura e não como feature toggle;
+- em testes automatizados, cubra ambos os caminhos (flag ligada e desligada).
+
+---
+
+## 17. Sugestão de organização do projeto
 
 ```text
 src/main/java/br/com/exemplo/
@@ -8477,6 +10591,16 @@ src/main/java/br/com/exemplo/
     api/
     config/
     template/
+  mensageria/
+    rabbit/
+    kafka/
+    eventos/
+  graphql/
+  grpc/
+    server/
+    client/
+  api/
+    openapi/
   actuator/
     metricas/
   events/
@@ -8494,20 +10618,26 @@ src/main/java/br/com/exemplo/
     pedido/
     notificacao/
     requestreply/
+  config/
+    featureflags/
+  checkout/
 ```
 
-## 13. Resumo
+## 18. Resumo
 
 Os tópicos avançados deste documento seguem a mesma ideia de arquitetura:
 
 - usar a configuração padrão do Spring Boot quando o caso for simples;
 - adicionar uma camada administrativa quando for preciso parametrizar comportamento em banco;
 - manter a regra de negócio desacoplada da infraestrutura;
-- expor operações manuais apenas quando houver necessidade operacional clara.
+- expor operações manuais apenas quando houver necessidade operacional clara;
+- escolher o protocolo de comunicação adequado ao cenário (REST, GraphQL, gRPC, mensageria);
+- documentar APIs de forma automatizada e sincronizada com o código;
+- separar deploy de release com feature flags para reduzir risco de mudanças em produção.
 
 Esse desenho deixa a aplicação mais flexível em produção, reduz a necessidade de deploy para ajustes operacionais e facilita a evolução para cenários multi-tenant, clusterizados ou orientados a eventos.
 
-## 14. Referencias
+## 19. Referencias
 
 As referências abaixo foram usadas como base oficial ou complementar relevante para a elaboração deste documento:
 
@@ -8592,3 +10722,36 @@ As referências abaixo foram usadas como base oficial ou complementar relevante 
 - Apache POI Quick Guide: https://poi.apache.org/components/spreadsheet/quick-guide.html
 - Apache POI `SXSSFWorkbook`: https://poi.apache.org/apidocs/5.0/org/apache/poi/xssf/streaming/SXSSFWorkbook.html
 - `pjfanning/excel-streaming-reader`: https://github.com/pjfanning/excel-streaming-reader
+
+### Mensageria (Kafka e RabbitMQ)
+
+- Spring for Apache Kafka: https://docs.spring.io/spring-kafka/reference/
+- Spring AMQP (RabbitMQ): https://docs.spring.io/spring-amqp/reference/
+- Apache Kafka Documentation: https://kafka.apache.org/documentation/
+- RabbitMQ Tutorials: https://www.rabbitmq.com/tutorials
+
+### GraphQL
+
+- Spring for GraphQL: https://docs.spring.io/spring-graphql/reference/
+- GraphQL Specification: https://spec.graphql.org/
+- Spring Boot GraphQL Starter: https://docs.spring.io/spring-boot/reference/web/spring-graphql.html
+
+### gRPC
+
+- gRPC Official Documentation: https://grpc.io/docs/
+- Protocol Buffers Language Guide (proto3): https://protobuf.dev/programming-guides/proto3/
+- grpc-spring-boot-starter (net.devh): https://github.com/yidongnan/grpc-spring-boot-starter
+- gRPC Java: https://grpc.io/docs/languages/java/
+
+### SpringDoc OpenAPI
+
+- SpringDoc OpenAPI: https://springdoc.org/
+- OpenAPI 3.0 Specification: https://spec.openapis.org/oas/v3.0.3
+- Swagger Annotations (io.swagger.v3): https://github.com/swagger-api/swagger-core/wiki/Swagger-2.X---Annotations
+
+### Feature Flags
+
+- Unleash: https://www.getunleash.io/
+- Unleash SDK for Java: https://docs.getunleash.io/reference/sdks/java
+- Flagsmith: https://www.flagsmith.com/
+- Martin Fowler — Feature Toggles: https://martinfowler.com/articles/feature-toggles.html

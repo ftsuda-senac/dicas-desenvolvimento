@@ -8,7 +8,7 @@
 ## Sumário
 
 1. [Arquitetura e Conceitos Fundamentais](#1-arquitetura-e-conceitos-fundamentais)
-   - [1.4 Interfaces Fundamentais: UserDetails, GrantedAuthority e UserDetailsService](#14-interfaces-fundamentais-userdetails-grantedauthority-e-userdetailsservice)
+   - [1.4 Interfaces Fundamentais: UserDetails, GrantedAuthority, UserDetailsService e AuthenticationUserDetailsService](#14-interfaces-fundamentais-userdetails-grantedauthority-userdetailsservice-e-authenticationuserdetailsservice)
 2. [Dependências Maven](#2-dependências-maven)
 3. [SecurityConfig — Configuração Básica](#3-securityconfig--configuração-básica)
 4. [HTTP Basic Authentication](#4-http-basic-authentication)
@@ -36,6 +36,7 @@
 26. [Segurança do Spring Boot Actuator](#26-segurança-do-spring-boot-actuator)
 27. [Autenticação Mútua com Certificados (mTLS / X.509)](#27-autenticação-mútua-com-certificados-mtls--x509)
 28. [Testes de Segurança](#28-testes-de-segurança)
+29. [AuthenticationUserDetailsService — Pré-Autenticação](#29-authenticationuserdetailsservice--pré-autenticação)
 
 ---
 
@@ -126,7 +127,7 @@ classDiagram
     GrantedAuthority <|.. SimpleGrantedAuthority
 ```
 
-### 1.4 Interfaces Fundamentais: UserDetails, GrantedAuthority e UserDetailsService
+### 1.4 Interfaces Fundamentais: UserDetails, GrantedAuthority, UserDetailsService e AuthenticationUserDetailsService
 
 Estas três interfaces formam o núcleo do modelo de identidade do Spring Security. Compreendê-las é pré-requisito para qualquer mecanismo de autenticação — HTTP Basic, Form Login, JWT ou OAuth2.
 
@@ -324,6 +325,22 @@ public class SecurityConfig {
 
 ---
 
+#### `AuthenticationUserDetailsService`
+
+Variante da `UserDetailsService` usada em cenários de **pré-autenticação** — quando a identidade do usuário já foi verificada por um sistema externo (proxy reverso, certificado X.509, CAS, SAML, header HTTP). Em vez de receber apenas uma `String username`, recebe o **objeto `Authentication` completo**, permitindo acesso a todos os detalhes do token original (certificado, headers, claims).
+
+```java
+public interface AuthenticationUserDetailsService<T extends Authentication> {
+    UserDetails loadUserDetails(T token) throws UsernameNotFoundException;
+}
+```
+
+Usada com o `PreAuthenticatedAuthenticationProvider`, é o ponto de integração para carregar permissões e dados do usuário a partir do token pré-autenticado.
+
+> **Tópico avançado:** Para detalhes completos sobre `AuthenticationUserDetailsService` — incluindo fluxo de autenticação, implementações prontas do Spring, e exemplos com proxy reverso e X.509 — consulte a [Seção 29: AuthenticationUserDetailsService — Pré-Autenticação](#29-authenticationuserdetailsservice--pré-autenticação).
+
+---
+
 **Resumo da responsabilidade de cada interface:**
 
 | Interface | Responsabilidade | Quem implementa |
@@ -331,6 +348,7 @@ public class SecurityConfig {
 | `UserDetails` | Representa o usuário com suas authorities e status da conta | Você (adaptador da sua entidade) |
 | `GrantedAuthority` | Representa uma permission/role atribuída ao usuário | `SimpleGrantedAuthority` ou implementação própria |
 | `UserDetailsService` | Carrega o `UserDetails` a partir de um identificador (username) | Você (integração com banco de dados ou outra fonte) |
+| `AuthenticationUserDetailsService` | Carrega o `UserDetails` a partir do token `Authentication` completo (pré-autenticação) — [ver Seção 29](#29-authenticationuserdetailsservice--pré-autenticação) | `UserDetailsByNameServiceWrapper` ou implementação própria |
 
 ---
 
@@ -2964,6 +2982,402 @@ public ResponseEntity<Void> updateSystemConfig(
 | `IpAllowlistProperties` | Qualquer | Sim (profiles/env) | Sim | Ambientes diferentes sem recompilação |
 | **Banco de dados + cache** | **Qualquer** | **Sim (tempo real)** | **Sim** | **Gestão dinâmica via API de admin** |
 
+
+### 7.8 Reautenticação para Operações Críticas (Sudo Mode)
+
+Mesmo com o usuário já autenticado, algumas operações exigem **confirmação de senha** antes de prosseguir — alterar e-mail, excluir conta, transferir valores, revogar acessos. Esse padrão, popularizado pelo GitHub como "sudo mode", mitiga riscos de sessões sequestradas ou terminais desassistidos: o atacante que obteve o cookie de sessão não consegue executar ações destrutivas sem conhecer a senha.
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário (já logado)
+    participant C as Controller
+    participant S as ReauthService
+    participant AM as AuthenticationManager
+
+    U->>C: POST /conta/excluir
+    C->>S: requireReauth(session)
+    alt Senha confirmada há menos de 5 min
+        S-->>C: OK — reautenticação válida
+        C->>C: executa operação crítica
+        C-->>U: 200 OK
+    else Sem confirmação recente
+        S-->>C: reautenticação necessária
+        C-->>U: 403 / redireciona para tela de confirmação
+        U->>C: POST /auth/confirm-password {senha}
+        C->>AM: authenticate(username, senha)
+        AM-->>C: sucesso
+        C->>S: markReauthenticated(session)
+        C-->>U: 200 OK — redireciona de volta à operação
+    end
+```
+
+---
+
+#### Conceito Geral
+
+A ideia é simples: ao confirmar a senha, gravar um **timestamp na sessão HTTP**. Antes de cada operação crítica, verificar se o timestamp existe e se está dentro da janela de validade (ex.: 5 minutos). Expirada a janela, o usuário precisa confirmar a senha novamente.
+
+---
+
+#### Service de Reautenticação
+
+```java
+@Service
+@RequiredArgsConstructor
+public class ReauthService {
+
+    private static final String SESSION_KEY = "REAUTH_TIMESTAMP";
+    private static final Duration REAUTH_WINDOW = Duration.ofMinutes(5);
+
+    private final AuthenticationManager authenticationManager;
+
+    /**
+     * Verifica se o usuário confirmou a senha dentro da janela de validade.
+     * @return true se a reautenticação ainda é válida
+     */
+    public boolean isReauthValid(HttpSession session) {
+        Instant lastReauth = (Instant) session.getAttribute(SESSION_KEY);
+        if (lastReauth == null) {
+            return false;
+        }
+        return Duration.between(lastReauth, Instant.now()).compareTo(REAUTH_WINDOW) < 0;
+    }
+
+    /**
+     * Confirma a senha do usuário autenticado. Se válida, marca o timestamp na sessão.
+     * @throws BadCredentialsException se a senha estiver errada
+     */
+    public void confirmPassword(Authentication currentAuth, String rawPassword,
+                                HttpSession session) {
+        // Revalida as credenciais via AuthenticationManager
+        authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(currentAuth.getName(), rawPassword));
+
+        session.setAttribute(SESSION_KEY, Instant.now());
+    }
+
+    /**
+     * Invalida a reautenticação manualmente (ex.: após operação concluída).
+     */
+    public void invalidate(HttpSession session) {
+        session.removeAttribute(SESSION_KEY);
+    }
+}
+```
+
+> **Por que usar `AuthenticationManager.authenticate()` em vez de `PasswordEncoder.matches()` diretamente?**
+> O `AuthenticationManager` executa o pipeline completo: verifica se a conta está bloqueada, se as credenciais expiraram, e dispara eventos de auditoria. Chamar `PasswordEncoder.matches()` diretamente ignora todas essas validações.
+
+---
+
+#### Anotação Customizada `@RequiresReauth`
+
+Para evitar verificações manuais repetidas nos controllers, uma anotação com AOP:
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface RequiresReauth {
+}
+```
+
+```java
+@Aspect
+@Component
+@RequiredArgsConstructor
+public class ReauthAspect {
+
+    private final ReauthService reauthService;
+
+    @Before("@annotation(RequiresReauth)")
+    public void checkReauth() {
+        HttpServletRequest request =
+            ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
+                .getRequest();
+        HttpSession session = request.getSession(false);
+
+        if (session == null || !reauthService.isReauthValid(session)) {
+            throw new ReauthRequiredException("Confirmação de senha necessária");
+        }
+    }
+}
+```
+
+```java
+@ResponseStatus(HttpStatus.FORBIDDEN)
+public class ReauthRequiredException extends RuntimeException {
+    public ReauthRequiredException(String message) {
+        super(message);
+    }
+}
+```
+
+---
+
+#### Uso em API REST (SPA / Frontend separado)
+
+```java
+@RestController
+@RequestMapping("/auth")
+@RequiredArgsConstructor
+public class ReauthController {
+
+    private final ReauthService reauthService;
+
+    @PostMapping("/confirm-password")
+    public ResponseEntity<Void> confirmPassword(
+            @RequestBody @Valid ConfirmPasswordRequest request,
+            Authentication authentication,
+            HttpSession session) {
+        reauthService.confirmPassword(authentication, request.password(), session);
+        return ResponseEntity.ok().build();
+    }
+}
+
+record ConfirmPasswordRequest(@NotBlank String password) {}
+```
+
+```java
+@RestController
+@RequestMapping("/conta")
+@RequiredArgsConstructor
+public class ContaController {
+
+    private final ContaService contaService;
+    private final ReauthService reauthService;
+
+    @DeleteMapping
+    @RequiresReauth
+    public ResponseEntity<Void> excluirConta(Authentication auth) {
+        contaService.excluir(auth.getName());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/email")
+    @RequiresReauth
+    public ResponseEntity<Void> alterarEmail(
+            @RequestBody @Valid AlterarEmailRequest request,
+            Authentication auth) {
+        contaService.alterarEmail(auth.getName(), request.novoEmail());
+        return ResponseEntity.ok().build();
+    }
+}
+```
+
+**Fluxo no frontend (SPA):**
+
+```javascript
+// Antes de chamar a operação crítica, o frontend pede a senha ao usuário
+async function confirmarSenhaEExcluirConta(senha) {
+  // Passo 1: confirmar a senha
+  const confirmResp = await fetch('/auth/confirm-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: senha })
+  });
+
+  if (!confirmResp.ok) {
+    throw new Error('Senha incorreta');
+  }
+
+  // Passo 2: executar a operação crítica (dentro da janela de 5 min)
+  const deleteResp = await fetch('/conta', { method: 'DELETE' });
+
+  if (deleteResp.status === 403) {
+    // Janela expirou — pedir senha novamente
+    throw new Error('Tempo expirado, confirme a senha novamente');
+  }
+}
+```
+
+---
+
+#### Uso com Thymeleaf (Server-Side Rendering)
+
+```java
+@Controller
+@RequestMapping("/conta")
+@RequiredArgsConstructor
+public class ContaMvcController {
+
+    private final ContaService contaService;
+    private final ReauthService reauthService;
+
+    @GetMapping("/excluir")
+    public String exibirConfirmacao(HttpSession session, Model model) {
+        // Se já confirmou a senha recentemente, exibe a tela de confirmação final
+        model.addAttribute("reauthValid", reauthService.isReauthValid(session));
+        return "conta/excluir";
+    }
+
+    @PostMapping("/confirm-password")
+    public String confirmarSenha(
+            @RequestParam String password,
+            @RequestParam String redirectTo,
+            Authentication auth,
+            HttpSession session,
+            RedirectAttributes redirectAttrs) {
+        try {
+            reauthService.confirmPassword(auth, password, session);
+            return "redirect:" + redirectTo;
+        } catch (AuthenticationException e) {
+            redirectAttrs.addFlashAttribute("error", "Senha incorreta");
+            return "redirect:" + redirectTo;
+        }
+    }
+
+    @PostMapping("/excluir")
+    @RequiresReauth
+    public String excluirConta(Authentication auth) {
+        contaService.excluir(auth.getName());
+        return "redirect:/logout";
+    }
+}
+```
+
+```html
+<!-- conta/excluir.html -->
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body>
+<div class="container mt-4">
+    <h2>Excluir Conta</h2>
+    <p class="text-danger">Esta ação é irreversível. Todos os seus dados serão removidos.</p>
+
+    <!-- Formulário de confirmação de senha (exibido quando necessário) -->
+    <div th:unless="${reauthValid}">
+        <p>Para prosseguir, confirme sua senha:</p>
+        <div th:if="${error}" class="alert alert-danger" th:text="${error}"></div>
+        <form th:action="@{/conta/confirm-password}" method="post">
+            <input type="hidden" name="redirectTo" value="/conta/excluir"/>
+            <div class="mb-3">
+                <label for="password" class="form-label">Senha atual</label>
+                <input type="password" id="password" name="password"
+                       class="form-control" required autofocus/>
+            </div>
+            <button type="submit" class="btn btn-primary">Confirmar Senha</button>
+        </form>
+    </div>
+
+    <!-- Botão de exclusão (exibido após confirmar a senha) -->
+    <div th:if="${reauthValid}">
+        <p class="text-success">Senha confirmada. Você tem 5 minutos para concluir.</p>
+        <form th:action="@{/conta/excluir}" method="post">
+            <button type="submit" class="btn btn-danger">Excluir Minha Conta Permanentemente</button>
+        </form>
+    </div>
+</div>
+</body>
+</html>
+```
+
+---
+
+#### Tratamento Global da Exceção
+
+```java
+// ── Para API REST ────────────────────────────────────────────────────────────
+
+@RestControllerAdvice
+public class ReauthExceptionHandler {
+
+    @ExceptionHandler(ReauthRequiredException.class)
+    public ResponseEntity<Map<String, String>> handleReauth(ReauthRequiredException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+            .body(Map.of(
+                "error", "reauth_required",
+                "message", ex.getMessage(),
+                "confirmUrl", "/auth/confirm-password"));
+    }
+}
+```
+
+```java
+// ── Para MVC com Thymeleaf ───────────────────────────────────────────────────
+
+@ControllerAdvice
+public class ReauthMvcExceptionHandler {
+
+    @ExceptionHandler(ReauthRequiredException.class)
+    public String handleReauth(HttpServletRequest request, RedirectAttributes attrs) {
+        attrs.addFlashAttribute("error", "Confirme sua senha para continuar");
+        attrs.addAttribute("redirectTo", request.getRequestURI());
+        return "redirect:/conta/confirm-password-form";
+    }
+}
+```
+
+---
+
+#### Variante Stateless (JWT) — sem sessão HTTP
+
+Em APIs stateless com JWT, não há sessão para armazenar o timestamp. A alternativa é emitir um **token de confirmação de curta duração** após a verificação da senha:
+
+```java
+@Service
+@RequiredArgsConstructor
+public class ReauthTokenService {
+
+    private final JwtService jwtService;
+    private final AuthenticationManager authenticationManager;
+
+    private static final Duration TOKEN_TTL = Duration.ofMinutes(5);
+
+    /**
+     * Confirma a senha e retorna um token de reautenticação de curta duração.
+     */
+    public String confirmAndIssueToken(Authentication currentAuth, String rawPassword) {
+        authenticationManager.authenticate(
+            new UsernamePasswordAuthenticationToken(currentAuth.getName(), rawPassword));
+
+        return jwtService.generateToken(
+            currentAuth.getName(),
+            Map.of("purpose", "reauth"),
+            TOKEN_TTL);
+    }
+
+    /**
+     * Valida o token de reautenticação recebido no header.
+     */
+    public void validateReauthToken(String token) {
+        Map<String, Object> claims = jwtService.parseToken(token);
+        if (!"reauth".equals(claims.get("purpose"))) {
+            throw new ReauthRequiredException("Token de reautenticação inválido");
+        }
+    }
+}
+```
+
+```java
+@RestController
+@RequestMapping("/conta")
+@RequiredArgsConstructor
+public class ContaStatelessController {
+
+    private final ContaService contaService;
+    private final ReauthTokenService reauthTokenService;
+
+    @PostMapping("/confirm-password")
+    public Map<String, String> confirmPassword(
+            @RequestBody ConfirmPasswordRequest request,
+            Authentication auth) {
+        String reauthToken = reauthTokenService.confirmAndIssueToken(auth, request.password());
+        return Map.of("reauthToken", reauthToken);
+    }
+
+    @DeleteMapping
+    public ResponseEntity<Void> excluirConta(
+            @RequestHeader("X-Reauth-Token") String reauthToken,
+            Authentication auth) {
+        reauthTokenService.validateReauthToken(reauthToken);
+        contaService.excluir(auth.getName());
+        return ResponseEntity.noContent().build();
+    }
+}
+```
+
+> **Dica:** Na variante stateless, o frontend armazena o `reauthToken` temporariamente em memória (nunca em `localStorage`) e o envia no header `X-Reauth-Token` da requisição crítica. O token tem validade de 5 minutos e propósito restrito (`"purpose": "reauth"`), o que impede seu uso como token de acesso normal.
 
 ---
 
@@ -11454,6 +11868,252 @@ class UserServiceMethodSecurityTest {
     }
 }
 ```
+
+---
+
+## 29. AuthenticationUserDetailsService — Pré-Autenticação
+
+Enquanto `UserDetailsService` recebe apenas uma `String username`, a interface `AuthenticationUserDetailsService` recebe o **objeto `Authentication` completo**. Isso é essencial em cenários de **pré-autenticação** — quando a identidade do usuário já foi verificada por um sistema externo (proxy reverso, certificado X.509, CAS, SAML, header HTTP) e o Spring Security precisa apenas carregar os detalhes e permissões do usuário a partir desse token já autenticado.
+
+```java
+public interface AuthenticationUserDetailsService<T extends Authentication> {
+    UserDetails loadUserDetails(T token) throws UsernameNotFoundException;
+}
+```
+
+### 29.1 Diferença Fundamental em Relação ao `UserDetailsService`
+
+| Aspecto | `UserDetailsService` | `AuthenticationUserDetailsService` |
+|---------|---------------------|------------------------------------|
+| Entrada | `String username` | `Authentication` (token completo) |
+| Acesso a detalhes | Apenas o identificador textual | Principal, credentials, detalhes do token original |
+| Provider associado | `DaoAuthenticationProvider` | `PreAuthenticatedAuthenticationProvider` |
+| Cenário típico | Login com usuário/senha | Pré-autenticação (X.509, SSO, CAS, headers) |
+
+### 29.2 Fluxo de Autenticação com `PreAuthenticatedAuthenticationProvider`
+
+```
+AbstractPreAuthenticatedProcessingFilter
+  └── extrai principal e credentials da request (ex.: certificado, header)
+        └── cria PreAuthenticatedAuthenticationToken(principal, credentials)
+              └── AuthenticationManager
+                    └── PreAuthenticatedAuthenticationProvider
+                          └── AuthenticationUserDetailsService.loadUserDetails(token)
+                                └── retorna UserDetails com authorities do banco
+```
+
+### 29.3 Implementações Prontas do Spring Security
+
+| Implementação | Quando usar |
+|---------------|-------------|
+| `UserDetailsByNameServiceWrapper` | Adapta um `UserDetailsService` existente — extrai `token.getName()` e delega para `loadUserByUsername()`. Útil quando você já tem um `UserDetailsService` e quer reusá-lo em contexto pré-autenticado |
+| `PreAuthenticatedGrantedAuthoritiesUserDetailsService` | Usa as authorities já presentes no token pré-autenticado, sem consultar banco |
+| Implementação própria | Quando você precisa extrair informações específicas do token (atributos do certificado, claims do header, etc.) |
+
+### 29.4 Reutilizar `UserDetailsService` Existente via Wrapper
+
+```java
+@Configuration
+@EnableWebSecurity
+public class PreAuthConfig {
+
+    @Bean
+    public AuthenticationManager preAuthManager(UserDetailsService userDetailsService) {
+        PreAuthenticatedAuthenticationProvider provider = new PreAuthenticatedAuthenticationProvider();
+
+        // Wrapper que adapta UserDetailsService → AuthenticationUserDetailsService
+        // Internamente chama userDetailsService.loadUserByUsername(token.getName())
+        UserDetailsByNameServiceWrapper<PreAuthenticatedAuthenticationToken> wrapper =
+            new UserDetailsByNameServiceWrapper<>(userDetailsService);
+
+        provider.setPreAuthenticatedUserDetailsService(wrapper);
+
+        return new ProviderManager(provider);
+    }
+}
+```
+
+### 29.5 Implementação Customizada — Autenticação por Header de Proxy Reverso
+
+Cenário: um proxy reverso (Nginx, Envoy, API Gateway) já autenticou o usuário e injeta headers HTTP com a identidade e roles.
+
+```java
+// ── Filter que extrai o principal do header ──────────────────────────────────
+
+public class HeaderPreAuthFilter extends AbstractPreAuthenticatedProcessingFilter {
+
+    @Override
+    protected Object getPreAuthenticatedPrincipal(HttpServletRequest request) {
+        // Header injetado pelo proxy reverso após autenticação
+        return request.getHeader("X-Authenticated-User");
+    }
+
+    @Override
+    protected Object getPreAuthenticatedCredentials(HttpServletRequest request) {
+        // Roles como string separada por vírgula: "ADMIN,USER"
+        return request.getHeader("X-Authenticated-Roles");
+    }
+}
+```
+
+```java
+// ── AuthenticationUserDetailsService que usa os dados do token ───────────────
+
+@Service
+@RequiredArgsConstructor
+public class HeaderAuthUserDetailsService
+        implements AuthenticationUserDetailsService<PreAuthenticatedAuthenticationToken> {
+
+    private final UsuarioRepository usuarioRepository;
+
+    @Override
+    public UserDetails loadUserDetails(PreAuthenticatedAuthenticationToken token)
+            throws UsernameNotFoundException {
+        String username = token.getName();  // valor de getPreAuthenticatedPrincipal()
+        String rolesHeader = (String) token.getCredentials();  // valor de getPreAuthenticatedCredentials()
+
+        // Busca dados adicionais do banco (perfil, preferências, etc.)
+        UsuarioEntity usuario = usuarioRepository.findByEmail(username)
+            .orElseThrow(() -> new UsernameNotFoundException(
+                "Usuário pré-autenticado não encontrado: " + username));
+
+        // Combina roles do header com dados do banco
+        List<GrantedAuthority> authorities = Arrays.stream(rolesHeader.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+            .toList();
+
+        return new UserDetailsAdapter(usuario, authorities);
+    }
+}
+```
+
+```java
+// ── SecurityConfig completa ─────────────────────────────────────────────────
+
+@Configuration
+@EnableWebSecurity
+public class PreAuthSecurityConfig {
+
+    @Bean
+    public HeaderPreAuthFilter headerPreAuthFilter(AuthenticationManager authManager) {
+        HeaderPreAuthFilter filter = new HeaderPreAuthFilter();
+        filter.setAuthenticationManager(authManager);
+        // Rejeitar a requisição se o header X-Authenticated-User estiver ausente
+        filter.setExceptionIfHeaderMissing(true);
+        return filter;
+    }
+
+    @Bean
+    public AuthenticationManager preAuthManager(HeaderAuthUserDetailsService uds) {
+        PreAuthenticatedAuthenticationProvider provider = new PreAuthenticatedAuthenticationProvider();
+        provider.setPreAuthenticatedUserDetailsService(uds);
+        return new ProviderManager(provider);
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http,
+                                           HeaderPreAuthFilter preAuthFilter) throws Exception {
+        return http
+            .addFilterBefore(preAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/admin/**").hasRole("ADMIN")
+                .requestMatchers("/api/**").hasRole("USER")
+                .anyRequest().authenticated())
+            .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .csrf(csrf -> csrf.disable())
+            .build();
+    }
+}
+```
+
+### 29.6 Uso com Autenticação X.509 (Certificados de Cliente)
+
+Em cenários mTLS, o `X509AuthenticationFilter` extrai o `CN` (Common Name) do certificado. Com `AuthenticationUserDetailsService`, você tem acesso ao certificado completo para extrair campos adicionais como `O` (Organization), `OU` (Organizational Unit) ou extensões customizadas.
+
+```java
+@Service
+public class X509AuthenticationUserDetailsService
+        implements AuthenticationUserDetailsService<PreAuthenticatedAuthenticationToken> {
+
+    private final UsuarioRepository usuarioRepository;
+
+    public X509AuthenticationUserDetailsService(UsuarioRepository usuarioRepository) {
+        this.usuarioRepository = usuarioRepository;
+    }
+
+    @Override
+    public UserDetails loadUserDetails(PreAuthenticatedAuthenticationToken token)
+            throws UsernameNotFoundException {
+        // Principal contém o CN extraído pelo subjectDnRegex do X509Configurer
+        String cn = token.getName();
+
+        // Credentials contém o objeto X509Certificate completo
+        X509Certificate certificate = (X509Certificate) token.getCredentials();
+
+        // Extrair Organization (O) do certificado para determinar roles
+        String organization = extractOrganization(certificate);
+
+        UsuarioEntity usuario = usuarioRepository.findByCn(cn)
+            .orElseThrow(() -> new UsernameNotFoundException(
+                "Certificado não associado a nenhum usuário: CN=" + cn));
+
+        List<GrantedAuthority> authorities = new ArrayList<>(usuario.getAuthorities());
+        // Adicionar authority baseada na organização do certificado
+        if ("Financeiro".equals(organization)) {
+            authorities.add(new SimpleGrantedAuthority("ROLE_FINANCEIRO"));
+        }
+
+        return new UserDetailsAdapter(usuario, authorities);
+    }
+
+    private String extractOrganization(X509Certificate cert) {
+        String dn = cert.getSubjectX500Principal().getName();
+        return Arrays.stream(dn.split(","))
+            .map(String::trim)
+            .filter(part -> part.startsWith("O="))
+            .map(part -> part.substring(2))
+            .findFirst()
+            .orElse("");
+    }
+}
+```
+
+```java
+// ── SecurityConfig para X.509 com AuthenticationUserDetailsService ───────────
+
+@Configuration
+@EnableWebSecurity
+public class X509SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(
+            HttpSecurity http,
+            X509AuthenticationUserDetailsService x509UDS) throws Exception {
+
+        PreAuthenticatedAuthenticationProvider provider = new PreAuthenticatedAuthenticationProvider();
+        provider.setPreAuthenticatedUserDetailsService(x509UDS);
+
+        return http
+            .authenticationProvider(provider)
+            .x509(x509 -> x509
+                .subjectPrincipalRegex("CN=(.*?)(?:,|$)"))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/financeiro/**").hasRole("FINANCEIRO")
+                .anyRequest().authenticated())
+            .build();
+    }
+}
+```
+
+### 29.7 Quando Escolher Cada Interface
+
+> - Você precisa acessar dados além do username (certificado X.509, atributos SAML, headers HTTP) → **`AuthenticationUserDetailsService` customizado**.
+> - O `UserDetailsService` existente já resolve e você quer reusá-lo em contexto pré-autenticado → **`UserDetailsByNameServiceWrapper`**.
+> - Suas authorities vêm do token pré-autenticado e não do banco → **`PreAuthenticatedGrantedAuthoritiesUserDetailsService`**.
+> - Login tradicional com usuário e senha → **`UserDetailsService`** (não precisa desta interface).
+
 
 ---
 

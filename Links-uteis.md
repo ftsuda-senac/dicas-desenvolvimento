@@ -40,6 +40,7 @@
 * Flat colors: https://flatuicolors.com/
 * Gerador Glass CSS: https://css.glass/
 * Random CSS Pattern: https://random.css-pattern.com/  
+* Free Frontend: https://freefrontend.com/
 * Exemplos de Filtros CSS: https://css-tricks.com/almanac/properties/f/filter/
 * Google Fonts: https://fonts.google.com/
 * 1001 Fonts: https://www.1001fonts.com/

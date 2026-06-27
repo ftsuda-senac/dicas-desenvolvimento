@@ -1123,6 +1123,422 @@ curl -H "$AUTH" \
   -o realm-export.json
 ```
 
+### 12.4 Gerenciar Usuários via Spring Boot (RestClient)
+
+Cenário: sua aplicação possui um painel administrativo que precisa criar, listar, atribuir roles ou desativar usuários no Keycloak de forma programática, usando a Admin REST API.
+
+#### Configuração
+
+```yaml
+# application.yml
+keycloak:
+  admin:
+    server-url: ${KEYCLOAK_URL:http://localhost:8180}
+    realm: ${KEYCLOAK_REALM:myrealm}
+    client-id: ${KEYCLOAK_ADMIN_CLIENT_ID:admin-api}
+    client-secret: ${KEYCLOAK_ADMIN_CLIENT_SECRET}
+```
+
+#### Configurar Client no Keycloak para Admin API
+
+```
+Clients → Create client
+  Client ID:             admin-api
+  Client authentication: ON
+  Service accounts roles: ON  ← habilita client credentials
+
+Service Account Roles → Assign role
+  → Filter by clients → realm-management
+  → Selecionar: manage-users, view-users, manage-realm (conforme necessidade)
+
+# Permissões granulares disponíveis em realm-management:
+#   view-users       — listar e buscar usuários
+#   manage-users     — criar, editar, deletar usuários e credenciais
+#   view-clients     — listar clients
+#   manage-clients   — criar e editar clients
+#   view-realm       — visualizar configurações do realm
+#   manage-realm     — alterar configurações do realm
+#   impersonation    — agir como outro usuário
+```
+
+#### Service de Token Admin (Client Credentials)
+
+```java
+@Service
+public class KeycloakTokenService {
+
+    private final RestClient restClient;
+    private final String tokenUrl;
+    private final String clientId;
+    private final String clientSecret;
+
+    private String cachedToken;
+    private Instant tokenExpiry = Instant.EPOCH;
+
+    public KeycloakTokenService(
+            @Value("${keycloak.admin.server-url}") String serverUrl,
+            @Value("${keycloak.admin.realm}") String realm,
+            @Value("${keycloak.admin.client-id}") String clientId,
+            @Value("${keycloak.admin.client-secret}") String clientSecret) {
+        this.restClient = RestClient.create();
+        this.tokenUrl = serverUrl + "/realms/" + realm + "/protocol/openid-connect/token";
+        this.clientId = clientId;
+        this.clientSecret = clientSecret;
+    }
+
+    public synchronized String getAccessToken() {
+        if (Instant.now().isBefore(tokenExpiry.minusSeconds(30))) {
+            return cachedToken;
+        }
+
+        Map<String, Object> response = restClient.post()
+            .uri(tokenUrl)
+            .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+            .body("grant_type=client_credentials&client_id=" + clientId
+                + "&client_secret=" + clientSecret)
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+
+        cachedToken = (String) response.get("access_token");
+        int expiresIn = (int) response.get("expires_in");
+        tokenExpiry = Instant.now().plusSeconds(expiresIn);
+
+        return cachedToken;
+    }
+}
+```
+
+#### Service de Gerenciamento de Usuários
+
+```java
+@Service
+public class KeycloakUserService {
+
+    private final RestClient restClient;
+    private final KeycloakTokenService tokenService;
+    private final String adminBaseUrl;
+
+    public KeycloakUserService(
+            KeycloakTokenService tokenService,
+            @Value("${keycloak.admin.server-url}") String serverUrl,
+            @Value("${keycloak.admin.realm}") String realm) {
+        this.tokenService = tokenService;
+        this.adminBaseUrl = serverUrl + "/admin/realms/" + realm;
+        this.restClient = RestClient.create();
+    }
+
+    private String authHeader() {
+        return "Bearer " + tokenService.getAccessToken();
+    }
+
+    // --- Consultas ---
+
+    public List<Map<String, Object>> listUsers(int first, int max) {
+        return restClient.get()
+            .uri(adminBaseUrl + "/users?first={first}&max={max}", first, max)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+    }
+
+    public Map<String, Object> findByEmail(String email) {
+        List<Map<String, Object>> users = restClient.get()
+            .uri(adminBaseUrl + "/users?email={email}&exact=true", email)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+
+        return users.isEmpty() ? null : users.getFirst();
+    }
+
+    public Map<String, Object> findById(String userId) {
+        return restClient.get()
+            .uri(adminBaseUrl + "/users/{userId}", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(Map.class);
+    }
+
+    public int countUsers() {
+        return restClient.get()
+            .uri(adminBaseUrl + "/users/count")
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(Integer.class);
+    }
+
+    // --- Criação ---
+
+    public URI createUser(KeycloakUserRequest request) {
+        return restClient.post()
+            .uri(adminBaseUrl + "/users")
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of(
+                "username",      request.username(),
+                "email",         request.email(),
+                "firstName",     request.firstName(),
+                "lastName",      request.lastName(),
+                "enabled",       true,
+                "emailVerified", false,
+                "credentials",   List.of(Map.of(
+                    "type",      "password",
+                    "value",     request.tempPassword(),
+                    "temporary", true
+                ))
+            ))
+            .retrieve()
+            .toBodilessEntity()
+            .getHeaders()
+            .getLocation();
+        // Location header retorna: /admin/realms/{realm}/users/{userId}
+    }
+
+    // --- Roles ---
+
+    public void assignRealmRole(String userId, String roleName) {
+        Map<String, Object> role = restClient.get()
+            .uri(adminBaseUrl + "/roles/{roleName}", roleName)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(Map.class);
+
+        restClient.post()
+            .uri(adminBaseUrl + "/users/{userId}/role-mappings/realm", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(List.of(Map.of("id", role.get("id"), "name", roleName)))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void removeRealmRole(String userId, String roleName) {
+        Map<String, Object> role = restClient.get()
+            .uri(adminBaseUrl + "/roles/{roleName}", roleName)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(Map.class);
+
+        restClient.method(HttpMethod.DELETE)
+            .uri(adminBaseUrl + "/users/{userId}/role-mappings/realm", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(List.of(Map.of("id", role.get("id"), "name", roleName)))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public List<Map<String, Object>> getUserRoles(String userId) {
+        return restClient.get()
+            .uri(adminBaseUrl + "/users/{userId}/role-mappings/realm", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+    }
+
+    // --- Operações de conta ---
+
+    public void disableUser(String userId) {
+        restClient.put()
+            .uri(adminBaseUrl + "/users/{userId}", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("enabled", false))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void enableUser(String userId) {
+        restClient.put()
+            .uri(adminBaseUrl + "/users/{userId}", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of("enabled", true))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void resetPassword(String userId, String newPassword, boolean temporary) {
+        restClient.put()
+            .uri(adminBaseUrl + "/users/{userId}/reset-password", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of(
+                "type",      "password",
+                "value",     newPassword,
+                "temporary", temporary
+            ))
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void sendVerifyEmail(String userId) {
+        restClient.put()
+            .uri(adminBaseUrl + "/users/{userId}/send-verify-email", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void forceLogout(String userId) {
+        restClient.post()
+            .uri(adminBaseUrl + "/users/{userId}/logout", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void deleteUser(String userId) {
+        restClient.delete()
+            .uri(adminBaseUrl + "/users/{userId}", userId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    // --- Groups ---
+
+    public void addToGroup(String userId, String groupId) {
+        restClient.put()
+            .uri(adminBaseUrl + "/users/{userId}/groups/{groupId}", userId, groupId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .toBodilessEntity();
+    }
+
+    public void removeFromGroup(String userId, String groupId) {
+        restClient.delete()
+            .uri(adminBaseUrl + "/users/{userId}/groups/{groupId}", userId, groupId)
+            .header(HttpHeaders.AUTHORIZATION, authHeader())
+            .retrieve()
+            .toBodilessEntity();
+    }
+}
+```
+
+```java
+public record KeycloakUserRequest(
+    String username,
+    String email,
+    String firstName,
+    String lastName,
+    String tempPassword
+) {}
+```
+
+#### Controller Administrativo
+
+```java
+@RestController
+@RequestMapping("/api/admin/users")
+@PreAuthorize("hasRole('ADMIN')")
+public class UserAdminController {
+
+    private final KeycloakUserService keycloakUserService;
+
+    public UserAdminController(KeycloakUserService keycloakUserService) {
+        this.keycloakUserService = keycloakUserService;
+    }
+
+    @GetMapping
+    public List<Map<String, Object>> listUsers(
+            @RequestParam(defaultValue = "0") int first,
+            @RequestParam(defaultValue = "20") int max) {
+        return keycloakUserService.listUsers(first, max);
+    }
+
+    @GetMapping("/count")
+    public int countUsers() {
+        return keycloakUserService.countUsers();
+    }
+
+    @GetMapping("/search")
+    public Map<String, Object> findByEmail(@RequestParam String email) {
+        return keycloakUserService.findByEmail(email);
+    }
+
+    @PostMapping
+    public ResponseEntity<Void> createUser(@RequestBody KeycloakUserRequest request) {
+        URI location = keycloakUserService.createUser(request);
+        String userId = extractUserIdFromLocation(location);
+        keycloakUserService.assignRealmRole(userId, "user");
+        return ResponseEntity.created(location).build();
+    }
+
+    @PutMapping("/{userId}/disable")
+    public ResponseEntity<Void> disableUser(@PathVariable String userId) {
+        keycloakUserService.disableUser(userId);
+        keycloakUserService.forceLogout(userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{userId}/enable")
+    public ResponseEntity<Void> enableUser(@PathVariable String userId) {
+        keycloakUserService.enableUser(userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{userId}/reset-password")
+    public ResponseEntity<Void> resetPassword(
+            @PathVariable String userId,
+            @RequestBody Map<String, String> body) {
+        keycloakUserService.resetPassword(userId, body.get("password"), true);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{userId}/roles/{roleName}")
+    public ResponseEntity<Void> assignRole(
+            @PathVariable String userId,
+            @PathVariable String roleName) {
+        keycloakUserService.assignRealmRole(userId, roleName);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{userId}/roles/{roleName}")
+    public ResponseEntity<Void> removeRole(
+            @PathVariable String userId,
+            @PathVariable String roleName) {
+        keycloakUserService.removeRealmRole(userId, roleName);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/{userId}")
+    public ResponseEntity<Void> deleteUser(@PathVariable String userId) {
+        keycloakUserService.forceLogout(userId);
+        keycloakUserService.deleteUser(userId);
+        return ResponseEntity.noContent().build();
+    }
+
+    private String extractUserIdFromLocation(URI location) {
+        String path = location.getPath();
+        return path.substring(path.lastIndexOf('/') + 1);
+    }
+}
+```
+
+#### Tratamento de Erros da Admin API
+
+```java
+@RestControllerAdvice
+public class KeycloakAdminExceptionHandler {
+
+    @ExceptionHandler(HttpClientErrorException.class)
+    public ResponseEntity<Map<String, String>> handleKeycloakError(
+            HttpClientErrorException ex) {
+        return switch (ex.getStatusCode().value()) {
+            case 409 -> ResponseEntity.status(409).body(
+                Map.of("error", "Usuário já existe no Keycloak"));
+            case 404 -> ResponseEntity.status(404).body(
+                Map.of("error", "Usuário não encontrado no Keycloak"));
+            case 403 -> ResponseEntity.status(403).body(
+                Map.of("error", "Service account sem permissão no Keycloak"));
+            default -> ResponseEntity.status(ex.getStatusCode()).body(
+                Map.of("error", ex.getResponseBodyAsString()));
+        };
+    }
+}
+```
+
 ---
 
 ## 13. Exportação e Importação de Realm
@@ -2017,6 +2433,634 @@ export function logout() { keycloak.logout(); }
 export default keycloak;
 ```
 
+### 17.6 BFF Pattern — Tokens em Cookies HTTP-only (Recomendado)
+
+O Keycloak retorna tokens sempre no body da resposta do endpoint `/token` — ele nunca os coloca em cookies. Para que os tokens fiquem protegidos em cookies HTTP-only (inacessíveis a JavaScript e, portanto, imunes a XSS), é necessário um **Backend for Frontend (BFF)** que faça a intermediação entre a SPA e o Keycloak.
+
+#### Por que usar BFF?
+
+```
+# ❌ SPA pura (sem BFF) — tokens expostos ao JavaScript
+React SPA ←→ [access_token em memória/sessionStorage] ←→ API
+                   ↑ vulnerável a XSS
+
+# ✅ SPA com BFF — tokens nunca chegam ao browser
+React SPA ←→ [cookie HTTP-only] ←→ BFF ←→ [Bearer token] ←→ API
+                                     ↑ tokens armazenados no servidor
+```
+
+| Aspecto | SPA pura (PKCE) | SPA + BFF |
+|---|---|---|
+| Tokens no browser | Sim (memória/sessionStorage) | Não (cookie HTTP-only) |
+| Vulnerável a XSS roubar tokens | Sim | Não |
+| Client type no Keycloak | Public | Confidential |
+| Refresh token exposto | Sim | Não |
+| Complexidade de infra | Menor | Maior (requer backend) |
+| Recomendação OIDF | Aceitável | **Recomendado** |
+
+```mermaid
+flowchart LR
+    subgraph Browser
+        SPA["React SPA\n(sem tokens)"]
+    end
+
+    subgraph Backend
+        BFF["BFF\nSpring Cloud Gateway\n(OAuth2 Client)"]
+    end
+
+    subgraph Services
+        API1["API Pedidos"]
+        API2["API Usuários"]
+        KC["Keycloak"]
+    end
+
+    SPA -->|"cookie HTTP-only\n(JSESSIONID)"| BFF
+    BFF -->|"Authorization Code\n+ client_secret"| KC
+    BFF -->|"Bearer token"| API1
+    BFF -->|"Bearer token"| API2
+```
+
+#### Opção A — Spring Cloud Gateway como BFF (Recomendado)
+
+O Spring Cloud Gateway com o filtro `TokenRelay` é a forma mais direta de implementar o BFF. O Gateway atua como OAuth2 Client confidential, armazena tokens na sessão (Redis para produção) e injeta o `Authorization: Bearer` nas requisições downstream.
+
+**Dependências Maven:**
+
+```xml
+<dependencies>
+    <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-starter-gateway</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-oauth2-client</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework.session</groupId>
+        <artifactId>spring-session-data-redis</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>io.lettuce</groupId>
+        <artifactId>lettuce-core</artifactId>
+    </dependency>
+</dependencies>
+
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-dependencies</artifactId>
+            <version>2024.0.1</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+**application.yml:**
+
+```yaml
+server:
+  port: 8080
+  servlet:
+    session:
+      cookie:
+        name: BFF_SESSION
+        http-only: true
+        secure: true
+        same-site: lax
+        max-age: 1800
+
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: myapp-bff
+            client-secret: ${BFF_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            scope: openid, profile, email, roles
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}
+
+  cloud:
+    gateway:
+      routes:
+        # Rota para a API — injeta Bearer token automaticamente
+        - id: api-orders
+          uri: http://localhost:8081
+          predicates:
+            - Path=/api/orders/**
+          filters:
+            - TokenRelay=       # ← extrai token da sessão e adiciona Authorization: Bearer
+            - RemoveRequestHeader=Cookie   # não repassa cookies do browser para a API
+
+        - id: api-users
+          uri: http://localhost:8082
+          predicates:
+            - Path=/api/users/**
+          filters:
+            - TokenRelay=
+            - RemoveRequestHeader=Cookie
+
+        # Rota para servir o frontend React (SPA estático)
+        - id: frontend
+          uri: http://localhost:3000
+          predicates:
+            - Path=/**
+
+  # Redis para armazenar sessões (produção — sem Redis usa in-memory)
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+
+  session:
+    store-type: redis
+    redis:
+      namespace: bff:session
+```
+
+**SecurityConfig:**
+
+```java
+@Configuration
+@EnableWebFluxSecurity
+public class BffSecurityConfig {
+
+    @Bean
+    public SecurityWebFilterChain securityFilterChain(ServerHttpSecurity http) {
+        return http
+            .authorizeExchange(auth -> auth
+                // Endpoints públicos (inclui o frontend React)
+                .pathMatchers("/", "/index.html", "/assets/**", "/favicon.ico").permitAll()
+                .pathMatchers("/actuator/health/**").permitAll()
+                // Endpoints da API exigem autenticação
+                .pathMatchers("/api/**").authenticated()
+                .anyExchange().permitAll()
+            )
+            .oauth2Login(login -> login
+                .authorizationRequestResolver(
+                    authorizationRequestResolver(clientRegistrationRepository))
+            )
+            .logout(logout -> logout
+                .logoutUrl("/bff/logout")
+                .logoutSuccessHandler(oidcLogoutSuccessHandler())
+            )
+            // CSRF com cookie para a SPA poder ler o token CSRF
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(CookieServerCsrfTokenRepository.withHttpOnlyFalse())
+                .csrfTokenRequestHandler(new ServerCsrfTokenRequestAttributeHandler())
+            )
+            .build();
+    }
+
+    // Endpoint para a SPA verificar se está autenticada
+    @Bean
+    public RouterFunction<ServerResponse> bffRoutes() {
+        return RouterFunctions.route()
+            .GET("/bff/user", request ->
+                request.principal()
+                    .flatMap(principal -> {
+                        if (principal instanceof OAuth2AuthenticationToken auth) {
+                            OidcUser user = (OidcUser) auth.getPrincipal();
+                            return ServerResponse.ok().bodyValue(Map.of(
+                                "username", user.getPreferredUsername(),
+                                "email",    user.getEmail(),
+                                "roles",    user.getClaimAsMap("realm_access")
+                            ));
+                        }
+                        return ServerResponse.status(401).build();
+                    })
+                    .switchIfEmpty(ServerResponse.status(401).build())
+            )
+            .build();
+    }
+
+    @Autowired
+    private ReactiveClientRegistrationRepository clientRegistrationRepository;
+
+    private ServerOAuth2AuthorizationRequestResolver authorizationRequestResolver(
+            ReactiveClientRegistrationRepository repo) {
+        var resolver = new DefaultServerOAuth2AuthorizationRequestResolver(repo);
+        // Forçar PKCE mesmo em client confidential (defesa em profundidade)
+        resolver.setAuthorizationRequestCustomizer(
+            OAuth2AuthorizationRequestCustomizers.withPkce());
+        return resolver;
+    }
+
+    private ServerLogoutSuccessHandler oidcLogoutSuccessHandler() {
+        OidcClientInitiatedServerLogoutSuccessHandler handler =
+            new OidcClientInitiatedServerLogoutSuccessHandler(clientRegistrationRepository);
+        handler.setPostLogoutRedirectUri("{baseUrl}");
+        return handler;
+    }
+}
+```
+
+**Client no Keycloak:**
+
+```
+Clients → Create client
+  Client ID:             myapp-bff
+  Client type:           OpenID Connect
+  Client authentication: ON  ← confidential
+
+Authentication flow:
+  ✅ Standard flow (Authorization Code)
+  ❌ Direct access grants
+  ❌ Implicit flow
+
+Valid redirect URIs:
+  http://localhost:8080/login/oauth2/code/keycloak
+  https://app.empresa.com/login/oauth2/code/keycloak
+
+Post logout redirect URIs:
+  http://localhost:8080
+  https://app.empresa.com
+
+Web origins:
+  http://localhost:8080
+  https://app.empresa.com
+
+# Back-channel logout para SLO
+Advanced → Backchannel logout URL:
+  http://bff:8080/logout/connect/back-channel
+Backchannel logout session required: ON
+```
+
+**React SPA — chamando a API via BFF:**
+
+```typescript
+// src/api/client.ts
+// Todas as chamadas passam pelo BFF (mesmo domínio → cookie enviado automaticamente)
+const api = {
+  async get<T>(path: string): Promise<T> {
+    const response = await fetch(path, {
+      credentials: 'include',   // envia o cookie de sessão do BFF
+    });
+    if (response.status === 401) {
+      window.location.href = '/oauth2/authorization/keycloak';
+      throw new Error('Não autenticado');
+    }
+    return response.json();
+  },
+
+  async post<T>(path: string, body: unknown): Promise<T> {
+    const csrfToken = getCsrfToken();  // lê do cookie XSRF-TOKEN
+    const response = await fetch(path, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-XSRF-TOKEN': csrfToken,
+      },
+      body: JSON.stringify(body),
+    });
+    if (response.status === 401) {
+      window.location.href = '/oauth2/authorization/keycloak';
+      throw new Error('Não autenticado');
+    }
+    return response.json();
+  },
+};
+
+function getCsrfToken(): string {
+  return document.cookie
+    .split('; ')
+    .find(row => row.startsWith('XSRF-TOKEN='))
+    ?.split('=')[1] ?? '';
+}
+
+export default api;
+```
+
+```tsx
+// src/App.tsx
+import { useEffect, useState } from 'react';
+import api from './api/client';
+
+interface UserInfo {
+  username: string;
+  email: string;
+  roles: { roles: string[] };
+}
+
+function App() {
+  const [user, setUser] = useState<UserInfo | null>(null);
+
+  useEffect(() => {
+    api.get<UserInfo>('/bff/user')
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
+
+  if (!user) {
+    return (
+      <a href="/oauth2/authorization/keycloak">Login</a>
+    );
+  }
+
+  return (
+    <div>
+      <p>Olá, {user.username} ({user.email})</p>
+      <button onClick={() => { window.location.href = '/bff/logout'; }}>
+        Logout
+      </button>
+
+      {/* Chamadas à API passam pelo BFF — Bearer token injetado automaticamente */}
+      <OrdersList />
+    </div>
+  );
+}
+
+function OrdersList() {
+  const [orders, setOrders] = useState([]);
+
+  useEffect(() => {
+    // /api/orders → BFF → TokenRelay → API backend
+    api.get('/api/orders').then(setOrders);
+  }, []);
+
+  return <ul>{orders.map(o => <li key={o.id}>{o.name}</li>)}</ul>;
+}
+```
+
+#### Opção B — Spring Boot puro como BFF (sem Gateway)
+
+Para projetos menores que não justificam o Spring Cloud Gateway, um Spring Boot MVC padrão pode atuar como BFF fazendo proxy manual das requisições via `RestClient`.
+
+```yaml
+# application.yml
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak:
+            provider: keycloak
+            client-id: myapp-bff
+            client-secret: ${BFF_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            scope: openid, profile, email, roles
+        provider:
+          keycloak:
+            issuer-uri: ${KEYCLOAK_URL:http://localhost:8180}/realms/${KEYCLOAK_REALM:myrealm}
+
+server:
+  servlet:
+    session:
+      cookie:
+        name: BFF_SESSION
+        http-only: true
+        secure: true
+        same-site: lax
+```
+
+```java
+@Configuration
+@EnableWebSecurity
+public class BffSecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        return http
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/", "/index.html", "/assets/**").permitAll()
+                .requestMatchers("/bff/**", "/api/**").authenticated()
+                .anyExchange().permitAll()
+            )
+            .oauth2Login(login -> login
+                .defaultSuccessUrl("/", true)
+            )
+            .logout(logout -> logout
+                .logoutUrl("/bff/logout")
+                .logoutSuccessHandler(oidcLogoutSuccessHandler())
+            )
+            .csrf(csrf -> csrf
+                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+            )
+            .build();
+    }
+
+    @Bean
+    public OidcClientInitiatedLogoutSuccessHandler oidcLogoutSuccessHandler(
+            ClientRegistrationRepository registrations) {
+        var handler = new OidcClientInitiatedLogoutSuccessHandler(registrations);
+        handler.setPostLogoutRedirectUri("{baseUrl}");
+        return handler;
+    }
+}
+```
+
+```java
+// BffProxyController.java — proxy manual de requisições para APIs backend
+@RestController
+@RequestMapping("/api")
+public class BffProxyController {
+
+    private final RestClient ordersClient;
+    private final RestClient usersClient;
+
+    public BffProxyController(
+            @Value("${api.orders.url:http://localhost:8081}") String ordersUrl,
+            @Value("${api.users.url:http://localhost:8082}") String usersUrl) {
+        this.ordersClient = RestClient.builder().baseUrl(ordersUrl).build();
+        this.usersClient = RestClient.builder().baseUrl(usersUrl).build();
+    }
+
+    @GetMapping("/orders/**")
+    public ResponseEntity<String> proxyOrders(
+            HttpServletRequest request,
+            @RegisteredOAuth2AuthorizedClient("keycloak") OAuth2AuthorizedClient client) {
+        String path = request.getRequestURI();  // /api/orders/...
+        return proxyGet(ordersClient, path, client);
+    }
+
+    @PostMapping("/orders/**")
+    public ResponseEntity<String> proxyOrdersPost(
+            HttpServletRequest request,
+            @RequestBody String body,
+            @RegisteredOAuth2AuthorizedClient("keycloak") OAuth2AuthorizedClient client) {
+        String path = request.getRequestURI();
+        return proxyPost(ordersClient, path, body, client);
+    }
+
+    @GetMapping("/users/**")
+    public ResponseEntity<String> proxyUsers(
+            HttpServletRequest request,
+            @RegisteredOAuth2AuthorizedClient("keycloak") OAuth2AuthorizedClient client) {
+        String path = request.getRequestURI();
+        return proxyGet(usersClient, path, client);
+    }
+
+    private ResponseEntity<String> proxyGet(
+            RestClient restClient, String path, OAuth2AuthorizedClient client) {
+        String token = client.getAccessToken().getTokenValue();
+        return restClient.get()
+            .uri(path)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+            .retrieve()
+            .toEntity(String.class);
+    }
+
+    private ResponseEntity<String> proxyPost(
+            RestClient restClient, String path, String body,
+            OAuth2AuthorizedClient client) {
+        String token = client.getAccessToken().getTokenValue();
+        return restClient.post()
+            .uri(path)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(body)
+            .retrieve()
+            .toEntity(String.class);
+    }
+}
+```
+
+```java
+// BffUserController.java — endpoint para a SPA consultar o usuário logado
+@RestController
+@RequestMapping("/bff")
+public class BffUserController {
+
+    @GetMapping("/user")
+    public Map<String, Object> getUser(@AuthenticationPrincipal OidcUser user) {
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+        }
+        return Map.of(
+            "username",  user.getPreferredUsername(),
+            "email",     user.getEmail(),
+            "name",      user.getFullName(),
+            "roles",     user.getClaimAsMap("realm_access")
+        );
+    }
+}
+```
+
+#### Opção C — Tokens em Cookies Criptografados (BFF Stateless)
+
+Nas opções A e B, os tokens ficam na sessão do servidor (Redis ou in-memory). Na opção C, os tokens são armazenados diretamente no cookie, criptografados com AES-GCM. Isso elimina a necessidade de Redis e torna o BFF stateless, mas adiciona complexidade e limitação de tamanho (cookies têm limite de ~4 KB por cookie).
+
+```java
+// TokenCookieService.java — criptografa/descriptografa tokens em cookies
+@Service
+public class TokenCookieService {
+
+    private static final String ACCESS_COOKIE = "AT";
+    private static final String REFRESH_COOKIE = "RT";
+
+    private final SecretKey secretKey;
+
+    public TokenCookieService(@Value("${bff.cookie.secret}") String secret) {
+        byte[] keyBytes = Base64.getDecoder().decode(secret);
+        this.secretKey = new SecretKeySpec(keyBytes, "AES");
+    }
+
+    public void setTokenCookies(HttpServletResponse response,
+                                 String accessToken, String refreshToken,
+                                 int accessTokenMaxAge) {
+        addEncryptedCookie(response, ACCESS_COOKIE, accessToken, accessTokenMaxAge);
+        addEncryptedCookie(response, REFRESH_COOKIE, refreshToken, 86400); // 24h
+    }
+
+    public String getAccessToken(HttpServletRequest request) {
+        return readEncryptedCookie(request, ACCESS_COOKIE);
+    }
+
+    public String getRefreshToken(HttpServletRequest request) {
+        return readEncryptedCookie(request, REFRESH_COOKIE);
+    }
+
+    public void clearTokenCookies(HttpServletResponse response) {
+        deleteCookie(response, ACCESS_COOKIE);
+        deleteCookie(response, REFRESH_COOKIE);
+    }
+
+    private void addEncryptedCookie(HttpServletResponse response,
+                                     String name, String value, int maxAge) {
+        try {
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            byte[] iv = new byte[12];
+            SecureRandom.getInstanceStrong().nextBytes(iv);
+            cipher.init(Cipher.ENCRYPT_MODE, secretKey, new GCMParameterSpec(128, iv));
+            byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+
+            // iv + encrypted → Base64
+            byte[] combined = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, combined, 0, iv.length);
+            System.arraycopy(encrypted, 0, combined, iv.length, encrypted.length);
+
+            ResponseCookie cookie = ResponseCookie.from(name,
+                    Base64.getUrlEncoder().withoutPadding().encodeToString(combined))
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(maxAge)
+                .build();
+
+            response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        } catch (GeneralSecurityException e) {
+            throw new RuntimeException("Falha ao criptografar cookie", e);
+        }
+    }
+
+    private String readEncryptedCookie(HttpServletRequest request, String name) {
+        if (request.getCookies() == null) return null;
+        return Arrays.stream(request.getCookies())
+            .filter(c -> name.equals(c.getName()))
+            .findFirst()
+            .map(cookie -> {
+                try {
+                    byte[] combined = Base64.getUrlDecoder().decode(cookie.getValue());
+                    byte[] iv = Arrays.copyOf(combined, 12);
+                    byte[] encrypted = Arrays.copyOfRange(combined, 12, combined.length);
+
+                    Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+                    cipher.init(Cipher.DECRYPT_MODE, secretKey, new GCMParameterSpec(128, iv));
+                    return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
+                } catch (GeneralSecurityException e) {
+                    return null;
+                }
+            })
+            .orElse(null);
+    }
+
+    private void deleteCookie(HttpServletResponse response, String name) {
+        ResponseCookie cookie = ResponseCookie.from(name, "")
+            .httpOnly(true).secure(true).sameSite("Lax")
+            .path("/").maxAge(0).build();
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    }
+}
+```
+
+```bash
+# Gerar chave AES-256 para criptografia dos cookies:
+openssl rand -base64 32
+# → copiar para a variável BFF_COOKIE_SECRET
+```
+
+> **Quando usar cada opção:**
+>
+> | | Gateway (A) | Spring Boot (B) | Stateless (C) |
+> |---|---|---|---|
+> | Complexidade | Média | Baixa | Alta |
+> | Escalabilidade | Alta (Redis) | Média (Redis) | Alta (sem estado) |
+> | Múltiplas APIs | Fácil (rotas declarativas) | Manual (proxy por endpoint) | Manual |
+> | Latência | Baixa (reativo) | Média (servlet) | Baixa (sem lookup de sessão) |
+> | Quando usar | Múltiplos microservices | App monolítica / poucos serviços | Ambientes serverless / edge |
+
 ---
 
 ## 18. Keycloak como IdP para Múltiplas Aplicações
@@ -2057,15 +3101,317 @@ empresa-a realm → clientes da empresa A
 empresa-b realm → clientes da empresa B
 ```
 
-### 18.3 SSO e Single Logout
+### 18.3 SSO — Configuração Detalhada
+
+SSO (Single Sign-On) funciona automaticamente quando múltiplas aplicações usam o **mesmo realm**. O Keycloak gerencia a sessão SSO via cookie no domínio do servidor Keycloak — se o usuário já autenticou em uma aplicação, ao acessar outra aplicação do mesmo realm, o Keycloak reconhece o cookie e emite tokens sem pedir login novamente.
+
+#### Como o SSO Funciona Internamente
+
+```mermaid
+sequenceDiagram
+    participant U as Usuário (Browser)
+    participant APP1 as App RH
+    participant APP2 as App Financeiro
+    participant KC as Keycloak
+
+    U->>APP1: Acessar /dashboard
+    APP1-->>U: Redirect → KC /auth (client_id=rh-app)
+    U->>KC: GET /auth (sem cookie SSO)
+    KC-->>U: Tela de login
+    U->>KC: POST login (usuário + senha)
+    KC-->>U: Set-Cookie: KEYCLOAK_SESSION=... (domínio: auth.empresa.com)
+    KC-->>U: Redirect → APP1 /callback?code=abc
+    U->>APP1: GET /callback?code=abc
+    APP1->>KC: POST /token (code=abc) → access_token + id_token
+    APP1-->>U: Set-Cookie: SESSION=... (domínio: rh.empresa.com)
+
+    Note over U,KC: Minutos depois...
+
+    U->>APP2: Acessar /painel
+    APP2-->>U: Redirect → KC /auth (client_id=fin-app)
+    U->>KC: GET /auth (com cookie KEYCLOAK_SESSION ✓)
+    KC-->>U: Sessão válida — sem tela de login!
+    KC-->>U: Redirect → APP2 /callback?code=xyz
+    U->>APP2: GET /callback?code=xyz
+    APP2->>KC: POST /token (code=xyz) → access_token + id_token
+    APP2-->>U: Logado automaticamente no App Financeiro
+```
+
+#### Requisitos para SSO Funcionar
 
 ```
-# SSO automático: usuário logado em app1 acessa app2 sem re-autenticar
-# → configurar mesmo realm e mesmo browser session
+✅ Mesmo realm — todas as aplicações devem ser clients do mesmo realm
+✅ Mesmo browser — o cookie SSO é armazenado no browser do usuário
+✅ Mesmo domínio do Keycloak — o cookie KEYCLOAK_SESSION pertence ao domínio
+   do servidor Keycloak (ex: auth.empresa.com)
+✅ Clients configurados corretamente — redirect URIs, web origins
 
-# Single Logout (SLO): logout em uma app invalida todas as sessões
-Client → Advanced → Backchannel Logout URL: https://app.com/logout/back-channel
+# NÃO é necessário:
+# ❌ Mesmo domínio entre as aplicações (rh.empresa.com ≠ fin.empresa.com)
+# ❌ Mesmo tipo de client (uma pode ser SPA, outra Spring MVC)
+# ❌ Configuração especial de SSO — é o comportamento padrão do realm
+```
+
+#### Parâmetros de Sessão SSO
+
+```
+Realm Settings → Tokens
+
+SSO Session Idle:           1800    (30 min — logout por inatividade)
+SSO Session Max:            28800   (8h — duração máxima da sessão)
+SSO Session Idle Remember Me: 2592000 (30 dias — com "lembrar-me")
+SSO Session Max Remember Me:  2592000 (30 dias)
+
+# Com Remember Me habilitado (Realm Settings → Login → Remember Me: ON):
+# O cookie SSO persiste entre fechamentos do browser
+```
+
+#### Forçar Re-autenticação (Ignorar SSO em Operações Sensíveis)
+
+```
+# No redirect para o Keycloak, adicionar prompt=login
+# → mesmo com sessão SSO ativa, o usuário deve re-digitar a senha
+
+# Spring Security — forçar re-auth para rotas sensíveis:
+GET /realms/myrealm/protocol/openid-connect/auth
+  ?client_id=fin-app
+  &response_type=code
+  &prompt=login          ← ignora SSO
+  &max_age=0             ← alternativa: token deve ter sido emitido agora
+
+# Útil para: transferências bancárias, alteração de dados sensíveis, etc.
+```
+
+```java
+// Spring Boot — redirecionar com prompt=login para operação sensível
+@GetMapping("/transfer/confirm")
+public String confirmTransfer(HttpServletResponse response) throws IOException {
+    String authUrl = issuerUri + "/protocol/openid-connect/auth"
+        + "?client_id=" + clientId
+        + "&response_type=code"
+        + "&redirect_uri=" + URLEncoder.encode(redirectUri, UTF_8)
+        + "&scope=openid"
+        + "&prompt=login";  // força re-autenticação
+    response.sendRedirect(authUrl);
+    return null;
+}
+```
+
+### 18.4 Cookies do Keycloak — Estrutura e Comportamento
+
+O Keycloak utiliza vários cookies para gerenciar sessões, preferências e estado de autenticação. Entender esses cookies é essencial para debugging de SSO e configuração de ambientes com proxy reverso.
+
+#### Cookies Principais
+
+| Cookie | Domínio | Finalidade | Duração |
+|---|---|---|---|
+| `KEYCLOAK_SESSION` | auth.empresa.com | Identificador da sessão SSO do realm | SSO Session Max |
+| `KEYCLOAK_SESSION_LEGACY` | auth.empresa.com | Fallback para browsers sem suporte a SameSite | SSO Session Max |
+| `KEYCLOAK_IDENTITY` | auth.empresa.com | JWT criptografado com identidade do usuário | SSO Session Max |
+| `KEYCLOAK_IDENTITY_LEGACY` | auth.empresa.com | Fallback do identity cookie | SSO Session Max |
+| `AUTH_SESSION_ID` | auth.empresa.com | ID da sessão de autenticação em andamento | Enquanto o flow estiver ativo |
+| `KC_RESTART` | auth.empresa.com | Estado para reiniciar um flow de autenticação interrompido | Curta (minutos) |
+| `KEYCLOAK_LOCALE` | auth.empresa.com | Preferência de idioma do usuário | Persistente |
+| `KEYCLOAK_REMEMBER_ME` | auth.empresa.com | Flag "lembrar-me" para sessão persistente | Persistente |
+
+#### SameSite e Configuração de Cookies
+
+```properties
+# keycloak.conf — configuração de cookies (Keycloak 22+)
+
+# SameSite attribute dos cookies de sessão
+# Lax (padrão) — cookie enviado em navegação top-level cross-site
+# Strict       — cookie nunca enviado em requests cross-site
+# None         — cookie enviado em todos os requests (requer Secure=true)
+spi-sticky-session-encoder-infinispan-should-attach-route=false
+```
+
+```
+# Cenários que exigem SameSite=None:
+# - Keycloak embeddado em iframe (ex: silent check-sso)
+# - Aplicação em domínio diferente do Keycloak fazendo redirect
+# - Front-channel logout cross-domain
+
+# O Keycloak envia cookies duplicados (com e sem prefixo LEGACY)
+# para garantir compatibilidade com browsers antigos que não
+# reconhecem o atributo SameSite.
+```
+
+#### Cookies na Aplicação (Spring Boot OAuth2 Client)
+
+```
+# O Spring Security OAuth2 Client gerencia seus próprios cookies de sessão:
+
+JSESSIONID                  — sessão HTTP do Spring (contém tokens do Keycloak)
+OAuth2AuthorizationRequest  — estado do flow OIDC em andamento (CSRF protection)
+
+# Esses cookies pertencem ao domínio da aplicação (ex: rh.empresa.com),
+# NÃO ao domínio do Keycloak.
+```
+
+#### Configurar Cookies de Sessão no Spring Boot
+
+```yaml
+# application.yml — configuração de cookies da aplicação
+server:
+  servlet:
+    session:
+      cookie:
+        name: APP_SESSION
+        http-only: true    # impede acesso via JavaScript (proteção XSS)
+        secure: true       # enviado apenas via HTTPS
+        same-site: lax     # proteção CSRF
+        max-age: 1800      # 30 minutos — alinhar com SSO Session Idle
+        path: /
+        domain: .empresa.com  # compartilhar sessão entre subdomínios (opcional)
+```
+
+#### Proxy Reverso — Preservar Cookies
+
+```nginx
+# nginx.conf — headers necessários para cookies funcionarem atrás de proxy
+
+location / {
+    proxy_pass http://keycloak:8080;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header X-Forwarded-Port  $server_port;
+
+    # Buffers grandes para cookies e tokens do Keycloak
+    proxy_buffer_size   128k;
+    proxy_buffers       4 256k;
+    proxy_busy_buffers_size 256k;
+
+    # Necessário para cookies Secure quando TLS termina no proxy
+    proxy_cookie_path / "/; Secure; HttpOnly; SameSite=Lax";
+}
+```
+
+#### Silent Check-SSO (SPAs — Verificar Sessão sem Redirect Visível)
+
+```html
+<!-- public/silent-check-sso.html — página vazia que roda em iframe oculto -->
+<html>
+<body>
+  <script>parent.postMessage(location.href, location.origin);</script>
+</body>
+</html>
+```
+
+```typescript
+// A SPA verifica periodicamente se a sessão SSO ainda é válida
+// sem redirecionar o usuário visualmente
+const keycloak = new Keycloak({ url, realm, clientId });
+
+await keycloak.init({
+  onLoad: 'check-sso',
+  silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+  silentCheckSsoFallback: false,
+  // O Keycloak abre um iframe invisível para auth.empresa.com
+  // → Se o cookie KEYCLOAK_SESSION ainda é válido, retorna os tokens
+  // → Se expirou, o iframe falha silenciosamente (sem redirect)
+});
+
+// Renovação periódica do token (usa refresh_token, não SSO cookie)
+setInterval(() => {
+  keycloak.updateToken(70)  // renova se expira em menos de 70s
+    .catch(() => keycloak.login());
+}, 60000);
+```
+
+### 18.5 Single Logout (SLO) — Configuração
+
+Single Logout garante que, ao fazer logout em uma aplicação, todas as outras sessões do mesmo usuário no realm são invalidadas.
+
+#### Tipos de Logout
+
+```mermaid
+flowchart TD
+    subgraph SLO["Mecanismos de Logout"]
+        BC["Back-Channel Logout\n(servidor → servidor)\nKeycloak chama endpoint\nde cada client"]
+        FC["Front-Channel Logout\n(via browser redirect)\nBrowser visita URL de\nlogout de cada client"]
+        RP["RP-Initiated Logout\n(OIDC padrão)\nAplicação redireciona ao\nKeycloak /logout"]
+    end
+```
+
+| Tipo | Vantagem | Desvantagem |
+|---|---|---|
+| **Back-Channel** | Não depende do browser; funciona com SPAs fechadas | Client precisa expor endpoint; requer conectividade server-to-server |
+| **Front-Channel** | Funciona sem conectividade direta entre servers | Depende do browser; lento se muitos clients; bloqueado por ad-blockers |
+| **RP-Initiated** | Padrão OIDC; simples de implementar | Apenas inicia o logout; depende de back/front-channel para propagar |
+
+#### Configurar Back-Channel Logout
+
+```
+Clients → myapp-web → Advanced
+
+Backchannel Logout URL: https://rh.empresa.com/logout/back-channel
 Backchannel logout session required: ON
+Backchannel logout revoke offline sessions: ON
+
+# O Keycloak envia um POST com logout_token (JWT assinado) para essa URL
+# quando o usuário faz logout em qualquer aplicação do realm.
+```
+
+```java
+// Spring Boot — receber back-channel logout do Keycloak
+// O Spring Security OAuth2 Client suporta nativamente (Spring Boot 3.1+):
+
+@Bean
+public SecurityFilterChain webFilterChain(HttpSecurity http) throws Exception {
+    return http
+        .oauth2Login(Customizer.withDefaults())
+        .oidcLogout(logout -> logout
+            .backChannel(Customizer.withDefaults())
+            // Registra automaticamente POST /logout/connect/back-channel
+            // que invalida a HttpSession local ao receber o logout_token
+        )
+        .build();
+}
+```
+
+#### Configurar Front-Channel Logout
+
+```
+Clients → myapp-spa → Settings
+
+Front channel logout: ON
+Front channel logout URL: https://app.empresa.com/logout
+
+# Quando o logout é iniciado, o Keycloak renderiza uma página com
+# iframes ocultos que fazem GET na URL de logout de cada client.
+```
+
+#### RP-Initiated Logout (Iniciar Logout pela Aplicação)
+
+```java
+// Spring Boot — logout que invalida sessão local + Keycloak
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    return http
+        .logout(logout -> logout
+            .logoutSuccessHandler(
+                new OidcClientInitiatedLogoutSuccessHandler(clientRegistrationRepository))
+            // Redireciona para Keycloak /logout com id_token_hint
+            // → Keycloak invalida sessão SSO
+            // → Keycloak dispara back-channel logout para outros clients
+            // → Keycloak redireciona para post_logout_redirect_uri
+        )
+        .build();
+}
+```
+
+```typescript
+// React SPA — logout com redirect ao Keycloak
+function handleLogout() {
+  const logoutUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/logout`
+    + `?id_token_hint=${idToken}`
+    + `&post_logout_redirect_uri=${encodeURIComponent(window.location.origin)}`;
+  window.location.href = logoutUrl;
+}
 ```
 
 ---
@@ -2365,15 +3711,289 @@ curl -X POST \
 }
 ```
 
-### 20.3 Verificar Logs de Evento
+### 20.3 User Events — Auditoria e Monitoramento
+
+O Keycloak registra dois tipos de eventos: **User Events** (ações de autenticação do usuário) e **Admin Events** (alterações administrativas no realm). Esses eventos são a base para auditoria, detecção de incidentes e integração com sistemas de monitoramento.
+
+#### Habilitar e Configurar Eventos
 
 ```
-Realm → Events → Admin Events  (alterações de configuração)
-Realm → Events → User Events   (logins, falhas, logouts)
+Realm Settings → Events
 
-# Habilitar gravação de eventos
-Realm Settings → Events → Event listeners: jboss-logging
-Save Events: ON  (com retention em dias)
+# User Events (ações de autenticação)
+Save User Events: ON
+Expiration:       90 dias    ← retenção (eventos são purgados automaticamente)
+Event Listeners:  jboss-logging, login-webhook   ← listeners ativos
+
+# Selecionar quais eventos gravar (Saved Types):
+✅ LOGIN, LOGIN_ERROR, LOGOUT, LOGOUT_ERROR
+✅ REGISTER, REGISTER_ERROR
+✅ CODE_TO_TOKEN, CODE_TO_TOKEN_ERROR
+✅ REFRESH_TOKEN, REFRESH_TOKEN_ERROR
+✅ CLIENT_LOGIN, CLIENT_LOGIN_ERROR
+✅ TOKEN_EXCHANGE, TOKEN_EXCHANGE_ERROR
+✅ IMPERSONATE
+✅ CUSTOM_REQUIRED_ACTION
+☐ IDENTITY_PROVIDER_LOGIN          ← habilitar se usa Social Login
+☐ IDENTITY_PROVIDER_FIRST_LOGIN    ← habilitar se usa Social Login
+☐ SEND_VERIFY_EMAIL, SEND_RESET_PASSWORD
+
+# Admin Events (alterações de configuração)
+Save Admin Events: ON
+Include Representation: ON  ← grava o payload JSON da alteração
+Expiration: 365 dias         ← retenção maior para compliance
+```
+
+#### Tipos de User Event
+
+| Tipo | Disparado quando |
+|---|---|
+| `LOGIN` | Login bem-sucedido (senha, social, LDAP) |
+| `LOGIN_ERROR` | Falha de login (senha errada, conta bloqueada) |
+| `LOGOUT` | Logout explícito |
+| `REGISTER` | Novo usuário se registra |
+| `CODE_TO_TOKEN` | Authorization code trocado por tokens |
+| `CODE_TO_TOKEN_ERROR` | Falha na troca (code expirado, PKCE inválido) |
+| `REFRESH_TOKEN` | Refresh token usado para renovar access token |
+| `REFRESH_TOKEN_ERROR` | Refresh token inválido ou expirado |
+| `CLIENT_LOGIN` | Client credentials grant bem-sucedido |
+| `INTROSPECT_TOKEN` | Token introspectado |
+| `IMPERSONATE` | Admin agiu como outro usuário |
+| `TOKEN_EXCHANGE` | Token exchange executado |
+| `IDENTITY_PROVIDER_LOGIN` | Login via IdP externo (Google, GitHub) |
+| `IDENTITY_PROVIDER_FIRST_LOGIN` | Primeiro login via IdP externo |
+| `SEND_VERIFY_EMAIL` | E-mail de verificação enviado |
+| `SEND_RESET_PASSWORD` | E-mail de reset de senha enviado |
+| `UPDATE_PASSWORD` | Usuário alterou a senha |
+| `UPDATE_PROFILE` | Usuário alterou o perfil |
+| `UPDATE_TOTP` | Usuário configurou MFA (TOTP) |
+| `REMOVE_TOTP` | Usuário removeu MFA |
+| `GRANT_CONSENT` | Usuário concedeu consentimento a um client |
+| `REVOKE_GRANT` | Usuário revogou consentimento |
+
+#### Tipos de Admin Event
+
+| Operação | Resource Type | Exemplo |
+|---|---|---|
+| `CREATE` | `USER` | Admin criou um usuário |
+| `UPDATE` | `USER` | Admin editou atributos do usuário |
+| `DELETE` | `USER` | Admin deletou um usuário |
+| `ACTION` | `USER` | Admin resetou senha |
+| `CREATE` | `CLIENT` | Novo client cadastrado |
+| `UPDATE` | `REALM` | Configuração do realm alterada |
+| `CREATE` | `REALM_ROLE` | Nova role criada |
+| `CREATE` | `GROUP_MEMBERSHIP` | Usuário adicionado a grupo |
+
+#### Consultar Eventos via Admin REST API
+
+```bash
+BASE="http://localhost:8180/admin/realms/myrealm"
+AUTH="Authorization: Bearer $TOKEN"
+
+# Listar user events (mais recentes primeiro)
+curl -H "$AUTH" "$BASE/events?first=0&max=50"
+
+# Filtrar por tipo de evento
+curl -H "$AUTH" "$BASE/events?type=LOGIN_ERROR&first=0&max=100"
+
+# Filtrar por usuário
+curl -H "$AUTH" "$BASE/events?user=uuid-do-usuario"
+
+# Filtrar por período (epoch millis)
+curl -H "$AUTH" "$BASE/events?dateFrom=2026-01-01&dateTo=2026-06-30"
+
+# Filtrar por client
+curl -H "$AUTH" "$BASE/events?client=myapp-spa"
+
+# Combinar filtros: falhas de login de um IP específico
+curl -H "$AUTH" "$BASE/events?type=LOGIN_ERROR&ipAddress=192.168.1.50"
+
+# Listar admin events
+curl -H "$AUTH" "$BASE/admin-events?first=0&max=50"
+
+# Admin events filtrados por operação e recurso
+curl -H "$AUTH" "$BASE/admin-events?operationTypes=CREATE&resourceTypes=USER"
+
+# Limpar todos os eventos (cuidado!)
+curl -X DELETE -H "$AUTH" "$BASE/events"
+```
+
+#### Estrutura do Evento (JSON)
+
+```json
+// User Event
+{
+  "time": 1719417600000,
+  "type": "LOGIN",
+  "realmId": "myrealm",
+  "clientId": "myapp-spa",
+  "userId": "a1b2c3d4-uuid",
+  "sessionId": "sess-uuid",
+  "ipAddress": "192.168.1.100",
+  "details": {
+    "auth_method": "openid-connect",
+    "auth_type": "code",
+    "redirect_uri": "https://app.empresa.com/callback",
+    "consent": "no_consent_required",
+    "code_id": "code-uuid",
+    "username": "joao@empresa.com"
+  }
+}
+
+// Admin Event
+{
+  "time": 1719417700000,
+  "realmId": "myrealm",
+  "authDetails": {
+    "realmId": "master",
+    "clientId": "admin-cli",
+    "userId": "admin-uuid",
+    "ipAddress": "10.0.0.5"
+  },
+  "operationType": "CREATE",
+  "resourceType": "USER",
+  "resourcePath": "users/new-user-uuid",
+  "representation": "{\"username\":\"novo-user\",\"email\":\"novo@empresa.com\",\"enabled\":true}"
+}
+```
+
+#### Consultar User Events via Spring Boot (RestClient)
+
+```java
+@Service
+public class KeycloakEventService {
+
+    private final RestClient restClient;
+    private final KeycloakTokenService tokenService;
+    private final String adminBaseUrl;
+
+    public KeycloakEventService(
+            KeycloakTokenService tokenService,
+            @Value("${keycloak.admin.server-url}") String serverUrl,
+            @Value("${keycloak.admin.realm}") String realm) {
+        this.tokenService = tokenService;
+        this.adminBaseUrl = serverUrl + "/admin/realms/" + realm;
+        this.restClient = RestClient.create();
+    }
+
+    public List<Map<String, Object>> getLoginErrors(int maxResults) {
+        return restClient.get()
+            .uri(adminBaseUrl + "/events?type=LOGIN_ERROR&max={max}", maxResults)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenService.getAccessToken())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+    }
+
+    public List<Map<String, Object>> getUserEvents(String userId) {
+        return restClient.get()
+            .uri(adminBaseUrl + "/events?user={userId}", userId)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenService.getAccessToken())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+    }
+
+    public List<Map<String, Object>> getAdminEvents(
+            String operationType, String resourceType) {
+        return restClient.get()
+            .uri(adminBaseUrl + "/admin-events?operationTypes={op}&resourceTypes={res}",
+                operationType, resourceType)
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenService.getAccessToken())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+    }
+
+    public Map<String, Long> getLoginStatsByClient() {
+        List<Map<String, Object>> events = restClient.get()
+            .uri(adminBaseUrl + "/events?type=LOGIN&max=1000")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenService.getAccessToken())
+            .retrieve()
+            .body(new ParameterizedTypeReference<>() {});
+
+        return events.stream()
+            .collect(Collectors.groupingBy(
+                e -> (String) e.get("clientId"),
+                Collectors.counting()
+            ));
+    }
+}
+```
+
+#### Event Listener Customizado — Encaminhar para Kafka / Elasticsearch
+
+```java
+// KafkaEventListenerProvider.java
+public class KafkaEventListenerProvider implements EventListenerProvider {
+
+    private final KafkaProducer<String, String> producer;
+    private final String topic;
+    private final ObjectMapper objectMapper;
+
+    public KafkaEventListenerProvider(KafkaProducer<String, String> producer,
+                                      String topic) {
+        this.producer = producer;
+        this.topic = topic;
+        this.objectMapper = new ObjectMapper();
+    }
+
+    @Override
+    public void onEvent(Event event) {
+        try {
+            Map<String, Object> payload = Map.of(
+                "type",       event.getType().name(),
+                "realmId",    event.getRealmId(),
+                "userId",     event.getUserId() != null ? event.getUserId() : "",
+                "clientId",   event.getClientId() != null ? event.getClientId() : "",
+                "ipAddress",  event.getIpAddress() != null ? event.getIpAddress() : "",
+                "timestamp",  event.getTime(),
+                "details",    event.getDetails() != null ? event.getDetails() : Map.of()
+            );
+
+            String json = objectMapper.writeValueAsString(payload);
+            ProducerRecord<String, String> record =
+                new ProducerRecord<>(topic, event.getUserId(), json);
+
+            producer.send(record);
+
+        } catch (Exception e) {
+            Logger.getLogger(getClass()).error("Falha ao enviar evento ao Kafka", e);
+        }
+    }
+
+    @Override
+    public void onEvent(AdminEvent event, boolean includeRepresentation) {
+        try {
+            Map<String, Object> payload = Map.of(
+                "type",           "ADMIN_" + event.getOperationType().name(),
+                "resourceType",   event.getResourceType().name(),
+                "resourcePath",   event.getResourcePath(),
+                "realmId",        event.getRealmId(),
+                "adminUserId",    event.getAuthDetails().getUserId(),
+                "adminIp",        event.getAuthDetails().getIpAddress(),
+                "timestamp",      event.getTime(),
+                "representation", includeRepresentation && event.getRepresentation() != null
+                                    ? event.getRepresentation() : ""
+            );
+
+            String json = objectMapper.writeValueAsString(payload);
+            producer.send(new ProducerRecord<>(topic + "-admin", json));
+
+        } catch (Exception e) {
+            Logger.getLogger(getClass()).error("Falha ao enviar admin event ao Kafka", e);
+        }
+    }
+
+    @Override
+    public void close() {}
+}
+```
+
+```
+# Habilitar no realm:
+Realm Settings → Events → Event Listeners → Adicionar: kafka-events
+
+# Variável de configuração:
+KC_SPI_EVENTS_LISTENER_KAFKA_EVENTS_BOOTSTRAP_SERVERS=kafka:9092
+KC_SPI_EVENTS_LISTENER_KAFKA_EVENTS_TOPIC=keycloak-events
 ```
 
 ### 20.4 Problemas Comuns e Soluções
@@ -3408,7 +5028,368 @@ ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
 CMD ["start"]
 ```
 
-### 22.12 Resumo — Qual SPI Usar em Cada Cenário
+### 22.12 WebSocket Listener SPI — Notificações em Tempo Real
+
+O Keycloak não possui suporte nativo a WebSocket para push de eventos. Para notificar aplicações em tempo real sobre eventos de autenticação (login, logout, alterações de conta), a estratégia é combinar um **EventListenerProvider** com um sistema de mensageria que alimenta um endpoint WebSocket na sua aplicação.
+
+#### Arquitetura
+
+```mermaid
+flowchart LR
+    KC[Keycloak]
+    ELP["EventListenerProvider\n(SPI customizado)"]
+    MQ["Redis Pub/Sub\n(ou Kafka / RabbitMQ)"]
+    API["Spring Boot API\n(WebSocket server)"]
+    SPA["React SPA\n(WebSocket client)"]
+
+    KC -->|"onEvent(LOGIN)"| ELP
+    ELP -->|"publish"| MQ
+    MQ -->|"subscribe"| API
+    API -->|"STOMP /topic/events"| SPA
+```
+
+#### Event Listener que Publica em Redis
+
+```java
+// WebSocketEventListenerProvider.java
+public class WebSocketEventListenerProvider implements EventListenerProvider {
+
+    private final RedisPublisher redisPublisher;
+    private final ObjectMapper objectMapper;
+    private final Set<EventType> TRACKED_EVENTS = Set.of(
+        EventType.LOGIN,
+        EventType.LOGOUT,
+        EventType.REGISTER,
+        EventType.LOGIN_ERROR,
+        EventType.UPDATE_PASSWORD,
+        EventType.UPDATE_PROFILE
+    );
+
+    public WebSocketEventListenerProvider(RedisPublisher redisPublisher) {
+        this.redisPublisher = redisPublisher;
+        this.objectMapper = new ObjectMapper();
+    }
+
+    @Override
+    public void onEvent(Event event) {
+        if (!TRACKED_EVENTS.contains(event.getType())) return;
+
+        try {
+            Map<String, Object> message = Map.of(
+                "eventType", event.getType().name(),
+                "userId",    event.getUserId() != null ? event.getUserId() : "",
+                "clientId",  event.getClientId() != null ? event.getClientId() : "",
+                "realmId",   event.getRealmId(),
+                "ipAddress", event.getIpAddress() != null ? event.getIpAddress() : "",
+                "timestamp", event.getTime(),
+                "sessionId", event.getSessionId() != null ? event.getSessionId() : ""
+            );
+
+            String json = objectMapper.writeValueAsString(message);
+            redisPublisher.publish("keycloak:events", json);
+
+        } catch (Exception e) {
+            Logger.getLogger(getClass()).error("Falha ao publicar evento no Redis", e);
+        }
+    }
+
+    @Override
+    public void onEvent(AdminEvent event, boolean includeRepresentation) {
+        try {
+            Map<String, Object> message = Map.of(
+                "eventType",     "ADMIN_" + event.getOperationType().name(),
+                "resourceType",  event.getResourceType().name(),
+                "resourcePath",  event.getResourcePath(),
+                "adminUserId",   event.getAuthDetails().getUserId(),
+                "timestamp",     event.getTime()
+            );
+
+            String json = objectMapper.writeValueAsString(message);
+            redisPublisher.publish("keycloak:admin-events", json);
+
+        } catch (Exception e) {
+            Logger.getLogger(getClass()).error("Falha ao publicar admin event", e);
+        }
+    }
+
+    @Override
+    public void close() {}
+}
+```
+
+```java
+// RedisPublisher.java — wrapper simples para publicar no Redis
+public class RedisPublisher {
+
+    private final JedisPool jedisPool;
+
+    public RedisPublisher(String redisHost, int redisPort) {
+        this.jedisPool = new JedisPool(redisHost, redisPort);
+    }
+
+    public void publish(String channel, String message) {
+        try (Jedis jedis = jedisPool.getResource()) {
+            jedis.publish(channel, message);
+        }
+    }
+
+    public void close() {
+        jedisPool.close();
+    }
+}
+```
+
+```java
+// WebSocketEventListenerProviderFactory.java
+public class WebSocketEventListenerProviderFactory
+        implements EventListenerProviderFactory {
+
+    private RedisPublisher redisPublisher;
+
+    @Override
+    public EventListenerProvider create(KeycloakSession session) {
+        return new WebSocketEventListenerProvider(redisPublisher);
+    }
+
+    @Override
+    public void init(Config.Scope config) {
+        String redisHost = config.get("redisHost",
+            System.getenv().getOrDefault("REDIS_HOST", "localhost"));
+        int redisPort = config.getInt("redisPort", 6379);
+        redisPublisher = new RedisPublisher(redisHost, redisPort);
+    }
+
+    @Override
+    public void postInit(KeycloakSessionFactory factory) {}
+
+    @Override
+    public void close() {
+        if (redisPublisher != null) redisPublisher.close();
+    }
+
+    @Override
+    public String getId() { return "websocket-events"; }
+}
+```
+
+```
+# META-INF/services/org.keycloak.events.EventListenerProviderFactory
+com.empresa.keycloak.websocket.WebSocketEventListenerProviderFactory
+
+# Habilitar no Keycloak:
+# Realm Settings → Events → Event Listeners → Adicionar: websocket-events
+
+# Variáveis de configuração:
+KC_SPI_EVENTS_LISTENER_WEBSOCKET_EVENTS_REDIS_HOST=redis
+KC_SPI_EVENTS_LISTENER_WEBSOCKET_EVENTS_REDIS_PORT=6379
+```
+
+#### Spring Boot — WebSocket Server com STOMP
+
+```xml
+<!-- pom.xml -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-websocket</artifactId>
+</dependency>
+<dependency>
+    <groupId>redis.clients</groupId>
+    <artifactId>jedis</artifactId>
+</dependency>
+```
+
+```java
+// WebSocketConfig.java
+@Configuration
+@EnableWebSocketMessageBroker
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Override
+    public void configureMessageBroker(MessageBrokerRegistry config) {
+        config.enableSimpleBroker("/topic");
+        config.setApplicationDestinationPrefixes("/app");
+    }
+
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        registry.addEndpoint("/ws")
+            .setAllowedOrigins("http://localhost:3000", "https://app.empresa.com")
+            .withSockJS();
+    }
+}
+```
+
+```java
+// RedisEventSubscriber.java — recebe eventos do Redis e envia via WebSocket
+@Component
+public class RedisEventSubscriber {
+
+    private final SimpMessagingTemplate messagingTemplate;
+
+    public RedisEventSubscriber(SimpMessagingTemplate messagingTemplate,
+                                 @Value("${redis.host:localhost}") String redisHost,
+                                 @Value("${redis.port:6379}") int redisPort) {
+        this.messagingTemplate = messagingTemplate;
+
+        Thread.startVirtualThread(() -> {
+            try (Jedis jedis = new Jedis(redisHost, redisPort)) {
+                jedis.subscribe(new JedisPubSub() {
+                    @Override
+                    public void onMessage(String channel, String message) {
+                        try {
+                            Map<String, Object> event = new ObjectMapper()
+                                .readValue(message, new TypeReference<>() {});
+
+                            String userId = (String) event.get("userId");
+
+                            // Broadcast para todos os subscribers do tópico geral
+                            messagingTemplate.convertAndSend("/topic/events", event);
+
+                            // Enviar para tópico específico do usuário (notificação individual)
+                            if (userId != null && !userId.isEmpty()) {
+                                messagingTemplate.convertAndSend(
+                                    "/topic/events/user/" + userId, event);
+                            }
+
+                        } catch (Exception e) {
+                            Logger.getLogger(getClass())
+                                .error("Erro ao processar evento Redis", e);
+                        }
+                    }
+                }, "keycloak:events", "keycloak:admin-events");
+            }
+        });
+    }
+}
+```
+
+#### React SPA — WebSocket Client
+
+```typescript
+// src/hooks/useKeycloakEvents.ts
+import { useEffect, useState } from 'react';
+import { Client } from '@stomp/stompjs';
+import SockJS from 'sockjs-client';
+
+interface KeycloakEvent {
+  eventType: string;
+  userId: string;
+  clientId: string;
+  realmId: string;
+  timestamp: number;
+}
+
+export function useKeycloakEvents(userId?: string) {
+  const [events, setEvents] = useState<KeycloakEvent[]>([]);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    const client = new Client({
+      webSocketFactory: () => new SockJS('http://localhost:8080/ws'),
+      onConnect: () => {
+        setConnected(true);
+
+        // Receber todos os eventos (painel admin)
+        client.subscribe('/topic/events', (message) => {
+          const event: KeycloakEvent = JSON.parse(message.body);
+          setEvents(prev => [event, ...prev].slice(0, 100));
+        });
+
+        // Receber apenas eventos do usuário logado
+        if (userId) {
+          client.subscribe(`/topic/events/user/${userId}`, (message) => {
+            const event: KeycloakEvent = JSON.parse(message.body);
+            if (event.eventType === 'LOGIN') {
+              // Outro dispositivo fez login — notificar o usuário
+              console.warn('Novo login detectado em outro dispositivo');
+            }
+          });
+        }
+      },
+      onDisconnect: () => setConnected(false),
+    });
+
+    client.activate();
+    return () => { client.deactivate(); };
+  }, [userId]);
+
+  return { events, connected };
+}
+```
+
+```tsx
+// src/components/EventsDashboard.tsx
+import { useKeycloakEvents } from '../hooks/useKeycloakEvents';
+
+export function EventsDashboard() {
+  const { events, connected } = useKeycloakEvents();
+
+  return (
+    <div>
+      <h2>Eventos em Tempo Real {connected ? '🟢' : '🔴'}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Tipo</th>
+            <th>Usuário</th>
+            <th>Client</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((event, i) => (
+            <tr key={i}>
+              <td>{new Date(event.timestamp).toLocaleTimeString()}</td>
+              <td>{event.eventType}</td>
+              <td>{event.userId}</td>
+              <td>{event.clientId}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+#### Docker Compose Completo (Keycloak + Redis + API)
+
+```yaml
+# docker-compose.yml
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8180
+      REDIS_HOST: redis
+    volumes:
+      - ./keycloak-ws-spi.jar:/opt/keycloak/providers/keycloak-ws-spi.jar:ro
+    ports:
+      - "8180:8180"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./api
+    environment:
+      KEYCLOAK_URL: http://keycloak:8180
+      REDIS_HOST: redis
+    ports:
+      - "8080:8080"
+    depends_on:
+      - keycloak
+      - redis
+```
+
+### 22.13 Resumo — Qual SPI Usar em Cada Cenário
 
 ```
 Preciso executar algo APÓS um evento (login, logout, register)?

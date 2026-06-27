@@ -37,6 +37,7 @@
     - [4.2 Deserializer Customizado](#42-deserializer-customizado)
     - [4.3 @JsonSerialize e @JsonDeserialize — Aplicação Pontual](#43-jsonserialize-e-jsondeserialize--aplicação-pontual)
     - [4.4 StdConverter — Conversão Simples](#44-stdconverter--conversão-simples)
+    - [4.5 Boolean como 0/1 — Integração com APIs Legadas](#45-boolean-como-01--integração-com-apis-legadas)
 5. [Polimorfismo — @JsonTypeInfo e @JsonSubTypes](#5-polimorfismo--jsontypeinfo-e-jsonsubtypes)
     - [5.1 Configuração Básica](#51-configuração-básica)
     - [5.2 Tipos de Inclusão de Tipo](#52-tipos-de-inclusão-de-tipo)
@@ -1023,6 +1024,198 @@ public class PagamentoDTO {
 **Entrada JSON:** `{ "valor": 15099 }` (centavos)
 **Valor no objeto:** `BigDecimal("150.99")`
 **Saída JSON:** `{ "valor": 15099 }`
+
+### 4.5 Boolean como 0/1 — Integração com APIs Legadas
+
+Muitos sistemas legados (bancos, ERPs, mainframes) representam booleanos como `0` e `1` em vez de `true`/`false`. Jackson permite tratar essa conversão de duas formas: **por campo** (anotação) ou **global** (módulo registrado no Spring Boot).
+
+#### Serializer e Deserializer
+
+```java
+// Serializa: true → 1, false → 0
+public class BooleanToIntSerializer extends JsonSerializer<Boolean> {
+
+    @Override
+    public void serialize(Boolean value, JsonGenerator gen, SerializerProvider provider)
+            throws IOException {
+        gen.writeNumber(value != null && value ? 1 : 0);
+    }
+}
+```
+
+```java
+// Desserializa: aceita 1/0, true/false e variações
+public class IntToBooleanDeserializer extends JsonDeserializer<Boolean> {
+
+    @Override
+    public Boolean deserialize(JsonParser p, DeserializationContext ctx)
+            throws IOException {
+        return switch (p.getText().trim()) {
+            case "1", "true",  "TRUE"  -> true;
+            case "0", "false", "FALSE" -> false;
+            default -> throw new JsonParseException(
+                p, "Valor inválido para boolean: " + p.getText()
+            );
+        };
+    }
+}
+```
+
+#### Uso por Campo (granular)
+
+```java
+public record ProdutoDTO(
+    String nome,
+
+    @JsonSerialize(using = BooleanToIntSerializer.class)
+    @JsonDeserialize(using = IntToBooleanDeserializer.class)
+    boolean ativo,
+
+    @JsonSerialize(using = BooleanToIntSerializer.class)
+    @JsonDeserialize(using = IntToBooleanDeserializer.class)
+    boolean emEstoque
+) {}
+```
+
+#### Registro Global via Spring Boot (recomendado)
+
+Spring Boot detecta automaticamente qualquer `@Bean` do tipo `com.fasterxml.jackson.databind.Module` e o registra no `ObjectMapper` global:
+
+```java
+@Configuration
+public class JacksonConfig {
+
+    @Bean
+    public Module booleanAsIntModule() {
+        var module = new SimpleModule("BooleanAsInt");
+
+        module.addSerializer(Boolean.class,   new BooleanToIntSerializer());
+        module.addSerializer(boolean.class,   new BooleanToIntSerializer()); // primitivo
+        module.addDeserializer(Boolean.class, new IntToBooleanDeserializer());
+        module.addDeserializer(boolean.class, new IntToBooleanDeserializer());
+
+        return module;
+    }
+}
+```
+
+#### Resultado
+
+```json
+// Serialização: true → 1, false → 0
+{ "nome": "Notebook", "ativo": 1, "emEstoque": 0 }
+
+// Desserialização: aceita 1/0 e true/false como entrada
+{ "nome": "Notebook", "ativo": 1, "emEstoque": 0 }       → ativo=true, emEstoque=false
+{ "nome": "Notebook", "ativo": true, "emEstoque": false } → também funciona
+```
+
+| Abordagem | Quando usar |
+|---|---|
+| **Por campo** | Apenas alguns campos específicos precisam do comportamento (integração pontual com legado) |
+| **Global** | Toda a aplicação conversa com um sistema que usa `0`/`1` como convenção booleana |
+
+#### Contraparte no Frontend — JavaScript/TypeScript
+
+Quando a API serializa booleanos como `0`/`1`, o frontend precisa tratar a conversão na ida e na volta. Duas abordagens nativas sem dependências externas:
+
+**`JSON.parse` com reviver — desserialização (entrada):**
+
+```typescript
+// Converte campos 0/1 para boolean na leitura do JSON
+function parseWithBooleans<T>(
+  json: string,
+  booleanFields: Set<string>
+): T {
+  return JSON.parse(json, (key, value) => {
+    if (booleanFields.has(key) && (value === 0 || value === 1)) {
+      return value === 1;
+    }
+    return value;
+  });
+}
+
+// Uso:
+const produto = parseWithBooleans<Produto>(
+  '{"nome":"Notebook","ativo":1,"emEstoque":0}',
+  new Set(["ativo", "emEstoque"])
+);
+// → { nome: "Notebook", ativo: true, emEstoque: false }
+```
+
+**`JSON.stringify` com replacer — serialização (saída):**
+
+```typescript
+// Converte campos boolean para 0/1 na escrita do JSON
+function stringifyWithBoolAsInt<T extends object>(
+  value: T,
+  booleanFields: Set<string>
+): string {
+  return JSON.stringify(value, (key, val) => {
+    if (booleanFields.has(key) && typeof val === "boolean") {
+      return val ? 1 : 0;
+    }
+    return val;
+  });
+}
+
+// Uso:
+const json = stringifyWithBoolAsInt(
+  { nome: "Notebook", ativo: true, emEstoque: false },
+  new Set(["ativo", "emEstoque"])
+);
+// → '{"nome":"Notebook","ativo":1,"emEstoque":0}'
+```
+
+**Fetch wrapper combinando ambas as conversões:**
+
+```typescript
+const BOOL_FIELDS = new Set(["ativo", "emEstoque", "habilitado"]);
+
+const BOOL_REPLACER = (key: string, value: unknown): unknown =>
+  BOOL_FIELDS.has(key) && typeof value === "boolean" ? (value ? 1 : 0) : value;
+
+async function fetchApi<T>(url: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const text = await res.text();
+  return JSON.parse(text, (key, value) => {
+    if (BOOL_FIELDS.has(key) && (value === 0 || value === 1)) {
+      return value === 1;
+    }
+    return value;
+  });
+}
+
+// POST com conversão automática na ida e na volta
+async function postApi<T>(url: string, body: unknown): Promise<T> {
+  return fetchApi<T>(url, {
+    method: "POST",
+    body: JSON.stringify(body, BOOL_REPLACER),
+  });
+}
+
+// Uso:
+const produto = await fetchApi<Produto>("/api/produtos/1");
+// → { nome: "Notebook", ativo: true, emEstoque: false }
+
+await postApi("/api/produtos", { nome: "Notebook", ativo: true, emEstoque: false });
+// Corpo enviado: { "nome": "Notebook", "ativo": 1, "emEstoque": 0 }
+```
+
+| Jackson (Java) | JavaScript/TypeScript nativo |
+|---|---|
+| `@JsonSerialize` por campo | `JSON.stringify` com replacer |
+| `@JsonDeserialize` por campo | `JSON.parse` com reviver |
+| `SimpleModule` global no Boot | Fetch wrapper com replacer + reviver |
 
 ---
 

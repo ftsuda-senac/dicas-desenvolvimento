@@ -27,9 +27,12 @@
 15. [Ordenação de Coleções (@OrderBy, @OrderColumn, @SortNatural)](#15-ordenação-de-coleções-orderby-ordercolumn-sortnatural)
 16. [@ElementCollection vs @OneToMany](#16-elementcollection-vs-onetomany)
 17. [@EmbeddedId vs @IdClass — PKs Compostas](#17-embeddedid-vs-idclass-pks-compostas)
+    - [PK composta com parte FK e parte chave natural](#pk-composta-com-parte-fk-e-parte-chave-natural)
+    - [Compatibilidade com Hibernate Envers](#compatibilidade-com-hibernate-envers)
     - [Enum como @Id simples com AttributeConverter](#enum-como-id-simples-com-attributeconverter)
        - [Enum como parte da PK — @EmbeddedId e @IdClass](#enum-como-parte-da-pk--embeddedid-e-idclass)
     - [Padrão genérico — PersistableEnum e conversor abstrato](#padrão-genérico--persistableenum-e-conversor-abstrato)
+    - [Enum CHECK Constraints — Hibernate 6 vs Hibernate 7](#enum-check-constraints--hibernate-6-vs-hibernate-7)
 18. [Coleções com Map vs Set em Relacionamentos JPA](#18-coleções-com-map-vs-set-em-relacionamentos-jpa)
 
 **Parte 4 — Value Objects, @Embeddable e Tipos Customizados**
@@ -94,6 +97,7 @@ Referência rápida das anotações usadas ao longo deste documento.
 | `@Enumerated` | Campo enum | Persiste enum como `STRING` (nome) ou `ORDINAL` (posição — evitar) |
 | `@Convert` | Campo / getter | Aplica um `AttributeConverter` para transformar o valor antes de gravar no banco |
 | `@Lob` | Campo | Mapeia para `BLOB` / `CLOB` — adequado para conteúdo binário ou texto longo |
+| `@ColumnTransformer` | Campo / getter | Injeta expressões SQL no `SELECT` (`read`) e `INSERT`/`UPDATE` (`write`) — transformação transparente no banco (Hibernate) |
 
 #### Relacionamentos
 
@@ -1538,6 +1542,299 @@ JPQL: `m.curso.id`. Spring Data: `findByCursoId()`.
 
 **Recomendação:** `@EmbeddedId` quando a PK é um conceito de domínio. `@IdClass` quando a PK é consequência técnica do relacionamento.
 
+### PK composta com parte FK e parte chave natural
+
+Nos exemplos anteriores (`Matricula`), ambas as partes da PK são FKs para outras entidades. Um cenário igualmente comum é quando apenas **uma parte** do ID composto é FK, e a outra é uma chave natural (String, enum, etc.).
+
+#### O cenário: parâmetros de configuração por curso
+
+Cada curso tem um conjunto de parâmetros de configuração (carga horária mínima, número máximo de alunos, tipo de avaliação). A combinação `(curso_id, chave)` é única — `curso_id` é FK para `Curso` e `chave` é uma String que identifica o parâmetro.
+
+```mermaid
+erDiagram
+    curso {
+        bigint id PK
+        varchar nome
+    }
+    parametro_curso {
+        bigint curso_id PK,FK
+        varchar chave PK "ex: max_alunos"
+        varchar valor
+        varchar descricao
+    }
+
+    curso ||--o{ parametro_curso : "configurações"
+```
+
+#### Com `@EmbeddedId` + `@MapsId`
+
+O `@Embeddable` encapsula a PK composta. O campo `cursoId` dentro do embeddable espelha a FK, e o `@MapsId("cursoId")` na entidade sincroniza o relacionamento com o campo da PK:
+
+```java
+@Embeddable
+public record ParametroCursoId(Long cursoId, String chave) implements Serializable {}
+
+@Entity
+@Table(name = "parametro_curso")
+public class ParametroCurso {
+
+    @EmbeddedId
+    private ParametroCursoId id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @MapsId("cursoId")
+    @JoinColumn(
+        name = "curso_id",
+        foreignKey = @ForeignKey(name = "fk_parametro_curso_curso")
+    )
+    private Curso curso;
+
+    @Column(nullable = false, length = 500)
+    private String valor;
+
+    @Column(length = 1000)
+    private String descricao;
+}
+```
+
+O `@MapsId("cursoId")` faz com que o Hibernate use o campo `cursoId` do `@EmbeddedId` como coluna de join — não cria uma coluna extra. A chave `chave` é uma coluna de PK independente, sem relacionamento.
+
+Uso:
+
+```java
+@Transactional
+public ParametroCurso criarParametro(Long cursoId, String chave, String valor) {
+    Curso curso = cursoRepository.getReferenceById(cursoId);
+
+    var param = new ParametroCurso();
+    param.setId(new ParametroCursoId(cursoId, chave));
+    param.setCurso(curso);
+    param.setValor(valor);
+
+    return parametroRepository.save(param);
+}
+
+// Busca por PK composta
+Optional<ParametroCurso> param = repository.findById(new ParametroCursoId(cursoId, "max_alunos"));
+
+// Derived query — todos os parâmetros de um curso
+List<ParametroCurso> params = repository.findByIdCursoId(cursoId);
+```
+
+#### Com `@IdClass`
+
+Na abordagem com `@IdClass`, o campo FK (`curso`) recebe `@Id` + `@ManyToOne`, e o campo natural (`chave`) recebe `@Id` diretamente. A classe `@IdClass` espelha os dois campos com tipos simples:
+
+```java
+public class ParametroCursoId implements Serializable {
+    private Long curso;   // mesmo nome do campo na entidade, tipo = PK de Curso
+    private String chave;
+
+    // equals, hashCode, construtor padrão
+}
+
+@Entity
+@Table(name = "parametro_curso")
+@IdClass(ParametroCursoId.class)
+public class ParametroCurso {
+
+    @Id
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(
+        name = "curso_id",
+        foreignKey = @ForeignKey(name = "fk_parametro_curso_curso")
+    )
+    private Curso curso;
+
+    @Id
+    @Column(length = 100)
+    private String chave;
+
+    @Column(nullable = false, length = 500)
+    private String valor;
+
+    @Column(length = 1000)
+    private String descricao;
+}
+```
+
+Na `@IdClass`, o campo `curso` é do tipo `Long` (tipo da PK de `Curso`), não `Curso`. É um espelho — o Hibernate faz a correspondência pelo nome do campo.
+
+Uso:
+
+```java
+// Busca por PK composta
+Optional<ParametroCurso> param = repository.findById(new ParametroCursoId(cursoId, "max_alunos"));
+
+// Derived query
+List<ParametroCurso> params = repository.findByCursoId(cursoId);
+```
+
+#### DDL gerado (ambas as abordagens)
+
+```sql
+CREATE TABLE parametro_curso (
+    curso_id    BIGINT NOT NULL,
+    chave       VARCHAR(100) NOT NULL,
+    valor       VARCHAR(500) NOT NULL,
+    descricao   VARCHAR(1000),
+    PRIMARY KEY (curso_id, chave),
+    CONSTRAINT fk_parametro_curso_curso FOREIGN KEY (curso_id) REFERENCES curso(id)
+);
+```
+
+A coluna `curso_id` é **simultaneamente** parte da PK composta e FK para `curso` — não existe duplicação de colunas no banco.
+
+#### Repository com Spring Data
+
+```java
+public interface ParametroCursoRepository extends JpaRepository<ParametroCurso, ParametroCursoId> {
+
+    // Por curso (via PK parcial)
+    List<ParametroCurso> findByIdCursoId(Long cursoId);       // @EmbeddedId
+    // ou
+    List<ParametroCurso> findByCursoId(Long cursoId);         // @IdClass
+
+    // Por chave específica de um curso
+    Optional<ParametroCurso> findByCursoIdAndChave(Long cursoId, String chave); // @IdClass
+
+    // Todas as entidades que usam uma chave (ex: listar todos os "max_alunos")
+    List<ParametroCurso> findByIdChave(String chave);         // @EmbeddedId
+    // ou
+    List<ParametroCurso> findByChave(String chave);           // @IdClass
+
+    // Deletar todos os parâmetros de um curso
+    void deleteByIdCursoId(Long cursoId);                     // @EmbeddedId
+}
+```
+
+#### Comparação: parte FK vs tudo FK
+
+| Aspecto | Parte FK (`ParametroCurso`) | Tudo FK (`Matricula`) |
+|---|---|---|
+| PK composta | `(curso_id, chave)` | `(curso_id, aluno_id)` |
+| Campos FK na PK | 1 de 2 | 2 de 2 |
+| `@MapsId` necessário (`@EmbeddedId`) | Sim — para o campo FK | Sim — para cada campo FK |
+| `@ManyToOne @Id` (`@IdClass`) | Sim — no campo FK; `@Id` simples no outro | Sim — em ambos |
+| Chave natural no ID | `chave` (String) | Não tem — ambos são FKs |
+| Cascade na exclusão | Deletar curso → deletar parâmetros (natural) | Deletar curso → deletar matrículas (avaliar regra de negócio) |
+
+### Compatibilidade com Hibernate Envers
+
+Ao usar PKs compostas em entidades auditadas com `@Audited`, a escolha entre `@EmbeddedId` e `@IdClass` impacta diretamente a compatibilidade com o Hibernate Envers. Ambas as abordagens geram a mesma estrutura na tabela de auditoria (`_aud`), mas o Envers processa cada uma de forma diferente internamente — e `@IdClass` com `@ManyToOne` como `@Id` tem um histórico de problemas.
+
+#### `@EmbeddedId` — compatível sem ressalvas
+
+O `@EmbeddedId` funciona naturalmente com o Envers. A PK é um objeto `@Embeddable` com campos simples (`Long`, `String`), e o Envers armazena esses campos diretamente na tabela `_aud`:
+
+```java
+@Embeddable
+public record MatriculaId(Long cursoId, Long alunoId) implements Serializable {}
+
+@Entity
+@Audited
+public class Matricula {
+    @EmbeddedId
+    private MatriculaId id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @MapsId("cursoId")
+    private Curso curso;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @MapsId("alunoId")
+    private Aluno aluno;
+
+    @Column(precision = 4, scale = 2)
+    private BigDecimal nota;
+}
+```
+
+Tabela de auditoria gerada:
+
+```sql
+CREATE TABLE matricula_aud (
+    curso_id   BIGINT NOT NULL,
+    aluno_id   BIGINT NOT NULL,
+    rev        INTEGER NOT NULL REFERENCES revinfo(rev),
+    revtype    SMALLINT,
+    nota       NUMERIC(4,2),
+    PRIMARY KEY (curso_id, aluno_id, rev)
+);
+```
+
+O `AuditReader` e o `RevisionRepository` funcionam sem ajustes — basta passar o `MatriculaId` como identificador:
+
+```java
+AuditReader reader = AuditReaderFactory.get(entityManager);
+MatriculaId id = new MatriculaId(cursoId, alunoId);
+Matricula estadoAnterior = reader.find(Matricula.class, id, revisao);
+```
+
+#### `@IdClass` com `@ManyToOne` — problemas conhecidos
+
+A combinação `@IdClass` + `@ManyToOne` como `@Id` + `@Audited` tem histórico de bugs no Hibernate, especialmente ao consultar o histórico de revisões via `AuditReader`:
+
+```java
+@Entity
+@Audited
+@IdClass(MatriculaId.class)
+public class Matricula {
+    @Id @ManyToOne(fetch = FetchType.LAZY)
+    private Curso curso;
+
+    @Id @ManyToOne(fetch = FetchType.LAZY)
+    private Aluno aluno;
+
+    @Column(precision = 4, scale = 2)
+    private BigDecimal nota;
+}
+```
+
+Problemas reportados:
+
+| Issue | Versão afetada | Descrição |
+|---|---|---|
+| HHH-7625 | Hibernate 4–5.3 | `AuditReader.find()` falha com `@IdClass` + `@ManyToOne @Id` — não resolve FK na tabela `_aud` |
+| HHH-9062 | Hibernate 5.x | Queries de revisão com `forRevisionsOfEntity()` retornam resultados incorretos para PKs compostas com `@IdClass` |
+| HHH-11770 | Hibernate 5.x | `@IdClass` com `@Audited(targetAuditMode = NOT_AUDITED)` em entidade relacionada causa `MappingException` |
+
+No Hibernate 6+ (Spring Boot 3+), a maioria desses bugs foi corrigida. No entanto, cenários com `@IdClass` + `NOT_AUDITED` em entidades referenciadas ainda podem apresentar comportamento inesperado em versões específicas.
+
+#### `@IdClass` com campos simples — funciona sem problemas
+
+Quando a `@IdClass` usa apenas campos escalares (sem `@ManyToOne` como `@Id`), a compatibilidade com Envers é equivalente ao `@EmbeddedId`:
+
+```java
+@Entity
+@Audited
+@IdClass(ConfiguracaoId.class)
+public class Configuracao {
+    @Id
+    private String chave;
+
+    @Id
+    private Long tenantId;
+
+    private String valor;
+}
+```
+
+O Envers armazena `chave` e `tenantId` diretamente na PK composta da tabela `_aud`, sem complicações.
+
+#### Comparação de compatibilidade com Envers
+
+| Cenário | `@EmbeddedId` | `@IdClass` |
+|---|---|---|
+| PK com campos simples (`Long`, `String`) | OK | OK |
+| PK com `@ManyToOne` + `@MapsId` | OK | N/A (usa `@EmbeddedId`) |
+| PK com `@ManyToOne` como `@Id` | N/A (usa `@IdClass`) | Bugs no Hibernate 5; OK no 6+ |
+| `@Audited(targetAuditMode = NOT_AUDITED)` | OK | Problemas pontuais no Hibernate 5–6.1 |
+| `AuditReader.find()` com PK composta | OK — passa o `@Embeddable` | OK no 6+; falhas no 5.x |
+| `RevisionRepository` (Spring Data Envers) | OK | OK no Spring Boot 3+ |
+
+> **Recomendação para entidades auditadas:** prefira `@EmbeddedId` quando a entidade usa `@Audited`. Além de ser conceitualmente mais limpo (a PK é um Value Object), evita os bugs históricos que `@IdClass` + `@ManyToOne @Id` acumula com o Envers. Se o projeto usa Hibernate 6+ e `@IdClass` com campos simples, a compatibilidade é equivalente.
+
 ### @MapsId em @OneToOne — PK compartilhada entre entidades
 
 Quando duas entidades compartilham a mesma PK (a filha usa a PK do pai como sua própria PK), use `@MapsId` para mapear o relacionamento `@OneToOne` diretamente no `@Id`:
@@ -2076,6 +2373,408 @@ PersistableEnumConverter<E, T> → abstract: toda a lógica de conversão
 TipoDocumentoConverter         → 3 linhas: só informa o tipo do enum
 TipoDocumento                  → implementa PersistableEnum<String>
 ```
+
+### Enum CHECK Constraints — Hibernate 6 vs Hibernate 7
+
+A partir do Hibernate 6 (Spring Boot 3), a geração automática de DDL cria constraints `CHECK` para colunas de enum, restringindo os valores aceitos no banco. Essa funcionalidade muda significativamente entre versões e interage de forma problemática com `AttributeConverter`.
+
+#### Hibernate 6 / Spring Boot 3 — CHECK automático para enums
+
+Com `@Enumerated(EnumType.STRING)`, o Hibernate 6 gera automaticamente uma constraint `CHECK` baseada nos nomes das constantes do enum:
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 31)
+    private StatusPedido status;
+}
+```
+
+DDL gerado pelo Hibernate 6:
+
+```sql
+CREATE TABLE pedido (
+    id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    status VARCHAR(31) NOT NULL CHECK (status IN ('PENDENTE','APROVADO','CANCELADO'))
+);
+```
+
+O `CHECK` garante integridade no banco — evita valores arbitrários na coluna. Para enums simples mapeados por `name()`, o comportamento é correto e benéfico.
+
+#### Problema ao adicionar novas constantes ao enum
+
+Com `ddl-auto=update`, o Hibernate **não atualiza** constraints `CHECK` já existentes no banco. Ao adicionar uma nova constante ao enum no Java, a aplicação começa a falhar imediatamente ao tentar gravar o novo valor:
+
+```java
+// Antes — 3 constantes
+public enum StatusPedido {
+    PENDENTE, APROVADO, CANCELADO
+}
+
+// Depois — adicionou ESTORNADO
+public enum StatusPedido {
+    PENDENTE, APROVADO, CANCELADO, ESTORNADO
+}
+```
+
+O `CHECK` no banco continua com os 3 valores originais:
+
+```sql
+-- Constraint criada na primeira execução — nunca atualizada pelo ddl-auto=update
+CHECK (status IN ('PENDENTE','APROVADO','CANCELADO'))
+```
+
+Ao gravar `ESTORNADO`:
+
+```
+ERROR: new row for relation "pedido" violates check constraint "pedido_status_check"
+Detail: Failing row contains (..., ESTORNADO, ...).
+```
+
+A aplicação compila, os testes com H2 podem passar (H2 recria o schema a cada execução com `ddl-auto=create-drop`), mas **falha em produção** com o banco PostgreSQL/MySQL que mantém o schema antigo.
+
+##### Soluções
+
+**1. Alterar a constraint manualmente (Flyway/Liquibase)** — recomendado para produção
+
+```sql
+-- Flyway: V4__add_status_estornado.sql
+ALTER TABLE pedido DROP CONSTRAINT IF EXISTS pedido_status_check;
+ALTER TABLE pedido ADD CONSTRAINT pedido_status_check
+    CHECK (status IN ('PENDENTE','APROVADO','CANCELADO','ESTORNADO'));
+```
+
+**2. Recriar o schema (ambientes de desenvolvimento)**
+
+Com `ddl-auto=create` ou `ddl-auto=create-drop`, o schema é recriado a cada inicialização — o CHECK é gerado com todas as constantes atuais. Viável apenas em desenvolvimento.
+
+**3. Não usar `ddl-auto` para gerar CHECK** — evitar o problema desde o início
+
+Se o projeto usa Flyway/Liquibase para migrations, configure `ddl-auto=none` ou `ddl-auto=validate`. O CHECK de enum é controlado manualmente nas migrations, e novas constantes são adicionadas junto com a alteração da constraint:
+
+```sql
+-- Migration atômica: adiciona valor + atualiza constraint
+ALTER TABLE pedido DROP CONSTRAINT IF EXISTS pedido_status_check;
+ALTER TABLE pedido ADD CONSTRAINT pedido_status_check
+    CHECK (status IN ('PENDENTE','APROVADO','CANCELADO','ESTORNADO'));
+```
+
+**4. Suprimir o CHECK na entidade** — quando a integridade é validada na aplicação
+
+Se a frequência de adição de constantes é alta e o CHECK causa mais atrito do que benefício:
+
+```java
+@Enumerated(EnumType.STRING)
+@Column(nullable = false, columnDefinition = "VARCHAR(31)")
+private StatusPedido status;
+```
+
+O `columnDefinition` impede a geração do CHECK. A validação fica por conta da aplicação (Bean Validation, regras de negócio).
+
+##### Resumo do comportamento por `ddl-auto`
+
+| `ddl-auto` | CHECK criado? | CHECK atualizado ao adicionar enum? | Risco |
+|---|---|---|---|
+| `create` / `create-drop` | Sim (recria tudo) | Sim (schema recriado) | Perde dados — só para dev/testes |
+| `update` | Sim (na 1ª vez) | **Não** — constraint fica desatualizada | Falha em INSERT com novo valor |
+| `validate` | Não gera DDL | N/A — apenas valida | Nenhum (DDL manual) |
+| `none` | Não gera DDL | N/A | Nenhum (DDL manual) |
+
+> **Regra prática:** em ambientes com dados persistentes (staging, produção), nunca dependa de `ddl-auto` para gerenciar constraints de enum. Use migrations versionadas e trate a adição de constantes ao enum como uma alteração de schema.
+
+#### Problema com AttributeConverter no Hibernate 6
+
+Quando um `AttributeConverter` mapeia o enum para valores diferentes dos nomes das constantes, o Hibernate 6 pode gerar CHECK constraints **baseadas nos nomes do enum**, não nos valores convertidos. Isso causa conflito:
+
+```java
+public enum StatusPedido implements PersistableEnum<String> {
+    PENDENTE("P"),
+    APROVADO("A"),
+    CANCELADO("C");
+
+    private final String value;
+    StatusPedido(String value) { this.value = value; }
+
+    @Override
+    public String getValue() { return value; }
+}
+```
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    @Convert(converter = StatusPedidoConverter.class)
+    @Column(nullable = false, length = 1)
+    private StatusPedido status;
+}
+```
+
+O converter grava `'P'`, `'A'`, `'C'` no banco, mas o Hibernate 6 pode gerar:
+
+```sql
+-- CHECK baseado nos NOMES do enum (errado para converter!)
+status VARCHAR(1) NOT NULL CHECK (status IN ('PENDENTE','APROVADO','CANCELADO'))
+```
+
+O `INSERT` falha porque `'P'` não está na lista do `CHECK`. O DDL correto deveria ser `CHECK (status IN ('P','A','C'))`, mas o Hibernate 6 não consulta o converter ao gerar o DDL.
+
+#### Formas de desabilitar o CHECK no Hibernate 6 / Spring Boot 3
+
+**1. `columnDefinition` — sobrescreve toda a definição DDL**
+
+Ao usar `columnDefinition`, o Hibernate não adiciona CHECK automático:
+
+```java
+@Convert(converter = StatusPedidoConverter.class)
+@Column(nullable = false, columnDefinition = "VARCHAR(1)")
+private StatusPedido status;
+```
+
+DDL: `status VARCHAR(1) NOT NULL` — sem CHECK. Solução simples, mas precisa ser aplicada em cada campo.
+
+**2. `@JdbcTypeCode` — troca o tipo JDBC e suprime o CHECK de enum**
+
+Ao forçar o tipo JDBC, o Hibernate trata o campo como `VARCHAR` genérico e não gera CHECK de enum:
+
+```java
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+@Convert(converter = StatusPedidoConverter.class)
+@JdbcTypeCode(SqlTypes.VARCHAR)
+@Column(nullable = false, length = 1)
+private StatusPedido status;
+```
+
+**3. Não usar `ddl-auto` — delegar DDL ao Flyway/Liquibase**
+
+Em projetos com migrations, o `CHECK` automático não é problema porque o DDL é controlado manualmente:
+
+```properties
+# application.properties
+spring.jpa.hibernate.ddl-auto=none
+```
+
+Com `ddl-auto=none`, nenhuma constraint é gerada automaticamente. O DDL do Flyway pode incluir o CHECK correto:
+
+```sql
+-- Flyway migration
+ALTER TABLE pedido
+    ADD CONSTRAINT chk_pedido_status CHECK (status IN ('P','A','C'));
+```
+
+**4. Propriedade global — tratar enums como ordinal**
+
+```properties
+# Força tipo JDBC numérico para todos os enums — desabilita CHECK de string
+spring.jpa.properties.hibernate.type.preferred_enum_jdbc_type=TINYINT
+```
+
+Solução global que muda o tipo padrão de **todos** os enums — geralmente indesejável se a maioria usa `EnumType.STRING`.
+
+#### Hibernate 7 / Spring Boot 4 — `@EnumeratedValue`
+
+O Hibernate 7 introduz `@EnumeratedValue`, que resolve o problema sem precisar de `AttributeConverter`. A anotação indica qual método ou campo do enum retorna o valor a ser persistido. O Hibernate usa esse valor tanto na leitura/gravação quanto na geração do `CHECK`.
+
+```java
+public enum StatusPedido {
+
+    PENDENTE("P"),
+    APROVADO("A"),
+    CANCELADO("C");
+
+    private final String codigo;
+
+    StatusPedido(String codigo) { this.codigo = codigo; }
+
+    @EnumeratedValue
+    public String getCodigo() { return codigo; }
+}
+```
+
+Na entidade, basta declarar o campo sem `@Enumerated` e sem `@Convert`:
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    @Column(nullable = false, length = 1)
+    private StatusPedido status;
+}
+```
+
+DDL gerado pelo Hibernate 7 — CHECK **correto** com os valores da anotação:
+
+```sql
+CREATE TABLE pedido (
+    id     BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    status VARCHAR(1) NOT NULL CHECK (status IN ('P','A','C'))
+);
+```
+
+O `@EnumeratedValue` pode anotar um getter ou um campo. O tipo de retorno determina o tipo da coluna:
+
+| Tipo de retorno | Tipo da coluna | Exemplo |
+|---|---|---|
+| `String` | `VARCHAR` | `@EnumeratedValue public String getCodigo()` |
+| `int` / `Integer` | `SMALLINT` / `INTEGER` | `@EnumeratedValue public int getValor()` |
+| `char` / `Character` | `CHAR(1)` | `@EnumeratedValue public char getSigla()` |
+
+Exemplo com valor numérico:
+
+```java
+public enum Prioridade {
+
+    BAIXA(1),
+    MEDIA(2),
+    ALTA(3),
+    CRITICA(4);
+
+    private final int nivel;
+
+    Prioridade(int nivel) { this.nivel = nivel; }
+
+    @EnumeratedValue
+    public int getNivel() { return nivel; }
+}
+```
+
+DDL:
+
+```sql
+nivel SMALLINT NOT NULL CHECK (nivel IN (1,2,3,4))
+```
+
+#### `@EnumeratedValue` vs `AttributeConverter` — comparação
+
+| Aspecto | `@EnumeratedValue` (Hibernate 7+) | `AttributeConverter` |
+|---|---|---|
+| Versão mínima | Hibernate 7 / Spring Boot 4 | JPA 2.1+ (qualquer versão) |
+| Código necessário | 1 anotação no enum | 1 classe converter + anotação na entidade |
+| CHECK constraint | Correto automaticamente | Incorreto no Hibernate 6 (usa nomes do enum) |
+| `autoApply` | Automático (não precisa) | Via `@Converter(autoApply = true)` |
+| Padrão JPA | Não — extensão Hibernate | Sim — JPA standard |
+| Funciona com `@EmbeddedId` | Sim | Sim |
+| Lógica de conversão complexa | Não — mapeamento direto | Sim — qualquer transformação |
+
+**Recomendação:** em projetos com Hibernate 7+ / Spring Boot 4+, prefira `@EnumeratedValue` para mapeamentos simples (enum ↔ valor direto). Reserve `AttributeConverter` para transformações complexas ou quando portabilidade JPA é requisito.
+
+#### `@Convert(disableConversion = true)` — desabilitar converter em campos específicos
+
+O atributo `disableConversion` da anotação `@Convert` impede a aplicação de qualquer converter — incluindo os marcados com `autoApply = true`. Útil quando um converter auto-aplicado existe para o tipo do enum, mas um campo específico deve usar `@Enumerated` ou `@EnumeratedValue` em vez do converter.
+
+```java
+@Converter(autoApply = true)
+public class StatusPedidoConverter
+        extends PersistableEnumConverter<StatusPedido, String> {
+    public StatusPedidoConverter() { super(StatusPedido.class); }
+}
+```
+
+```java
+@Entity
+public class Pedido extends BaseEntity {
+
+    // Campo normal — usa o converter auto-aplicado (grava "P", "A", "C")
+    private StatusPedido status;
+
+    // Campo de auditoria — desabilita o converter, persiste pelo name() ("PENDENTE", "APROVADO")
+    @Convert(disableConversion = true)
+    @Enumerated(EnumType.STRING)
+    @Column(length = 31)
+    private StatusPedido statusAnterior;
+}
+```
+
+| Cenário | O que acontece |
+|---|---|
+| `autoApply = true` + campo sem anotação | Converter aplicado automaticamente |
+| `autoApply = true` + `@Convert(disableConversion = true)` | Converter **não** aplicado — usa `@Enumerated` ou mapeamento padrão |
+| `@Convert(converter = X.class)` no campo | Converter X aplicado (ignora autoApply) |
+| `@Convert(disableConversion = true)` sem autoApply | Sem efeito — já não haveria converter |
+
+#### Diagrama: fluxo de decisão para mapeamento de enums
+
+```mermaid
+flowchart TD
+    A{"Hibernate 7+ /<br>Spring Boot 4+?"} -->|Sim| B{"Mapeamento é<br>direto (enum ↔ valor)?"
+    }
+    A -->|"Não — Hibernate 6 /<br>Spring Boot 3"| C{"Precisa de valor<br>customizado no banco?"}
+
+    B -->|Sim| D["@EnumeratedValue<br>no getter do enum"]
+    B -->|"Não — lógica complexa"| E["AttributeConverter"]
+
+    C -->|Sim| F["AttributeConverter +<br>cuidado com CHECK"]
+    C -->|"Não — name() basta"| G["@Enumerated(STRING)"]
+
+    F --> H{"DDL automático<br>(ddl-auto)?"
+    }
+    H -->|Sim| I["Usar columnDefinition<br>ou @JdbcTypeCode<br>para suprimir CHECK errado"]
+    H -->|"Não — Flyway"| J["CHECK manual<br>na migration"]
+
+    style D fill:#9f9,stroke:#333
+    style G fill:#9f9,stroke:#333
+    style I fill:#fc9,stroke:#333
+```
+
+#### Migração: Spring Boot 3 → Spring Boot 4 (Hibernate 6 → 7)
+
+Ao migrar, os `AttributeConverter` de enums simples podem ser substituídos por `@EnumeratedValue`:
+
+**Antes (Spring Boot 3 / Hibernate 6):**
+
+```java
+// Enum
+public enum StatusPedido implements PersistableEnum<String> {
+    PENDENTE("P"), APROVADO("A"), CANCELADO("C");
+    private final String value;
+    StatusPedido(String value) { this.value = value; }
+    @Override
+    public String getValue() { return value; }
+}
+
+// Converter
+@Converter(autoApply = true)
+public class StatusPedidoConverter
+        extends PersistableEnumConverter<StatusPedido, String> {
+    public StatusPedidoConverter() { super(StatusPedido.class); }
+}
+
+// Entidade
+@Entity
+public class Pedido extends BaseEntity {
+    // converter auto-aplicado
+    @Column(nullable = false, columnDefinition = "VARCHAR(1)") // columnDefinition para evitar CHECK errado
+    private StatusPedido status;
+}
+```
+
+**Depois (Spring Boot 4 / Hibernate 7):**
+
+```java
+// Enum — substituir PersistableEnum por @EnumeratedValue
+public enum StatusPedido {
+    PENDENTE("P"), APROVADO("A"), CANCELADO("C");
+    private final String codigo;
+    StatusPedido(String codigo) { this.codigo = codigo; }
+    @EnumeratedValue
+    public String getCodigo() { return codigo; }
+}
+
+// Converter: REMOVIDO — não é mais necessário
+
+// Entidade
+@Entity
+public class Pedido extends BaseEntity {
+    @Column(nullable = false, length = 1) // CHECK correto gerado automaticamente
+    private StatusPedido status;
+}
+```
+
+A migração não requer alteração no banco — os valores persistidos continuam os mesmos (`'P'`, `'A'`, `'C'`). Apenas o mecanismo de conversão muda (de `AttributeConverter` para `@EnumeratedValue`).
 
 ---
 
@@ -5942,9 +6641,126 @@ public interface CursoRepository extends JpaRepository<Curso, Long> {
 
 Resolve N+1 em uma única subselect, independente do tamanho.
 
-### @ColumnTransformer — transformação no SQL
+### @ColumnTransformer — transformação transparente no SQL
 
-Útil para criptografia ou conversões transparentes no banco:
+O `@ColumnTransformer` (pacote `org.hibernate.annotations`) injeta expressões SQL nos comandos `SELECT`, `INSERT` e `UPDATE` gerados pelo Hibernate. A transformação é **transparente para a aplicação** — a entidade Java trabalha com o valor já convertido, e o Hibernate cuida de envolver o valor com as expressões SQL nos dois sentidos.
+
+#### Atributos
+
+| Atributo | Obrigatório | Descrição |
+|---|---|---|
+| `read` | Não | Expressão SQL usada no `SELECT`. Deve retornar o tipo esperado pelo campo Java. A coluna mapeada pode ser referenciada pelo nome diretamente. |
+| `write` | Não | Expressão SQL usada no `INSERT` e `UPDATE`. O `?` representa o valor passado pela aplicação. **Deve conter exatamente um `?`.** |
+| `forColumn` | Não | Nome da coluna quando o campo pertence a um `@Embeddable` com múltiplas colunas — desambigua qual coluna recebe a transformação. |
+
+É possível definir apenas `read`, apenas `write` ou ambos.
+
+#### Diferença entre @ColumnTransformer, @Formula e AttributeConverter
+
+| Recurso | Onde executa | Leitura | Escrita | Coluna real no banco |
+|---|---|---|---|---|
+| `@ColumnTransformer` | No banco (SQL) | Sim — via `read` | Sim — via `write` | Sim |
+| `@Formula` | No banco (SQL) | Sim — campo calculado | Não — somente leitura | Não (expressão no SELECT) |
+| `AttributeConverter` | Na JVM (Java) | Sim | Sim | Sim |
+
+Use `@ColumnTransformer` quando a transformação **precisa acontecer no banco** — funções do banco de dados, extensões nativas (`pgcrypto`, `PostGIS`), conversões de tipo SQL. Use `AttributeConverter` quando a transformação pode ser feita em Java (ex.: serializar um enum, formatar uma String). Use `@Formula` quando o campo é derivado e não tem coluna própria.
+
+#### Exemplo 1: conversão de unidades (centavos ↔ reais)
+
+Armazenar valores monetários em centavos (inteiro) evita problemas de arredondamento. O campo Java recebe `BigDecimal` em reais:
+
+```java
+@Entity
+public class Produto extends BaseEntity {
+
+    @Column(name = "preco_centavos", nullable = false)
+    @ColumnTransformer(
+        read  = "preco_centavos / 100.0",
+        write = "CAST(? * 100 AS INTEGER)"
+    )
+    private BigDecimal preco;
+}
+```
+
+SQL gerado pelo Hibernate:
+
+```sql
+-- SELECT
+SELECT p.id, p.preco_centavos / 100.0 AS preco FROM produto p WHERE p.id = ?
+
+-- INSERT
+INSERT INTO produto (preco_centavos) VALUES (CAST(? * 100 AS INTEGER))
+```
+
+#### Exemplo 2: normalização de texto (UPPER / LOWER)
+
+Gravar o e-mail sempre em minúsculas no banco, independente do que a aplicação envia:
+
+```java
+@Entity
+public class Usuario extends BaseEntity {
+
+    @Column(name = "email", nullable = false, unique = true)
+    @ColumnTransformer(
+        write = "LOWER(?)"
+    )
+    private String email;
+}
+```
+
+Neste caso, apenas `write` é necessário — o `read` retorna o valor já em minúsculas.
+
+#### Exemplo 3: dados espaciais com PostGIS
+
+Converter entre geometria WKT (Well-Known Text) e o tipo nativo do PostGIS:
+
+```java
+@Entity
+@Table(name = "pontos_interesse")
+public class PontoInteresse extends BaseEntity {
+
+    @Column(name = "localizacao", columnDefinition = "geometry(Point, 4326)")
+    @ColumnTransformer(
+        read  = "ST_AsText(localizacao)",
+        write = "ST_GeomFromText(?, 4326)"
+    )
+    private String localizacaoWkt;
+}
+```
+
+```sql
+-- A aplicação grava "POINT(-46.6334 -23.5505)"
+INSERT INTO pontos_interesse (localizacao) VALUES (ST_GeomFromText(?, 4326))
+
+-- A aplicação recebe "POINT(-46.6334 -23.5505)"
+SELECT ST_AsText(p.localizacao) FROM pontos_interesse p
+```
+
+#### Exemplo 4: extração de campo JSON no PostgreSQL
+
+Extrair um campo de uma coluna `JSONB` diretamente no SQL:
+
+```java
+@Entity
+@Table(name = "configuracoes")
+public class Configuracao extends BaseEntity {
+
+    @Column(name = "dados", columnDefinition = "jsonb")
+    private String dadosJson;
+
+    @Column(name = "dados", insertable = false, updatable = false)
+    @ColumnTransformer(
+        read = "dados->>'tema'"
+    )
+    private String tema;
+}
+```
+
+O campo `tema` é somente leitura (derivado da coluna `dados`). Para escrita, use o campo `dadosJson`.
+
+#### Exemplo 5: criptografia com pgcrypto (PostgreSQL)
+
+O caso de uso mais comum — a aplicação Java trabalha com texto limpo enquanto o PostgreSQL armazena cifrado via extensão `pgcrypto`:
 
 ```java
 @Entity
@@ -5959,15 +6775,13 @@ public class Aluno {
 }
 ```
 
-A aplicação Java trabalha com texto limpo. O PostgreSQL armazena cifrado via extensão `pgcrypto`:
-
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 ```
 
 O `current_setting('app.encryption_key')` lê uma variável de sessão customizada do PostgreSQL (GUC). O PostgreSQL aceita variáveis com prefixo customizado sem configuração prévia (desde a versão 9.2+). A chave precisa ser **injetada na sessão JDBC** por uma das abordagens abaixo.
 
-#### Opção 1: HikariCP `connection-init-sql` (mais simples)
+##### Opção 1: HikariCP `connection-init-sql` (mais simples)
 
 ```yaml
 app:
@@ -5984,7 +6798,7 @@ Toda conexão criada pelo HikariCP executa o `SET` antes de ser entregue à apli
 
 **Tradeoff:** a chave fica visível em logs do PostgreSQL (`log_statement = 'all'`).
 
-#### Opção 2: DataSource wrapper com `SET LOCAL` (mais seguro)
+##### Opção 2: DataSource wrapper com `SET LOCAL` (mais seguro)
 
 A variável vale **só para a transação corrente** e é descartada no commit/rollback:
 
@@ -6036,7 +6850,7 @@ public class DataSourceConfig {
 
 **Vantagem:** `SET LOCAL` isola a chave por transação — se a conexão voltar ao pool, a variável já foi descartada.
 
-#### Opção 3: Aspecto que injeta no início de cada transação
+##### Opção 3: Aspecto que injeta no início de cada transação
 
 ```java
 @Aspect
@@ -6061,7 +6875,7 @@ public class EncryptionKeyAspect {
 }
 ```
 
-#### Onde armazenar a chave
+##### Onde armazenar a chave
 
 A chave **nunca** deve ficar hardcoded. Em produção, use um secret manager:
 
@@ -6076,7 +6890,7 @@ app:
 export ENCRYPTION_KEY="chave-vinda-do-vault"
 ```
 
-#### Fluxo completo
+##### Fluxo completo da criptografia
 
 ```mermaid
 sequenceDiagram
@@ -6100,13 +6914,54 @@ sequenceDiagram
     Note over App: Entidade recebe String cpf descriptografado
 ```
 
-#### Comparação das abordagens
+##### Comparação das abordagens de injeção de chave
 
 | Abordagem | Escopo da variável | Complexidade | Segurança |
 |---|---|---|---|
 | `connection-init-sql` | Por conexão (permanente no pool) | Baixa | Chave visível em logs do PG |
 | `DataSource` wrapper + `SET LOCAL` | Por transação | Média | Isolada por transação |
 | Aspecto + `SET LOCAL` | Por transação | Média | Isolada por transação |
+
+#### Exemplo 6: @ColumnTransformer em @Embeddable com forColumn
+
+Quando o `@ColumnTransformer` é aplicado dentro de um `@Embeddable` que possui múltiplas colunas, use `forColumn` para indicar qual coluna recebe a transformação:
+
+```java
+@Embeddable
+public class Endereco {
+
+    @Column(name = "logradouro")
+    private String logradouro;
+
+    @Column(name = "cidade")
+    private String cidade;
+
+    @Column(name = "coordenadas", columnDefinition = "geometry(Point, 4326)")
+    private String coordenadasWkt;
+}
+```
+
+```java
+@Entity
+public class Filial extends BaseEntity {
+
+    @Embedded
+    @ColumnTransformer(
+        forColumn = "coordenadas",
+        read  = "ST_AsText(coordenadas)",
+        write = "ST_GeomFromText(?, 4326)"
+    )
+    private Endereco endereco;
+}
+```
+
+#### Cuidados e limitações
+
+- **`?` no `write`**: obrigatório e deve aparecer exatamente uma vez — o Hibernate substitui pelo valor do campo.
+- **`read` usa o nome da coluna, não o nome do campo Java**: `@ColumnTransformer(read = "preco_centavos / 100.0")`, não `preco / 100.0`.
+- **JPQL e Criteria**: o `read` é aplicado automaticamente em queries JPQL/Criteria. Já o `write` é aplicado no `INSERT` e `UPDATE` gerados pelo Hibernate, mas **não** em queries nativas — nestas, a expressão precisa ser escrita manualmente.
+- **Performance**: expressões complexas no `read` são executadas para cada linha retornada. Considere views ou colunas computadas do banco quando o custo for alto.
+- **Não funciona com `@Id`**: o Hibernate não aplica `@ColumnTransformer` em campos de chave primária.
 
 ### @Subselect — mapear query como entidade read-only
 
@@ -6678,6 +7533,8 @@ A vantagem do `RevisionRepository` sobre o `AuditReader` manual é que segue o p
 | `@Audited(targetAuditMode = NOT_AUDITED)` | Relacionamento | Referência a entidade não auditada |
 | `@AuditJoinTable` | `@ManyToMany` | Customiza tabela de join auditada |
 | `@RevisionEntity` | Entidade de revisão | Customiza `revinfo` com campos extras |
+
+> **Nota — PKs compostas com Envers:** entidades auditadas com `@EmbeddedId` ou `@IdClass` exigem atenção à compatibilidade. `@EmbeddedId` funciona sem ressalvas; `@IdClass` com `@ManyToOne` como `@Id` tem histórico de bugs (corrigidos no Hibernate 6+). Detalhes e comparação completa na [seção 17 — Compatibilidade com Hibernate Envers](#compatibilidade-com-hibernate-envers).
 
 ### @Generated — campos populados pelo banco
 

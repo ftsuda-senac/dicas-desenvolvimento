@@ -3623,32 +3623,384 @@ async function buscarUsuario(id) {
 const usuario = await buscarUsuario(1);
 ```
 
-### Métodos estáticos de Promise
+### Encadeamento de Promises
+
+Promises podem ser encadeadas com `.then()` — cada `.then()` retorna uma nova Promise, permitindo sequenciar operações assíncronas:
 
 ```js
-const p1 = fetch('/api/usuarios');
-const p2 = fetch('/api/produtos');
-const p3 = fetch('/api/pedidos');
+fetch('/api/usuarios/1')
+  .then(resposta => resposta.json())         // retorna Promise do parse JSON
+  .then(usuario => fetch(`/api/pedidos?userId=${usuario.id}`))  // nova requisição
+  .then(resposta => resposta.json())
+  .then(pedidos => console.log(pedidos))
+  .catch(erro => console.error(erro));       // captura erro de qualquer etapa
+```
 
-// Aguarda todas resolverem — falha se qualquer uma rejeitar
-const [usuarios, produtos, pedidos] = await Promise.all([p1, p2, p3]);
+O `.catch()` no final captura erros de **qualquer** `.then()` anterior na cadeia. Isso é equivalente a um único `try/catch` envolvendo todas as operações.
 
-// Aguarda todas terminarem, independente de sucesso ou falha
-const resultados = await Promise.allSettled([p1, p2, p3]);
-resultados.forEach(({ status, value, reason }) => {
-  if (status === 'fulfilled') console.log(value);
-  else console.error(reason);
-});
+```js
+// Equivalente com async/await — mais legível para cadeias longas
+async function carregarPedidos() {
+  const respostaUsuario = await fetch('/api/usuarios/1');
+  const usuario = await respostaUsuario.json();
 
-// Retorna a primeira que resolver ou rejeitar
-const primeira = await Promise.race([p1, p2, p3]);
+  const respostaPedidos = await fetch(`/api/pedidos?userId=${usuario.id}`);
+  const pedidos = await respostaPedidos.json();
 
-// Retorna a primeira que resolver com sucesso
-const primeiraOk = await Promise.any([p1, p2, p3]);
+  return pedidos;
+}
+```
 
-// Promise já resolvida ou rejeitada
+### Métodos estáticos de Promise — execução simultânea
+
+> MDN: [Promise.all](https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Reference/Global_Objects/Promise/all) · [Promise.allSettled](https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Reference/Global_Objects/Promise/allSettled) · [Promise.race](https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Reference/Global_Objects/Promise/race) · [Promise.any](https://developer.mozilla.org/pt-BR/docs/Web/JavaScript/Reference/Global_Objects/Promise/any)
+
+Quando há múltiplas operações assíncronas independentes, executá-las em paralelo é mais eficiente do que aguardar uma por vez. Os métodos estáticos de `Promise` controlam **como** os resultados (ou falhas) são combinados.
+
+**Comparação rápida:**
+
+| Método | Resolve quando | Rejeita quando | Resultado |
+|---|---|---|---|
+| `Promise.all` | **Todas** resolvem | **Qualquer uma** rejeita | Array de valores |
+| `Promise.allSettled` | **Todas** terminam | **Nunca** rejeita | Array de `{ status, value/reason }` |
+| `Promise.race` | A **primeira** termina | A **primeira** termina com erro | Valor da mais rápida |
+| `Promise.any` | A **primeira** resolve | **Todas** rejeitam | Valor da primeira sucedida |
+
+---
+
+#### Promise.all — todas devem ter sucesso
+
+Executa todas as Promises em paralelo e retorna um array com os valores resolvidos, **na mesma ordem** do array de entrada (independente de qual terminou primeiro). Se **qualquer uma** rejeitar, `Promise.all` rejeita imediatamente com o erro da primeira falha — as demais continuam executando, mas seus resultados são ignorados.
+
+```js
+// Carregar dados independentes em paralelo
+async function carregarPagina() {
+  const [usuarios, produtos, pedidos] = await Promise.all([
+    fetch('/api/usuarios').then(r => r.json()),
+    fetch('/api/produtos').then(r => r.json()),
+    fetch('/api/pedidos').then(r => r.json()),
+  ]);
+
+  // As três requisições rodaram simultaneamente
+  // usuarios, produtos e pedidos estão disponíveis aqui
+  renderizarPagina(usuarios, produtos, pedidos);
+}
+```
+
+```js
+// Comparação: sequencial vs paralelo
+
+// ❌ Sequencial — cada await espera o anterior terminar
+// Tempo total: ~3s (1s + 1s + 1s)
+const usuarios = await buscarUsuarios();    // 1s
+const produtos = await buscarProdutos();    // 1s
+const pedidos  = await buscarPedidos();     // 1s
+
+// ✅ Paralelo — todas iniciam ao mesmo tempo
+// Tempo total: ~1s (o tempo da mais lenta)
+const [usuarios, produtos, pedidos] = await Promise.all([
+  buscarUsuarios(),   // 1s ─┐
+  buscarProdutos(),   // 1s ─┤ executam ao mesmo tempo
+  buscarPedidos(),    // 1s ─┘
+]);
+```
+
+```js
+// Promise.all rejeita na primeira falha
+try {
+  const resultados = await Promise.all([
+    Promise.resolve('ok'),
+    Promise.reject(new Error('falhou')),  // ← rejeição
+    Promise.resolve('ok também'),          // executa, mas resultado é ignorado
+  ]);
+} catch (erro) {
+  console.error(erro.message); // "falhou"
+}
+```
+
+```js
+// Uso prático: processar uma lista de itens em paralelo
+const ids = [1, 2, 3, 4, 5];
+const usuarios = await Promise.all(
+  ids.map(id => fetch(`/api/usuarios/${id}`).then(r => r.json()))
+);
+// usuarios: array com os 5 objetos de usuário
+```
+
+---
+
+#### Promise.allSettled — aguardar todas, sem falhar
+
+Espera **todas** as Promises terminarem, independente de sucesso ou falha. Nunca rejeita. Retorna um array de objetos descrevendo o resultado de cada Promise:
+
+- `{ status: 'fulfilled', value: ... }` — resolvida com sucesso
+- `{ status: 'rejected', reason: ... }` — rejeitada com erro
+
+```js
+// Cenário: enviar notificações para vários usuários — algumas podem falhar
+async function enviarNotificacoes(usuarios) {
+  const resultados = await Promise.allSettled(
+    usuarios.map(u =>
+      fetch('/api/notificacoes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: u.id, mensagem: 'Novidade!' }),
+      })
+    )
+  );
+
+  const enviados = resultados.filter(r => r.status === 'fulfilled');
+  const falhas   = resultados.filter(r => r.status === 'rejected');
+
+  console.log(`Enviados: ${enviados.length}, Falhas: ${falhas.length}`);
+
+  // Tratar falhas individualmente
+  falhas.forEach((f, i) => {
+    console.error(`Falha ao notificar usuário ${usuarios[i].id}:`, f.reason);
+  });
+}
+```
+
+```js
+// Carregar recursos opcionais — a página funciona mesmo se algum falhar
+async function carregarDashboard() {
+  const [graficos, alertas, config] = await Promise.allSettled([
+    fetch('/api/graficos').then(r => r.json()),
+    fetch('/api/alertas').then(r => r.json()),
+    fetch('/api/config').then(r => r.json()),
+  ]);
+
+  // Usar dados disponíveis, ignorar os que falharam
+  if (graficos.status === 'fulfilled') renderizarGraficos(graficos.value);
+  if (alertas.status === 'fulfilled')  mostrarAlertas(alertas.value);
+  if (config.status === 'fulfilled')   aplicarConfig(config.value);
+}
+```
+
+```js
+// Separar sucessos e falhas com destructuring
+const resultados = await Promise.allSettled([p1, p2, p3, p4]);
+
+const valores = resultados
+  .filter(r => r.status === 'fulfilled')
+  .map(r => r.value);
+
+const erros = resultados
+  .filter(r => r.status === 'rejected')
+  .map(r => r.reason);
+```
+
+**Quando usar `Promise.all` vs `Promise.allSettled`:**
+
+```js
+// Promise.all — quando TODAS as respostas são essenciais
+// Se uma falhar, não faz sentido continuar
+const [usuario, permissoes] = await Promise.all([
+  buscarUsuario(id),
+  buscarPermissoes(id),
+]);
+// Sem usuário OU sem permissões, a página não pode renderizar
+
+// Promise.allSettled — quando falhas parciais são aceitáveis
+// A página funciona mesmo sem alguns dados
+const resultados = await Promise.allSettled([
+  buscarFeed(),          // conteúdo principal
+  buscarSugestoes(),     // complementar — ok se falhar
+  buscarNotificacoes(),  // complementar — ok se falhar
+]);
+```
+
+---
+
+#### Promise.race — a primeira a terminar vence
+
+Retorna o resultado da **primeira** Promise que se resolver **ou** rejeitar — as demais continuam executando, mas seus resultados são ignorados. Útil para implementar timeout ou competição entre fontes.
+
+```js
+// Timeout para uma requisição — se demorar mais de 5s, rejeita
+function comTimeout(promise, ms) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`Timeout após ${ms}ms`)), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
+
+try {
+  const dados = await comTimeout(fetch('/api/dados-pesados'), 5000);
+  const json = await dados.json();
+  console.log(json);
+} catch (erro) {
+  console.error(erro.message); // "Timeout após 5000ms" se demorar demais
+}
+```
+
+```js
+// Cache vs rede — usa o que chegar primeiro
+async function buscarComCache(url) {
+  const doCache = caches.match(url);           // leitura do cache local
+  const daRede  = fetch(url);                  // requisição à rede
+
+  // Se o cache responder primeiro, usa; se a rede for mais rápida, usa a rede
+  const resposta = await Promise.race([doCache, daRede]);
+  return resposta.json();
+}
+```
+
+```js
+// Atenção: Promise.race rejeita se a primeira a terminar for uma rejeição
+const resultado = await Promise.race([
+  new Promise((_, reject) => setTimeout(() => reject('erro'), 100)),  // rejeita em 100ms
+  new Promise(resolve => setTimeout(() => resolve('ok'), 200)),       // resolve em 200ms
+]);
+// Rejeita com 'erro' — a Promise de 100ms terminou primeiro
+```
+
+---
+
+#### Promise.any — a primeira a ter sucesso vence
+
+Retorna o valor da **primeira** Promise que resolver com sucesso. Ignora rejeições individuais. Só rejeita se **todas** falharem, com um `AggregateError` contendo todos os erros.
+
+```js
+// Buscar dado do servidor mais rápido disponível
+async function buscarDeQualquerServidor(recurso) {
+  try {
+    const dado = await Promise.any([
+      fetch(`https://servidor1.com/${recurso}`).then(r => r.json()),
+      fetch(`https://servidor2.com/${recurso}`).then(r => r.json()),
+      fetch(`https://servidor3.com/${recurso}`).then(r => r.json()),
+    ]);
+    return dado; // resultado do primeiro servidor que responder com sucesso
+  } catch (erro) {
+    // AggregateError — só chega aqui se TODOS falharem
+    console.error('Todos os servidores falharam:');
+    erro.errors.forEach((e, i) => console.error(`  Servidor ${i + 1}:`, e.message));
+    throw erro;
+  }
+}
+```
+
+```js
+// Diferença entre race e any:
+
+// Promise.race — primeira a TERMINAR (sucesso OU falha)
+await Promise.race([
+  Promise.reject('erro'),     // ← termina primeiro (rejeição)
+  Promise.resolve('ok'),
+]);
+// Resultado: rejeita com 'erro'
+
+// Promise.any — primeira a ter SUCESSO (ignora falhas)
+await Promise.any([
+  Promise.reject('erro'),     // ← ignorada
+  Promise.resolve('ok'),      // ← primeira com sucesso
+]);
+// Resultado: resolve com 'ok'
+```
+
+```js
+// AggregateError — quando todas rejeitam
+try {
+  await Promise.any([
+    Promise.reject(new Error('falha 1')),
+    Promise.reject(new Error('falha 2')),
+    Promise.reject(new Error('falha 3')),
+  ]);
+} catch (erro) {
+  console.log(erro instanceof AggregateError); // true
+  console.log(erro.errors.length);             // 3
+  erro.errors.forEach(e => console.error(e.message));
+  // "falha 1", "falha 2", "falha 3"
+}
+```
+
+---
+
+#### Promise.resolve e Promise.reject — atalhos
+
+Criam Promises já resolvidas ou rejeitadas. Úteis para normalizar valores em código que espera Promises ou para testes.
+
+```js
+// Promise já resolvida
 Promise.resolve(42).then(v => console.log(v)); // 42
-Promise.reject(new Error('falha')).catch(e => console.error(e));
+Promise.resolve({ nome: 'Ana' }).then(u => console.log(u.nome));
+
+// Promise já rejeitada
+Promise.reject(new Error('falha')).catch(e => console.error(e.message));
+
+// Normalizar: função que pode retornar valor ou Promise
+function obterDado(useCache) {
+  if (useCache) {
+    return Promise.resolve(dadosCache);  // retorna Promise com valor em cache
+  }
+  return fetch('/api/dados').then(r => r.json()); // retorna Promise da rede
+}
+// Em ambos os casos, o consumidor pode usar .then() ou await
+```
+
+---
+
+#### Exemplo completo: combinando métodos
+
+```js
+// Cenário real: carregar uma página com dados obrigatórios e opcionais
+
+async function carregarPaginaProduto(produtoId) {
+  // 1. Dados obrigatórios — Promise.all (falha cancela tudo)
+  const [produto, estoque] = await Promise.all([
+    fetch(`/api/produtos/${produtoId}`).then(r => r.json()),
+    fetch(`/api/estoque/${produtoId}`).then(r => r.json()),
+  ]);
+
+  // 2. Dados complementares — Promise.allSettled (falha parcial é ok)
+  const [avaliacoes, recomendacoes, banner] = await Promise.allSettled([
+    fetch(`/api/avaliacoes?produtoId=${produtoId}`).then(r => r.json()),
+    fetch(`/api/recomendacoes?produtoId=${produtoId}`).then(r => r.json()),
+    fetch('/api/banner-promocional').then(r => r.json()),
+  ]);
+
+  return {
+    produto,
+    estoque,
+    avaliacoes:     avaliacoes.status === 'fulfilled' ? avaliacoes.value : [],
+    recomendacoes:  recomendacoes.status === 'fulfilled' ? recomendacoes.value : [],
+    banner:         banner.status === 'fulfilled' ? banner.value : null,
+  };
+}
+```
+
+```js
+// Cenário: processar lote com controle de concorrência
+// Evita sobrecarregar o servidor com centenas de requisições simultâneas
+
+async function processarEmLotes(itens, processarItem, tamanhoBatch = 5) {
+  const resultados = [];
+
+  for (let i = 0; i < itens.length; i += tamanhoBatch) {
+    const lote = itens.slice(i, i + tamanhoBatch);
+    const resultadosLote = await Promise.allSettled(
+      lote.map(item => processarItem(item))
+    );
+    resultados.push(...resultadosLote);
+  }
+
+  return resultados;
+}
+
+// Uso: atualizar preço de 100 produtos, 5 por vez
+const produtos = await buscarTodosProdutos();
+const resultados = await processarEmLotes(
+  produtos,
+  (p) => fetch(`/api/produtos/${p.id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preco: p.preco * 1.1 }),
+  }),
+  5 // 5 requisições simultâneas por lote
+);
+
+const sucessos = resultados.filter(r => r.status === 'fulfilled').length;
+console.log(`${sucessos}/${produtos.length} preços atualizados`);
 ```
 
 ## 6. Fetch API
@@ -3735,37 +4087,54 @@ try {
 }
 ```
 
-**Wrapper reutilizável:**
+**Wrapper reutilizável (com timeout via AbortController):**
 ```js
 async function api(url, opcoes = {}) {
+  const { timeout = 10000, ...resto } = opcoes;
+
+  const controller = new AbortController();
+  const timerId = setTimeout(() => controller.abort(), timeout);
+
   const config = {
     headers: {
       'Content-Type': 'application/json',
-      ...opcoes.headers,
+      ...resto.headers,
     },
-    ...opcoes,
+    ...resto,
+    signal: controller.signal,
   };
 
-  if (opcoes.body) {
-    config.body = JSON.stringify(opcoes.body);
+  if (resto.body) {
+    config.body = JSON.stringify(resto.body);
   }
 
-  const resposta = await fetch(url, config);
+  try {
+    const resposta = await fetch(url, config);
 
-  if (!resposta.ok) {
-    const erro = await resposta.json().catch(() => ({}));
-    throw new Error(erro.mensagem ?? `Erro ${resposta.status}`);
+    if (!resposta.ok) {
+      const erro = await resposta.json().catch(() => ({}));
+      throw new Error(erro.mensagem ?? `Erro ${resposta.status}`);
+    }
+
+    if (resposta.status === 204) return null;
+
+    return resposta.json();
+  } catch (erro) {
+    if (erro.name === 'AbortError') {
+      throw new Error(`Requisição para ${url} excedeu o timeout de ${timeout}ms`);
+    }
+    throw erro;
+  } finally {
+    clearTimeout(timerId);
   }
-
-  // 204 No Content — sem corpo
-  if (resposta.status === 204) return null;
-
-  return resposta.json();
 }
 
-// Uso
+// Uso básico
 const usuario = await api('/api/usuarios/1');
 const novo = await api('/api/usuarios', { method: 'POST', body: { nome: 'Ana' } });
+
+// Com timeout personalizado (3 segundos)
+const relatorio = await api('/api/relatorio-pesado', { timeout: 3000 });
 ```
 
 ---
