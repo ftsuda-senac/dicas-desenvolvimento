@@ -1181,6 +1181,518 @@ datasources:
         datasourceUid: loki
 ```
 
+### 7.8. Stack ELK — Elasticsearch, Logstash e Kibana
+
+A stack **ELK** é uma alternativa consolidada à stack Loki/Promtail/Grafana para gerenciamento de logs. Enquanto o Loki indexa apenas labels (mais leve e barato), o Elasticsearch indexa o conteúdo completo dos logs, permitindo buscas full-text mais poderosas — ao custo de maior consumo de recursos.
+
+```
+Aplicação Spring Boot
+    │
+    ├── logs JSON ──► Filebeat ──► Logstash ──► Elasticsearch
+    │                   (coleta)    (transforma)    (armazena/indexa)
+    │                                                     │
+    │                                                  Kibana
+    │                                          (visualização/dashboards)
+    │
+    └── Alternativa simplificada:
+        logs JSON ──► Filebeat ──────────────► Elasticsearch
+                       (sem Logstash)              │
+                                                Kibana
+```
+
+| Componente | Função | Equivalente na stack Grafana |
+|------------|--------|------------------------------|
+| **Elasticsearch** | Armazenamento e busca full-text de logs | Loki |
+| **Logstash** | Pipeline de ingestão: parsing, enriquecimento, roteamento | Promtail / Alloy |
+| **Kibana** | Visualização, dashboards, alertas | Grafana |
+| **Filebeat** | Agente leve de coleta de logs (substitui Logstash na coleta) | Promtail |
+
+#### 7.8.1. Quando usar ELK vs Loki/Grafana
+
+| Critério | ELK | Loki + Grafana |
+|----------|-----|----------------|
+| **Busca full-text** | Excelente (Elasticsearch indexa tudo) | Limitada (indexa labels, filtra texto com grep) |
+| **Consumo de recursos** | Alto (RAM e disco) | Baixo (índice compacto) |
+| **Custo operacional** | Mais complexo de operar | Mais simples e leve |
+| **Escala** | Horizontal com shards/réplicas | Horizontal com chunks/compactor |
+| **Dashboards de log** | Kibana (Discover, Lens) | Grafana (Explore, LogQL) |
+| **Correlação com métricas/traces** | Requer integração extra (APM, Jaeger) | Nativa com Prometheus e Tempo |
+| **Caso de uso ideal** | Logs de múltiplas origens, compliance, auditoria, busca ad-hoc complexa | Microsserviços cloud-native já usando Prometheus/Grafana |
+
+#### 7.8.2. docker-compose.yml — Stack ELK
+
+```yaml
+version: "3.9"
+
+services:
+
+  # ── Elasticsearch ─────────────────────────────────────────────────
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.14.1
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false    # desabilitar em dev; habilitar em produção
+      - xpack.security.http.ssl.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m  # ajuste conforme memória disponível
+      - cluster.name=observabilidade
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks: [elk]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Logstash ──────────────────────────────────────────────────────
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.14.1
+    container_name: logstash
+    ports:
+      - "5044:5044"    # Beats input
+      - "5000:5000"    # TCP input
+      - "9600:9600"    # API de monitoramento
+    volumes:
+      - ./elk/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      - ./elk/logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx256m
+    networks: [elk]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ── Kibana ────────────────────────────────────────────────────────
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.14.1
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - xpack.security.enabled=false
+    networks: [elk]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ── Filebeat (agente de coleta) ───────────────────────────────────
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.14.1
+    container_name: filebeat
+    user: root
+    volumes:
+      - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/log:/var/log:ro
+      - filebeat_data:/usr/share/filebeat/data
+    networks: [elk]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  elasticsearch_data:
+  filebeat_data:
+
+networks:
+  elk:
+    driver: bridge
+```
+
+#### 7.8.3. elk/logstash/config/logstash.yml
+
+```yaml
+http.host: "0.0.0.0"
+xpack.monitoring.elasticsearch.hosts: ["http://elasticsearch:9200"]
+
+pipeline.workers: 2
+pipeline.batch.size: 125
+pipeline.batch.delay: 50
+```
+
+#### 7.8.4. elk/logstash/pipeline/logstash.conf
+
+```ruby
+input {
+  # Receber logs do Filebeat
+  beats {
+    port => 5044
+  }
+
+  # Receber logs via TCP (alternativa para envio direto da aplicação)
+  tcp {
+    port => 5000
+    codec => json_lines
+  }
+}
+
+filter {
+  # Parsear JSON se o log vier em formato estruturado
+  if [message] =~ /^\{/ {
+    json {
+      source => "message"
+      target => "log"
+      remove_field => ["message"]
+    }
+  }
+
+  # Extrair campos do MDC para o nível raiz
+  if [log][mdc] {
+    ruby {
+      code => '
+        mdc = event.get("[log][mdc]")
+        if mdc.is_a?(Hash)
+          mdc.each { |k, v| event.set(k, v) }
+        end
+      '
+    }
+  }
+
+  # Enriquecer com informações do host
+  mutate {
+    add_field => {
+      "environment" => "${ENVIRONMENT:dev}"
+    }
+    remove_field => ["host", "agent", "ecs", "input", "log.offset"]
+  }
+
+  # Parsear timestamp do log (se presente)
+  if [log][@timestamp] {
+    date {
+      match => ["[log][@timestamp]", "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", "ISO8601"]
+      target => "@timestamp"
+    }
+  }
+
+  # Anonimizar dados sensíveis
+  mutate {
+    gsub => [
+      "[log][message]", "\d{3}\.\d{3}\.\d{3}-\d{2}", "***.***.***-**",
+      "[log][message]", "\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}", "****-****-****-****"
+    ]
+  }
+}
+
+output {
+  elasticsearch {
+    hosts => ["http://elasticsearch:9200"]
+    index => "logs-%{[log][service]}-%{+YYYY.MM.dd}"
+    # Em produção com segurança habilitada:
+    # user => "${ES_USER}"
+    # password => "${ES_PASSWORD}"
+  }
+
+  # Debug: descomentar para ver os eventos processados no console
+  # stdout { codec => rubydebug }
+}
+```
+
+#### 7.8.5. elk/filebeat/filebeat.yml
+
+```yaml
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/app/*.log
+    json.keys_under_root: true      # campos JSON no nível raiz
+    json.add_error_key: true         # adiciona campo de erro se JSON inválido
+    json.message_key: message        # campo usado como "message"
+    json.overwrite_keys: true
+
+    # Multiline: agrupar stack traces Java
+    multiline.pattern: '^\{'
+    multiline.negate: true
+    multiline.match: after
+
+    fields:
+      service: pedidos-service
+      environment: dev
+    fields_under_root: true
+
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - drop_fields:
+      fields: ["agent.ephemeral_id", "agent.id", "agent.version", "ecs.version"]
+      ignore_missing: true
+
+# Enviar para o Logstash
+output.logstash:
+  hosts: ["logstash:5044"]
+  bulk_max_size: 1024
+
+# Alternativa: enviar diretamente ao Elasticsearch (sem Logstash)
+# output.elasticsearch:
+#   hosts: ["http://elasticsearch:9200"]
+#   index: "logs-pedidos-service-%{+yyyy.MM.dd}"
+
+# ILM (Index Lifecycle Management) — gerenciamento automático de retenção
+setup.ilm.enabled: true
+setup.ilm.rollover_alias: "logs-pedidos-service"
+setup.ilm.pattern: "{now/d}-000001"
+
+# Dashboards prontos do Filebeat no Kibana
+setup.kibana:
+  host: "http://kibana:5601"
+setup.dashboards.enabled: true
+```
+
+#### 7.8.6. Envio direto da aplicação via Log4j2 (sem Filebeat)
+
+Em cenários onde não é possível usar Filebeat, o Log4j2 pode enviar logs diretamente ao Logstash via TCP/Socket:
+
+```xml
+<!-- log4j2-spring.xml — appender para Logstash via TCP -->
+<Configuration status="WARN">
+    <Appenders>
+        <Socket name="Logstash" host="localhost" port="5000" protocol="TCP">
+            <JsonTemplateLayout eventTemplateUri="classpath:log4j2-json-template.json"/>
+        </Socket>
+
+        <Console name="Console" target="SYSTEM_OUT">
+            <PatternLayout pattern="%d %-5level [%thread] %logger{36} - %msg%n"/>
+        </Console>
+    </Appenders>
+
+    <Loggers>
+        <AsyncLogger name="com.exemplo" level="INFO" additivity="false">
+            <AppenderRef ref="Logstash"/>
+            <AppenderRef ref="Console"/>
+        </AsyncLogger>
+
+        <Root level="WARN">
+            <AppenderRef ref="Console"/>
+        </Root>
+    </Loggers>
+</Configuration>
+```
+
+Alternativa com Logback usando o `logstash-logback-encoder`:
+
+```xml
+<!-- logback-spring.xml -->
+<configuration>
+    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+        <destination>localhost:5000</destination>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>requestId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>traceId</includeMdcKeyName>
+            <includeMdcKeyName>spanId</includeMdcKeyName>
+            <customFields>{"service":"pedidos-service"}</customFields>
+        </encoder>
+        <!-- Reconexão automática -->
+        <reconnectionDelay>5 seconds</reconnectionDelay>
+        <!-- Buffer em disco para não perder logs se o Logstash cair -->
+        <ringBufferSize>8192</ringBufferSize>
+    </appender>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d %-5level [%X{requestId}] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="LOGSTASH"/>
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
+```
+
+#### 7.8.7. Index Lifecycle Management (ILM)
+
+O ILM do Elasticsearch gerencia automaticamente a retenção e o ciclo de vida dos índices de log:
+
+```json
+PUT _ilm/policy/logs-policy
+{
+  "policy": {
+    "phases": {
+      "hot": {
+        "min_age": "0ms",
+        "actions": {
+          "rollover": {
+            "max_primary_shard_size": "50gb",
+            "max_age": "1d"
+          },
+          "set_priority": { "priority": 100 }
+        }
+      },
+      "warm": {
+        "min_age": "7d",
+        "actions": {
+          "shrink": { "number_of_shards": 1 },
+          "forcemerge": { "max_num_segments": 1 },
+          "set_priority": { "priority": 50 }
+        }
+      },
+      "cold": {
+        "min_age": "30d",
+        "actions": {
+          "set_priority": { "priority": 0 },
+          "freeze": {}
+        }
+      },
+      "delete": {
+        "min_age": "90d",
+        "actions": {
+          "delete": {}
+        }
+      }
+    }
+  }
+}
+```
+
+```
+Ciclo de vida dos índices:
+
+Hot (0-7d)        Warm (7-30d)       Cold (30-90d)      Delete (90d+)
+┌──────────┐     ┌──────────┐       ┌──────────┐       ┌──────────┐
+│ Escrita  │     │ Somente  │       │ Congelado│       │ Removido │
+│ ativa    │ ──► │ leitura  │  ──►  │ (frozen) │  ──►  │          │
+│ SSD      │     │ Compacto │       │ HDD      │       │          │
+└──────────┘     └──────────┘       └──────────┘       └──────────┘
+```
+
+#### 7.8.8. Consultas no Kibana (KQL e Lucene)
+
+No Kibana, use o **Discover** para explorar logs e o **Lens** para criar dashboards.
+
+**KQL (Kibana Query Language):**
+
+```kql
+# Todos os erros do serviço
+log.level: "ERROR" and service: "pedidos-service"
+
+# Logs de um trace específico
+traceId: "4bf92f3577b34da6a3ce929d0e0e4736"
+
+# Exceções de um tipo específico
+log.exception.stackTrace: *NullPointerException*
+
+# Logs de um endpoint com erro
+log.logger: *PedidoController* and log.level: "ERROR"
+
+# Busca por intervalo de tempo e usuário
+userId: "user-456" and @timestamp >= "2024-05-15T10:00:00" and @timestamp <= "2024-05-15T11:00:00"
+```
+
+**Lucene (para buscas mais avançadas):**
+
+```lucene
+# Busca fuzzy (tolera erros de digitação)
+log.message: pedido~2
+
+# Busca por proximidade
+log.message: "pedido criado"~5
+
+# Busca com wildcard e range
+log.level: ERROR AND log.message: /Connection.*timeout/
+    AND @timestamp:[now-1h TO now]
+
+# Agregação por campo (usado no Lens para dashboards)
+service: "pedidos-service" AND NOT log.logger: *actuator*
+```
+
+#### 7.8.9. Alertas no Kibana
+
+O Kibana oferece alertas nativos via **Rules** (Stack Management → Rules):
+
+```
+Kibana Alerting
+    │
+    ├── Elasticsearch query rule
+    │   └── Dispara quando uma query retorna resultados acima do limiar
+    │
+    ├── Log threshold rule
+    │   └── Dispara quando a contagem de logs atinge um limiar
+    │
+    └── Actions (conectores)
+        ├── Slack
+        ├── E-mail
+        ├── PagerDuty
+        ├── Webhook
+        └── Microsoft Teams
+```
+
+Exemplo de regra — alertar quando houver mais de 10 erros em 5 minutos:
+
+1. **Stack Management → Rules → Create rule**
+2. **Rule type:** Elasticsearch query
+3. **Query:**
+   ```json
+   {
+     "bool": {
+       "must": [
+         { "term": { "log.level": "ERROR" } },
+         { "term": { "service": "pedidos-service" } },
+         { "range": { "@timestamp": { "gte": "now-5m" } } }
+       ]
+     }
+   }
+   ```
+4. **Threshold:** quando `count` > 10
+5. **Action:** enviar para Slack com mensagem customizada
+
+#### 7.8.10. Elastic APM — Traces com a stack ELK
+
+Para correlacionar logs e traces dentro do ecossistema Elastic (sem depender do Grafana Tempo), use o **Elastic APM**:
+
+```xml
+<!-- Dependência do agente APM para Spring Boot -->
+<dependency>
+    <groupId>co.elastic.apm</groupId>
+    <artifactId>apm-agent-attach</artifactId>
+    <version>1.49.0</version>
+</dependency>
+```
+
+```java
+@SpringBootApplication
+public class Application {
+
+    public static void main(String[] args) {
+        ElasticApmAttacher.attach();
+        SpringApplication.run(Application.class, args);
+    }
+}
+```
+
+```properties
+# src/main/resources/elasticapm.properties
+service_name=pedidos-service
+server_urls=http://localhost:8200
+environment=dev
+application_packages=com.exemplo
+log_ecs_reformatting=SHADE
+enable_log_correlation=true
+```
+
+Adicione o APM Server ao `docker-compose.yml`:
+
+```yaml
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:8.14.1
+    container_name: apm-server
+    ports:
+      - "8200:8200"
+    environment:
+      - output.elasticsearch.hosts=["http://elasticsearch:9200"]
+      - apm-server.kibana.host=http://kibana:5601
+    networks: [elk]
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+```
+
+Com essa configuração, o Kibana exibe logs, métricas e traces na aba **Observability → APM**, com correlação automática entre os três pilares — equivalente ao que o Grafana oferece com Loki + Prometheus + Tempo.
+
 ---
 
 ## 8. Correlação entre Logs, métricas e Traces no Grafana
@@ -1387,3 +1899,970 @@ Com essa configuração, cada requisição a `POST /pedidos`:
 3. Gera métricas de contagem e latência no Prometheus.
 4. Registra um trace com spans hierárquicos no Tempo.
 5. Permite correlação direta entre logs, métricas e traces no Grafana.
+
+---
+
+## 11. Monitoramento e Alertas
+
+A observabilidade só é completa quando anomalias geram alertas automáticos e dashboards facilitam a investigação. Esta seção cobre a configuração de alertas com Prometheus Alertmanager e Grafana, definição de SLIs/SLOs, dashboards operacionais e boas práticas de resposta a incidentes.
+
+### 11.1. Arquitetura de alertas
+
+```
+Prometheus  ──► Alertmanager ──► Canais de notificação
+(avalia regras)   (agrupa,         ├── Slack
+                   silencia,       ├── E-mail (SMTP)
+                   roteia)         ├── PagerDuty / OpsGenie
+                                   └── Webhooks
+
+Grafana     ──► Grafana Alerting ──► Contact Points
+(regras sobre       (unified         ├── Slack
+ qualquer            alerting)       ├── E-mail
+ datasource)                         └── Microsoft Teams
+```
+
+O Prometheus avalia regras de alerta periodicamente e envia alertas disparados ao **Alertmanager**, que é responsável por agrupar, silenciar, inibir e rotear as notificações. O Grafana também possui seu próprio sistema de alertas (Grafana Alerting), que pode consultar qualquer datasource (Prometheus, Loki, etc.).
+
+### 11.2. Prometheus Alertmanager
+
+#### 11.2.1. Adicionando o Alertmanager ao docker-compose
+
+Adicione ao `docker-compose.yml` da seção 7.1:
+
+```yaml
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./observabilidade/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+    networks: [obs]
+```
+
+Atualize o Prometheus para apontar ao Alertmanager:
+
+```yaml
+  prometheus:
+    # ... configuração existente ...
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-lifecycle"  # permite reload via POST /-/reload
+```
+
+#### 11.2.2. observabilidade/alertmanager.yml
+
+```yaml
+global:
+  resolve_timeout: 5m
+  smtp_from: "alertas@empresa.com"
+  smtp_smarthost: "smtp.empresa.com:587"
+  smtp_auth_username: "alertas@empresa.com"
+  smtp_auth_password: "${SMTP_PASSWORD}"
+  smtp_require_tls: true
+
+route:
+  receiver: "equipe-dev"
+  group_by: ["alertname", "service"]
+  group_wait: 30s        # espera para agrupar alertas do mesmo grupo
+  group_interval: 5m     # intervalo entre notificações do mesmo grupo
+  repeat_interval: 4h    # reenvio se o alerta continuar ativo
+
+  routes:
+    - match:
+        severity: critical
+      receiver: "oncall"
+      group_wait: 10s
+      repeat_interval: 1h
+
+    - match:
+        severity: warning
+      receiver: "equipe-dev"
+      repeat_interval: 4h
+
+    - match:
+        alertname: DeadManSwitch
+      receiver: "heartbeat"
+      repeat_interval: 1m
+
+receivers:
+  - name: "equipe-dev"
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_URL}"
+        channel: "#alertas-dev"
+        title: '{{ .GroupLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}
+          *{{ .Labels.severity | toUpper }}* — {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+    email_configs:
+      - to: "equipe-dev@empresa.com"
+        send_resolved: true
+
+  - name: "oncall"
+    slack_configs:
+      - api_url: "${SLACK_WEBHOOK_URL}"
+        channel: "#oncall"
+        title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        send_resolved: true
+    pagerduty_configs:
+      - service_key: "${PAGERDUTY_SERVICE_KEY}"
+        severity: critical
+
+  - name: "heartbeat"
+    webhook_configs:
+      - url: "http://healthcheck-service:8080/ping"
+
+inhibit_rules:
+  - source_match:
+      severity: critical
+    target_match:
+      severity: warning
+    equal: ["alertname", "service"]
+```
+
+### 11.3. Regras de alerta do Prometheus
+
+#### 11.3.1. Configuração no prometheus.yml
+
+Adicione a referência aos arquivos de regras:
+
+```yaml
+# observabilidade/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+scrape_configs:
+  # ... configurações existentes ...
+```
+
+Monte o diretório de regras no container do Prometheus:
+
+```yaml
+  prometheus:
+    volumes:
+      - ./observabilidade/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observabilidade/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+```
+
+#### 11.3.2. observabilidade/rules/aplicacao.yml
+
+```yaml
+groups:
+  - name: aplicacao.regras
+    interval: 15s
+    rules:
+
+      # ── Disponibilidade ─────────────────────────────────────────────
+      - alert: AplicacaoIndisponivel
+        expr: up{job="pedidos-service"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: pedidos-service
+        annotations:
+          summary: "Aplicação pedidos-service está indisponível"
+          description: >
+            A instância {{ $labels.instance }} não responde ao scrape
+            do Prometheus há mais de 1 minuto.
+          runbook: "https://wiki.empresa.com/runbooks/aplicacao-indisponivel"
+
+      # ── Latência HTTP ───────────────────────────────────────────────
+      - alert: LatenciaAltaP95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket{
+              job="pedidos-service",
+              uri!~"/actuator.*"
+            }[5m])) by (le, uri)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Latência P95 acima de 2s no endpoint {{ $labels.uri }}"
+          description: >
+            O percentil 95 de latência do endpoint {{ $labels.uri }}
+            está em {{ $value | printf "%.2f" }}s (limiar: 2s) nos últimos 5 minutos.
+
+      - alert: LatenciaCriticaP99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_server_requests_seconds_bucket{
+              job="pedidos-service",
+              uri!~"/actuator.*"
+            }[5m])) by (le, uri)
+          ) > 5
+        for: 3m
+        labels:
+          severity: critical
+          service: pedidos-service
+        annotations:
+          summary: "Latência P99 acima de 5s no endpoint {{ $labels.uri }}"
+          description: >
+            O percentil 99 atingiu {{ $value | printf "%.2f" }}s.
+            Possível degradação grave de performance.
+
+      # ── Taxa de erros HTTP ──────────────────────────────────────────
+      - alert: TaxaErrosAlta
+        expr: |
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service",
+            status=~"5..",
+            uri!~"/actuator.*"
+          }[5m]))
+          /
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service",
+            uri!~"/actuator.*"
+          }[5m]))
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: pedidos-service
+        annotations:
+          summary: "Taxa de erros 5xx acima de 5%"
+          description: >
+            {{ $value | printf "%.1f" }}% das requisições retornaram
+            erro 5xx nos últimos 5 minutos.
+
+      # ── Throughput (queda abrupta) ──────────────────────────────────
+      - alert: QuedaDeTrafego
+        expr: |
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service"
+          }[5m]))
+          < 0.1
+            and
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service"
+          }[5m] offset 1h))
+          > 1
+        for: 10m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Queda abrupta de tráfego detectada"
+          description: >
+            O tráfego atual é {{ $value | printf "%.2f" }} req/s,
+            mas há 1 hora era significativamente maior.
+            Possível problema de rede ou load balancer.
+
+      # ── Dead Man Switch (prova que o Prometheus está funcionando) ───
+      - alert: DeadManSwitch
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: "Heartbeat do Prometheus — alerta sempre ativo"
+```
+
+#### 11.3.3. observabilidade/rules/jvm.yml
+
+```yaml
+groups:
+  - name: jvm.regras
+    interval: 15s
+    rules:
+
+      # ── Memória Heap ────────────────────────────────────────────────
+      - alert: HeapUsageAlto
+        expr: |
+          jvm_memory_used_bytes{area="heap", job="pedidos-service"}
+          /
+          jvm_memory_max_bytes{area="heap", job="pedidos-service"}
+          > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Uso de heap acima de 85%"
+          description: >
+            A JVM está usando {{ $value | printf "%.0f" }}% do heap máximo.
+            Instância: {{ $labels.instance }}.
+
+      - alert: HeapUsageCritico
+        expr: |
+          jvm_memory_used_bytes{area="heap", job="pedidos-service"}
+          /
+          jvm_memory_max_bytes{area="heap", job="pedidos-service"}
+          > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          service: pedidos-service
+        annotations:
+          summary: "Uso de heap acima de 95% — risco de OutOfMemoryError"
+          description: >
+            Heap em {{ $value | printf "%.0f" }}%. Considere
+            aumentar -Xmx ou investigar vazamento de memória.
+
+      # ── Garbage Collection ──────────────────────────────────────────
+      - alert: GCExcessivo
+        expr: |
+          sum(rate(jvm_gc_pause_seconds_sum{
+            job="pedidos-service"
+          }[5m])) by (instance)
+          /
+          sum(rate(jvm_gc_pause_seconds_count{
+            job="pedidos-service"
+          }[5m])) by (instance)
+          > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Tempo médio de pausa do GC acima de 500ms"
+          description: >
+            A JVM está gastando tempo excessivo em GC.
+            Tempo médio de pausa: {{ $value | printf "%.2f" }}s.
+
+      - alert: GCFrequente
+        expr: |
+          rate(jvm_gc_pause_seconds_count{
+            job="pedidos-service",
+            action="end of major GC"
+          }[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Full GC muito frequente"
+          description: >
+            Full GC ocorrendo {{ $value | printf "%.2f" }} vezes/s.
+            Investigue vazamento de memória ou aumente o heap.
+
+      # ── Threads ─────────────────────────────────────────────────────
+      - alert: ThreadsAlto
+        expr: jvm_threads_live_threads{job="pedidos-service"} > 300
+        for: 5m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Número de threads acima de 300"
+          description: >
+            {{ $value }} threads ativas. Possível vazamento de threads
+            ou pool mal configurado.
+
+      # ── Connection Pool (HikariCP) ──────────────────────────────────
+      - alert: ConnectionPoolEsgotado
+        expr: |
+          hikaricp_connections_pending{job="pedidos-service"} > 5
+        for: 2m
+        labels:
+          severity: critical
+          service: pedidos-service
+        annotations:
+          summary: "Pool de conexões com fila de espera"
+          description: >
+            {{ $value }} threads aguardando conexão no HikariCP.
+            Possível esgotamento do pool ou queries lentas bloqueando conexões.
+
+      - alert: ConnectionPoolUsageAlto
+        expr: |
+          hikaricp_connections_active{job="pedidos-service"}
+          /
+          hikaricp_connections_max{job="pedidos-service"}
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Uso do connection pool acima de 80%"
+          description: >
+            {{ $value | printf "%.0f" }}% das conexões estão em uso.
+            Considere aumentar o pool ou otimizar queries.
+```
+
+#### 11.3.4. observabilidade/rules/negocio.yml
+
+```yaml
+groups:
+  - name: negocio.regras
+    interval: 30s
+    rules:
+
+      # ── Métricas de negócio ─────────────────────────────────────────
+      - alert: PedidosZeradosPorMuitoTempo
+        expr: |
+          rate(pedidos_criados_total{servico="pedidos"}[15m]) == 0
+            and
+          hour() >= 8 and hour() <= 22
+        for: 15m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Nenhum pedido criado nos últimos 15 minutos (horário comercial)"
+          description: >
+            Esperava-se atividade de criação de pedidos entre 8h e 22h
+            mas nenhum pedido foi registrado.
+
+      - alert: TaxaCancelamentosAlta
+        expr: |
+          rate(pedidos_cancelados_total[1h])
+          /
+          rate(pedidos_criados_total[1h])
+          > 0.3
+        for: 30m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Taxa de cancelamentos acima de 30%"
+          description: >
+            {{ $value | printf "%.0f" }}% dos pedidos estão sendo cancelados.
+            Investigar possíveis problemas de UX, estoque ou pagamento.
+```
+
+### 11.4. Grafana Alerting
+
+O Grafana 10+ oferece **Unified Alerting**, que permite criar regras de alerta diretamente sobre qualquer datasource, sem depender exclusivamente do Prometheus Alertmanager.
+
+#### 11.4.1. Configuração de Contact Points
+
+No `docker-compose.yml`, adicione variáveis ao Grafana:
+
+```yaml
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_ALERTING_ENABLED: "false"  # desabilita o legacy alerting
+```
+
+Configure Contact Points via provisioning:
+
+```yaml
+# observabilidade/grafana-alerting.yml
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: "slack-equipe-dev"
+    receivers:
+      - uid: slack-dev
+        type: slack
+        settings:
+          url: "${SLACK_WEBHOOK_URL}"
+          recipient: "#alertas-dev"
+          title: |
+            {{ `{{ .CommonLabels.alertname }}` }}
+          text: |
+            {{ `{{ range .Alerts }}` }}
+            **{{ `{{ .Labels.severity | toUpper }}` }}** — {{ `{{ .Annotations.summary }}` }}
+            {{ `{{ .Annotations.description }}` }}
+            {{ `{{ end }}` }}
+
+  - orgId: 1
+    name: "email-equipe"
+    receivers:
+      - uid: email-dev
+        type: email
+        settings:
+          addresses: "equipe-dev@empresa.com"
+
+policies:
+  - orgId: 1
+    receiver: "slack-equipe-dev"
+    group_by: ["grafana_folder", "alertname"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: "email-equipe"
+        matchers:
+          - severity = critical
+        repeat_interval: 1h
+```
+
+Monte o arquivo no Grafana:
+
+```yaml
+  grafana:
+    volumes:
+      - ./observabilidade/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./observabilidade/grafana-alerting.yml:/etc/grafana/provisioning/alerting/alerting.yml:ro
+      - grafana_data:/var/lib/grafana
+```
+
+#### 11.4.2. Alertas sobre Logs (Loki)
+
+O Grafana permite criar alertas diretamente sobre consultas LogQL — algo que o Prometheus sozinho não faz:
+
+```logql
+# Alerta: mais de 10 erros por minuto
+sum(count_over_time({job="pedidos-service"} | json | level = "ERROR" [1m])) > 10
+
+# Alerta: exceção específica detectada
+count_over_time({job="pedidos-service"} |= "OutOfMemoryError" [5m]) > 0
+
+# Alerta: erro de conexão com banco
+count_over_time({job="pedidos-service"} |= "ConnectionPoolTimeoutException" [5m]) > 3
+```
+
+No Grafana UI: **Alerting → Alert rules → New alert rule** → selecione Loki como datasource e insira a query.
+
+#### 11.4.3. Alertas sobre Traces (Tempo)
+
+```traceql
+# Alerta: traces com erro em endpoint crítico
+{ .http.route = "/pedidos" && status = error } | count() > 5
+
+# Alerta: latência extrema
+{ .http.route = "/pagamentos" && duration > 10s } | count() > 0
+```
+
+### 11.5. SLIs, SLOs e Error Budgets
+
+#### 11.5.1. Conceitos
+
+```
+SLI (Service Level Indicator)
+  └── Métrica que mede o comportamento do serviço
+      Ex.: "proporção de requisições com latência < 500ms"
+
+SLO (Service Level Objective)
+  └── Meta sobre o SLI
+      Ex.: "99.5% das requisições devem ter latência < 500ms em 30 dias"
+
+SLA (Service Level Agreement)
+  └── Contrato formal com consequências financeiras
+      Ex.: "Garantimos 99.9% de disponibilidade; abaixo disso, créditos são aplicados"
+
+Error Budget
+  └── Margem de erro permitida = 1 - SLO
+      Ex.: SLO 99.5% → Error Budget = 0.5% → ~3.6h de indisponibilidade/mês
+```
+
+| SLO | Error Budget (30 dias) | Significado prático |
+|-----|------------------------|---------------------|
+| 99% | 7h 12min | ~14 min/dia de margem |
+| 99.5% | 3h 36min | ~7 min/dia de margem |
+| 99.9% | 43min 12s | ~1.4 min/dia de margem |
+| 99.95% | 21min 36s | margem muito apertada |
+
+#### 11.5.2. Regras de SLO no Prometheus
+
+```yaml
+# observabilidade/rules/slo.yml
+groups:
+  - name: slo.regras
+    interval: 30s
+    rules:
+
+      # ── Recording rules para SLIs ──────────────────────────────────
+
+      # SLI de disponibilidade: proporção de requisições não-5xx
+      - record: sli:disponibilidade:rate5m
+        expr: |
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service",
+            status!~"5..",
+            uri!~"/actuator.*"
+          }[5m]))
+          /
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service",
+            uri!~"/actuator.*"
+          }[5m]))
+
+      # SLI de latência: proporção de requisições abaixo de 500ms
+      - record: sli:latencia:rate5m
+        expr: |
+          sum(rate(http_server_requests_seconds_bucket{
+            job="pedidos-service",
+            le="0.5",
+            uri!~"/actuator.*"
+          }[5m]))
+          /
+          sum(rate(http_server_requests_seconds_count{
+            job="pedidos-service",
+            uri!~"/actuator.*"
+          }[5m]))
+
+      # ── Alertas de Error Budget ─────────────────────────────────────
+
+      # Burn rate alto: consumindo error budget 14x mais rápido que o normal
+      # (em 1h consome o que seria aceitável em ~14h)
+      - alert: ErrorBudgetBurnRateAlto
+        expr: |
+          (1 - sli:disponibilidade:rate5m) > (14 * (1 - 0.995))
+        for: 5m
+        labels:
+          severity: critical
+          service: pedidos-service
+        annotations:
+          summary: "Error budget sendo consumido rapidamente"
+          description: >
+            A taxa de erro atual consumirá o error budget mensal
+            em menos de 3 dias. SLI atual: {{ $value | printf "%.4f" }}.
+
+      # Burn rate moderado: consumindo 3x mais rápido que o normal
+      - alert: ErrorBudgetBurnRateModerado
+        expr: |
+          (1 - sli:disponibilidade:rate5m) > (3 * (1 - 0.995))
+        for: 30m
+        labels:
+          severity: warning
+          service: pedidos-service
+        annotations:
+          summary: "Error budget em consumo moderado"
+          description: >
+            A taxa de erro está acima do esperado para manter o SLO de 99.5%.
+```
+
+### 11.6. Dashboards Operacionais
+
+#### 11.6.1. Método RED para serviços
+
+O método **RED** (Rate, Errors, Duration) é o padrão para dashboards de serviços. Cada serviço deve ter um dashboard com estes três painéis principais:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Pedidos Service — RED                        │
+├──────────────────────┬──────────────────────┬──────────────────┤
+│   Rate (req/s)       │   Errors (%)         │  Duration (ms)   │
+│   ████████▓▓░░       │   ██░░░░░░░░         │  P50: 45ms       │
+│   23.5 req/s         │   2.1%               │  P95: 230ms      │
+│                      │                      │  P99: 890ms      │
+├──────────────────────┴──────────────────────┴──────────────────┤
+│                    Status por Endpoint                          │
+│  POST /pedidos      ████████████████ 12.3 req/s   1.2% erros   │
+│  GET  /pedidos/{id} ██████████ 8.1 req/s          0.1% erros   │
+│  GET  /pedidos      ████ 3.1 req/s                0.0% erros   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Queries PromQL para o dashboard RED:
+
+```promql
+# Rate — requisições por segundo
+sum(rate(http_server_requests_seconds_count{
+  job="pedidos-service",
+  uri!~"/actuator.*"
+}[5m])) by (method, uri)
+
+# Errors — percentual de erros 5xx
+sum(rate(http_server_requests_seconds_count{
+  job="pedidos-service",
+  status=~"5..",
+  uri!~"/actuator.*"
+}[5m]))
+/
+sum(rate(http_server_requests_seconds_count{
+  job="pedidos-service",
+  uri!~"/actuator.*"
+}[5m])) * 100
+
+# Duration — percentis de latência
+histogram_quantile(0.50,
+  sum(rate(http_server_requests_seconds_bucket{
+    job="pedidos-service",
+    uri!~"/actuator.*"
+  }[5m])) by (le))
+
+histogram_quantile(0.95, ...)  # P95
+histogram_quantile(0.99, ...)  # P99
+```
+
+#### 11.6.2. Método USE para infraestrutura
+
+O método **USE** (Utilization, Saturation, Errors) é ideal para recursos de infraestrutura (CPU, memória, disco, pool de conexões):
+
+```promql
+# Utilização de CPU da JVM
+system_cpu_usage{job="pedidos-service"}
+process_cpu_usage{job="pedidos-service"}
+
+# Utilização de Heap
+jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}
+
+# Saturação do Connection Pool (HikariCP)
+hikaricp_connections_active / hikaricp_connections_max
+
+# Fila de espera (saturação)
+hikaricp_connections_pending
+```
+
+#### 11.6.3. Dashboard de SLO
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SLO Dashboard — 30 dias                      │
+├───────────────────────────────┬─────────────────────────────────┤
+│  Disponibilidade              │  Latência (P95 < 500ms)         │
+│  SLO: 99.5%                   │  SLO: 99.0%                     │
+│  Atual: 99.72%  ✅            │  Atual: 98.85%  ⚠️              │
+│  Error Budget restante: 62%   │  Error Budget restante: 0%      │
+│  ████████████████▓▓▓░░░░░░    │  ██████████████████████████████  │
+├───────────────────────────────┴─────────────────────────────────┤
+│  Histórico de Error Budget (últimos 30 dias)                    │
+│  100% ┤██████████████████▓▓▓▓▓▓▓▓▓▓▓░░░░                       │
+│   50% ┤                                                         │
+│    0% ┤─────────────────────────────────────── dias              │
+│       1    5    10    15    20    25    30                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Queries para o dashboard de SLO:
+
+```promql
+# Error budget restante (%) nos últimos 30 dias
+(
+  1 - (
+    (1 - (
+      sum_over_time(sli:disponibilidade:rate5m[30d])
+      / count_over_time(sli:disponibilidade:rate5m[30d])
+    ))
+    / (1 - 0.995)
+  )
+) * 100
+```
+
+### 11.7. Métricas customizadas com Micrometer
+
+#### 11.7.1. Gauge para monitorar estado
+
+```java
+@Component
+public class FilaMetrics {
+
+    private final AtomicInteger filaPendente = new AtomicInteger(0);
+
+    public FilaMetrics(MeterRegistry registry) {
+        Gauge.builder("fila.pedidos.pendentes", filaPendente, AtomicInteger::get)
+                .description("Quantidade de pedidos na fila de processamento")
+                .tag("tipo", "processamento")
+                .register(registry);
+    }
+
+    public void incrementar() { filaPendente.incrementAndGet(); }
+    public void decrementar() { filaPendente.decrementAndGet(); }
+}
+```
+
+#### 11.7.2. DistributionSummary para valores de negócio
+
+```java
+@Component
+public class PedidoMetricsAvancado {
+
+    private final DistributionSummary valorPedidos;
+
+    public PedidoMetricsAvancado(MeterRegistry registry) {
+        valorPedidos = DistributionSummary.builder("pedidos.valor")
+                .description("Distribuição do valor dos pedidos")
+                .baseUnit("BRL")
+                .publishPercentiles(0.5, 0.75, 0.95, 0.99)
+                .publishPercentileHistogram()
+                .minimumExpectedValue(10.0)
+                .maximumExpectedValue(10000.0)
+                .register(registry);
+    }
+
+    public void registrarValor(BigDecimal valor) {
+        valorPedidos.record(valor.doubleValue());
+    }
+}
+```
+
+#### 11.7.3. FunctionCounter para métricas derivadas
+
+```java
+@Component
+public class CacheMetrics {
+
+    public CacheMetrics(MeterRegistry registry, CacheManager cacheManager) {
+        Cache produtosCache = cacheManager.getCache("produtos");
+        if (produtosCache != null) {
+            FunctionCounter.builder("cache.hits", produtosCache,
+                    c -> c.getNativeCache().stats().hitCount())
+                    .tag("cache", "produtos")
+                    .register(registry);
+
+            FunctionCounter.builder("cache.misses", produtosCache,
+                    c -> c.getNativeCache().stats().missCount())
+                    .tag("cache", "produtos")
+                    .register(registry);
+        }
+    }
+}
+```
+
+### 11.8. Alertas com Spring Boot Actuator
+
+#### 11.8.1. Health checks customizados
+
+Health checks são a base para alertas de disponibilidade em ambientes Kubernetes e de monitoramento:
+
+```java
+@Component
+public class DatabaseHealthIndicator implements HealthIndicator {
+
+    private final DataSource dataSource;
+
+    public DatabaseHealthIndicator(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    @Override
+    public Health health() {
+        try (Connection conn = dataSource.getConnection()) {
+            if (conn.isValid(3)) {
+                return Health.up()
+                        .withDetail("database", "PostgreSQL")
+                        .withDetail("validationTime", "< 3s")
+                        .build();
+            }
+        } catch (SQLException e) {
+            return Health.down()
+                    .withDetail("error", e.getMessage())
+                    .build();
+        }
+        return Health.down().build();
+    }
+}
+```
+
+```java
+@Component
+public class IntegracaoExternaHealthIndicator implements HealthIndicator {
+
+    private final RestClient restClient;
+
+    public IntegracaoExternaHealthIndicator(RestClient.Builder builder) {
+        this.restClient = builder
+                .baseUrl("http://servico-externo:8080")
+                .build();
+    }
+
+    @Override
+    public Health health() {
+        try {
+            ResponseEntity<Void> response = restClient.get()
+                    .uri("/health")
+                    .retrieve()
+                    .toBodilessEntity();
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                return Health.up()
+                        .withDetail("servico", "integracao-externa")
+                        .build();
+            }
+            return Health.down()
+                    .withDetail("status", response.getStatusCode().value())
+                    .build();
+        } catch (Exception e) {
+            return Health.down()
+                    .withDetail("error", e.getMessage())
+                    .build();
+        }
+    }
+}
+```
+
+#### 11.8.2. Configuração de health groups
+
+```yaml
+management:
+  endpoint:
+    health:
+      show-details: when-authorized
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState, db, redis
+        startup:
+          include: livenessState, readinessState
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+```
+
+Em Kubernetes, aponte as probes para os grupos:
+
+```yaml
+# deployment.yaml (trecho)
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+
+startupProbe:
+  httpGet:
+    path: /actuator/health/startup
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+```
+
+### 11.9. Boas Práticas de Monitoramento e Alertas
+
+#### 11.9.1. Sintomas vs Causas
+
+Alerte sobre **sintomas** (o que o usuário percebe), não sobre **causas** (detalhes internos):
+
+| Tipo | Exemplo | Recomendação |
+|------|---------|--------------|
+| **Sintoma** | "Taxa de erros 5xx acima de 5%" | Alerta principal |
+| **Sintoma** | "Latência P95 acima de 2s" | Alerta principal |
+| **Causa** | "CPU acima de 80%" | Dashboard, não alerta |
+| **Causa** | "Heap acima de 85%" | Alerta com `for` longo |
+
+#### 11.9.2. Reduzir ruído
+
+- Use `for` adequado: evite alertar por picos momentâneos (mínimo 2-5 minutos para warnings).
+- Agrupe alertas por serviço no Alertmanager (`group_by`).
+- Configure `inhibit_rules` para suprimir warnings quando um critical do mesmo serviço já está ativo.
+- Revise alertas trimestralmente: remova os que nunca disparam ou que são ignorados.
+
+#### 11.9.3. Checklist de monitoramento
+
+- [ ] Cada serviço tem dashboard RED (Rate, Errors, Duration).
+- [ ] Recursos de infraestrutura monitorados com USE (Utilization, Saturation, Errors).
+- [ ] SLIs definidos e SLOs documentados.
+- [ ] Error budget rastreado e visível no dashboard.
+- [ ] Alertas de severidade `critical` têm runbook vinculado.
+- [ ] Alertas testados periodicamente (simular falha e verificar notificação).
+- [ ] Health checks de liveness e readiness configurados para Kubernetes.
+- [ ] Contact points validados (Slack, e-mail, PagerDuty).
+- [ ] Retenção de dados configurada (Prometheus: 15-30d, Loki: 30-90d, Tempo: 7-14d).
