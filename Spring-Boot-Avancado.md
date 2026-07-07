@@ -4,7 +4,7 @@ Este documento reúne informações e exemplos práticos sobre recursos avançad
 
 - envio de e-mails com configuração padrão, configuração dinâmica de servidores SMTP e templates Thymeleaf;
 - execução de jobs com Quartz, incluindo persistencia em banco, controle dinâmico e disparo manual;
-- uso de JMS com Artemis, cobrindo filas, pub-sub, filas duráveis, uso de `pooled-jms` e mensagens com resposta;
+- uso de JMS com Artemis, cobrindo filas, pub-sub, filas duráveis, uso de `pooled-jms`, mensagens com resposta, controle de fila cheia (`address-full-policy`) e prioridade de mensagens;
 - mensageria distribuída com Kafka e RabbitMQ, incluindo produtores, consumidores, DLQ e boas práticas;
 - uso de Spring Events para comunicação interna desacoplada, com listeners síncronos, assíncronos e transacionais;
 - GraphQL com Spring for GraphQL, incluindo schema, controllers, `@BatchMapping` e resolução do problema N+1;
@@ -1832,7 +1832,319 @@ Esse formato e útil quando:
 - a resposta não será imediata;
 - o identificador de correlação precisa ser persistido.
 
-### 3.12. Boas práticas com Artemis e JMS
+### 3.12. Controle de fila cheia (`address-full-policy`) e prioridade de mensagens
+
+#### O que acontece quando uma fila enche
+
+Em ActiveMQ Artemis, cada address (fila ou tópico) pode ter um limite de tamanho definido por `max-size-bytes` e/ou `max-size-messages`. Quando esse limite e atingido, o broker aplica a política definida em `address-full-policy`. Segundo a documentação do Artemis, as opções são:
+
+| Política | Comportamento |
+|---|---|
+| `PAGE` (padrão) | mensagens excedentes são paginadas em disco, liberando memória mas continuando a aceitar novas mensagens; |
+| `BLOCK` | o producer bloqueia no `send()` até que haja espaço na fila novamente; protege o broker, mas pode travar quem publica; |
+| `FAIL` | o broker recusa a mensagem imediatamente e devolve uma exceção ao producer; |
+| `DROP` | a mensagem excedente é descartada silenciosamente, sem erro para o producer e sem paginação. |
+
+Na prática:
+
+- `BLOCK` e `FAIL` são adequados quando a mensagem não pode ser perdida — a diferença e se o producer deve esperar (`BLOCK`) ou ser avisado na hora (`FAIL`);
+- `DROP` e adequado para fluxos de melhor esforço, como notificações não críticas, onde perder mensagem sob pressão e aceitável;
+- `PAGE` e o meio-termo padrão, mas exige monitorar espaço em disco, já que o paging tem seu próprio limite (`page-size-bytes` e o `max-disk-usage` global do broker).
+
+#### Configuração no `broker.xml`
+
+```xml
+<address-settings>
+   <!-- fila critica: producer espera até haver espaço -->
+   <address-setting match="queue.pedidos">
+      <max-size-bytes>10485760</max-size-bytes> <!-- 10MB -->
+      <max-size-messages>5000</max-size-messages>
+      <address-full-policy>BLOCK</address-full-policy>
+   </address-setting>
+
+   <!-- fila critica: producer recebe erro imediato em vez de esperar -->
+   <address-setting match="queue.pagamentos">
+      <max-size-bytes>10485760</max-size-bytes>
+      <address-full-policy>FAIL</address-full-policy>
+   </address-setting>
+
+   <!-- fila de melhor esforço: descarta silenciosamente sob pressão -->
+   <address-setting match="queue.notificacoes.best-effort">
+      <max-size-bytes>5242880</max-size-bytes> <!-- 5MB -->
+      <address-full-policy>DROP</address-full-policy>
+   </address-setting>
+
+   <!-- fila de alto volume: pagina em disco em vez de bloquear ou descartar -->
+   <address-setting match="queue.eventos.auditoria">
+      <max-size-bytes>52428800</max-size-bytes> <!-- 50MB -->
+      <address-full-policy>PAGE</address-full-policy>
+      <page-size-bytes>1048576</page-size-bytes> <!-- 1MB por pagina -->
+   </address-setting>
+</address-settings>
+```
+
+#### Configuração equivalente para broker embarcado no Spring Boot
+
+Quando o broker roda embarcado na própria aplicação, não existe `broker.xml` por padrão. O Spring Boot expõe o bean `ArtemisConfigurationCustomizer` para customizar a `Configuration` do Artemis, incluindo `AddressSettings` por endereço:
+
+```java
+package br.com.exemplo.jms.config;
+
+import org.apache.activemq.artemis.core.config.Configuration;
+import org.apache.activemq.artemis.core.settings.impl.AddressFullMessagePolicy;
+import org.apache.activemq.artemis.core.settings.impl.AddressSettings;
+import org.springframework.boot.autoconfigure.jms.artemis.ArtemisConfigurationCustomizer;
+import org.springframework.stereotype.Component;
+
+@Component
+public class ArtemisAddressSettingsCustomizer implements ArtemisConfigurationCustomizer {
+
+    @Override
+    public void customize(Configuration configuration) {
+        configuration.addAddressSetting("queue.pedidos", new AddressSettings()
+                .setMaxSizeBytes(10 * 1024 * 1024)
+                .setMaxSizeMessages(5000L)
+                .setAddressFullMessagePolicy(AddressFullMessagePolicy.BLOCK));
+
+        configuration.addAddressSetting("queue.notificacoes.#", new AddressSettings()
+                .setMaxSizeBytes(5 * 1024 * 1024)
+                .setAddressFullMessagePolicy(AddressFullMessagePolicy.DROP));
+    }
+}
+```
+
+#### Tratando o producer quando a política é `FAIL` ou `BLOCK`
+
+Com `FAIL`, o `send()` lança exceção e o código do producer precisa decidir o que fazer — logar, cair em fallback local ou repropagar o erro:
+
+```java
+package br.com.exemplo.jms.notificacao;
+
+import org.springframework.jms.JmsException;
+import org.springframework.jms.core.JmsClient;
+import org.springframework.stereotype.Service;
+
+@Service
+public class NotificacaoProducer {
+
+    private final JmsClient jmsClient;
+
+    public NotificacaoProducer(JmsClient jmsClient) {
+        this.jmsClient = jmsClient;
+    }
+
+    public void enviar(NotificacaoMessage notificacao) {
+        try {
+            jmsClient.destination("queue.notificacoes.best-effort").send(notificacao);
+        } catch (JmsException ex) {
+            // fila cheia (FAIL) ou broker indisponivel: aqui e melhor esforço
+            log.warn("Notificacao descartada: {}", ex.getMessage());
+        }
+    }
+}
+```
+
+Com `BLOCK`, não há exceção — a thread do producer fica retida dentro do `send()` até haver espaço. Esse comportamento não deve ser usado dentro de um listener JMS transacional sem cuidado, pois pode segurar a thread do DMLC e represar o consumo de outras mensagens.
+
+#### Prioridade de mensagens
+
+O protocolo JMS define 10 níveis de prioridade, de `0` (mais baixa) a `9` (mais alta), com `4` como padrão. O Artemis entrega mensagens de prioridade mais alta antes das de prioridade mais baixa dentro da mesma fila.
+
+Definindo prioridade no envio com `JmsClient`:
+
+```java
+package br.com.exemplo.jms.pedido;
+
+import org.springframework.jms.core.JmsClient;
+import org.springframework.stereotype.Service;
+
+@Service
+public class PedidoPriorityProducer {
+
+    private final JmsClient jmsClient;
+
+    public PedidoPriorityProducer(JmsClient jmsClient) {
+        this.jmsClient = jmsClient;
+    }
+
+    public void enviarUrgente(PedidoMessage pedido) {
+        jmsClient.destination("queue.pedidos")
+                .withPriority(9) // 0 (baixa) a 9 (alta); padrão é 4
+                .send(pedido);
+    }
+
+    public void enviarNormal(PedidoMessage pedido) {
+        jmsClient.destination("queue.pedidos").send(pedido); // usa prioridade padrão (4)
+    }
+}
+```
+
+Definindo prioridade com `JmsTemplate` por envio, via `MessagePostProcessor`:
+
+```java
+queueJmsTemplate.convertAndSend("queue.pedidos", pedido, message -> {
+    message.setJMSPriority(9);
+    return message;
+});
+```
+
+Ou fixando uma prioridade padrão para todos os envios de um `JmsTemplate` dedicado:
+
+```java
+@Bean
+public JmsTemplate pedidosUrgentesJmsTemplate(ConnectionFactory connectionFactory) {
+    JmsTemplate template = new JmsTemplate(connectionFactory);
+    template.setExplicitQosEnabled(true); // necessário para o priority ter efeito
+    template.setPriority(9);
+    return template;
+}
+```
+
+#### Cuidado com o `consumer-window-size` e a ordenação por prioridade
+
+Segundo a documentação do Artemis, a prioridade só é estritamente respeitada quando as mensagens ainda estão no servidor aguardando despacho. Se o consumer usa prefetch (`consumer-window-size` maior que zero, que é o padrão), mensagens já podem estar no buffer do cliente antes de uma mensagem de prioridade mais alta chegar ao broker — e nesse caso a ordem de prioridade não é respeitada para o que já foi pré-buscado.
+
+Para consumidores onde a ordem de prioridade precisa ser rigorosa, o prefetch pode ser desabilitado customizando a `ActiveMQConnectionFactory`:
+
+```java
+package br.com.exemplo.jms.config;
+
+import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
+import org.springframework.boot.autoconfigure.jms.artemis.ArtemisConnectionFactoryCustomizer;
+import org.springframework.stereotype.Component;
+
+@Component
+public class PriorityAwareConnectionFactoryCustomizer implements ArtemisConnectionFactoryCustomizer {
+
+    @Override
+    public void customize(ActiveMQConnectionFactory connectionFactory) {
+        connectionFactory.setConsumerWindowSize(0); // desativa prefetch, respeita prioridade
+    }
+}
+```
+
+O tradeoff e desempenho: sem prefetch, cada mensagem exige uma ida e volta ao broker antes da próxima ser entregue, o que reduz o throughput do consumer. Esse ajuste costuma valer a pena apenas em filas onde a ordem de prioridade e um requisito de negócio, não uma otimização genérica.
+
+#### Alternância ponderada entre prioridades (weighted round-robin)
+
+A prioridade nativa do Artemis é estrita: mensagens de prioridade mais alta são sempre entregues antes das mais baixas, sem nenhuma opção de configuração no broker para algo como "3 mensagens de alta prioridade, depois 1 de baixa, e assim por diante". Sob carga constante de mensagens de alta prioridade, isso pode causar starvation completa das mensagens de baixa prioridade.
+
+Para obter esse comportamento de alternância, a solução fica na aplicação, não no broker:
+
+- criar uma fila por nível de prioridade, em vez de uma única fila com o campo `JMSPriority` variando;
+- implementar um consumer dedicado que alterna entre as filas em turnos ponderados, garantindo vazão mínima para a fila de baixa prioridade.
+
+Destinations separadas por prioridade:
+
+```java
+package br.com.exemplo.jms;
+
+public final class Destinations {
+
+    public static final String FILA_PEDIDOS_ALTA = "queue.pedidos.alta";
+    public static final String FILA_PEDIDOS_BAIXA = "queue.pedidos.baixa";
+
+    private Destinations() {
+    }
+}
+```
+
+`JmsTemplate` dedicado por fila, cada um com seu próprio `receiveTimeout`:
+
+```java
+package br.com.exemplo.jms.config;
+
+import jakarta.jms.ConnectionFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jms.core.JmsTemplate;
+
+@Configuration
+public class PedidoPriorityJmsConfig {
+
+    @Bean
+    public JmsTemplate jmsTemplateFilaAlta(ConnectionFactory connectionFactory) {
+        JmsTemplate template = new JmsTemplate(connectionFactory);
+        template.setReceiveTimeout(200L); // espera curta: não trava o ciclo se a fila estiver vazia
+        return template;
+    }
+
+    @Bean
+    public JmsTemplate jmsTemplateFilaBaixa(ConnectionFactory connectionFactory) {
+        JmsTemplate template = new JmsTemplate(connectionFactory);
+        template.setReceiveTimeout(2000L); // espera maior: garante vazão real para a fila de baixa
+        return template;
+    }
+}
+```
+
+Consumer com round-robin ponderado, rodando em thread dedicada:
+
+```java
+package br.com.exemplo.jms.pedido;
+
+import jakarta.annotation.PreDestroy;
+import jakarta.jms.Message;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.stereotype.Component;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+@Component
+public class PedidoWeightedPriorityConsumer {
+
+    private static final int PESO_ALTA_PRIORIDADE = 3; // 3 mensagens de alta para cada 1 de baixa
+
+    private final JmsTemplate jmsTemplateFilaAlta;
+    private final JmsTemplate jmsTemplateFilaBaixa;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private volatile boolean running = true;
+
+    public PedidoWeightedPriorityConsumer(JmsTemplate jmsTemplateFilaAlta, JmsTemplate jmsTemplateFilaBaixa) {
+        this.jmsTemplateFilaAlta = jmsTemplateFilaAlta;
+        this.jmsTemplateFilaBaixa = jmsTemplateFilaBaixa;
+        executor.submit(this::loop);
+    }
+
+    private void loop() {
+        while (running) {
+            for (int i = 0; i < PESO_ALTA_PRIORIDADE; i++) {
+                Message mensagem = jmsTemplateFilaAlta.receive(Destinations.FILA_PEDIDOS_ALTA);
+                if (mensagem == null) {
+                    break; // fila de alta vazia no momento, não insiste e libera vez para a baixa
+                }
+                processar(mensagem);
+            }
+
+            Message mensagemBaixa = jmsTemplateFilaBaixa.receive(Destinations.FILA_PEDIDOS_BAIXA);
+            if (mensagemBaixa != null) {
+                processar(mensagemBaixa);
+            }
+        }
+    }
+
+    private void processar(Message mensagem) {
+        // desserializar e tratar o pedido
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        running = false;
+        executor.shutdownNow();
+    }
+}
+```
+
+Pontos importantes desse padrão:
+
+- cada `JmsTemplate` tem seu próprio `receiveTimeout` fixo, evitando mutação de estado compartilhado entre threads;
+- o timeout curto na fila de alta prioridade evita que o ciclo fique preso esperando mensagem quando ela está vazia;
+- o timeout maior na fila de baixa prioridade evita busy-loop consumindo CPU quando as duas filas estão ociosas;
+- o produtor decide a fila de destino conforme a prioridade do pedido (`FILA_PEDIDOS_ALTA` ou `FILA_PEDIDOS_BAIXA`), em vez de variar apenas o `JMSPriority` numa fila única;
+- esse consumer não usa `@JmsListener`, já que o modelo assíncrono de listener não permite controlar a ordem/alternância entre duas filas — o polling manual com `JmsTemplate.receive()` é o que dá esse controle.
+
+### 3.13. Boas práticas com Artemis e JMS
 
 - usar nomes claros para destinations, como `queue.` e `topic.`;
 - para filas criticas, alinhar fila durável com mensagens persistentes;
@@ -1843,9 +2155,12 @@ Esse formato e útil quando:
 - monitorar filas, tempos de consumo e erros;
 - usar correlation ID em fluxos críticos;
 - avaliar `pooled-jms` principalmente quando houver muitos producers e criação frequente de sessões;
-- documentar quais consumers são de fila e quais são de topico.
+- documentar quais consumers são de fila e quais são de topico;
+- escolher `address-full-policy` de acordo com a criticidade da fila (`BLOCK`/`FAIL` para mensagens que não podem se perder, `DROP` para melhor esforço);
+- usar prioridade de mensagens com moderação, e apenas desabilitar prefetch do consumer quando a ordenação por prioridade for um requisito real;
+- se a regra de negócio exigir alternância entre prioridades (e não prioridade estrita), resolver com filas separadas por prioridade e um consumer com round-robin ponderado, já que o broker não oferece essa política nativamente.
 
-### 3.13. `@Transactional` e `@Async` em listeners JMS
+### 3.14. `@Transactional` e `@Async` em listeners JMS
 
 #### O que já é implicitamente assíncrono
 
